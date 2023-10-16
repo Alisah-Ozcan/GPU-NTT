@@ -1,1 +1,0 @@
-/usr/bin/g++ @CMakeFiles/bench_ntt_gpu.dir/objects1.rsp CMakeFiles/bench_ntt_gpu.dir/cmake_device_link.o -o bench_ntt_gpu @CMakeFiles/bench_ntt_gpu.dir/linkLibs.rsp -L"/usr/local/cuda-12.1/targets/x86_64-linux/lib/stubs" -L"/usr/local/cuda-12.1/targets/x86_64-linux/lib"
