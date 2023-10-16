@@ -1,0 +1,1 @@
+/usr/bin/g++ @CMakeFiles/test_ntt_cpu.dir/objects1.rsp CMakeFiles/test_ntt_cpu.dir/cmake_device_link.o -o test_ntt_cpu @CMakeFiles/test_ntt_cpu.dir/linkLibs.rsp -L"/usr/local/cuda-12.1/targets/x86_64-linux/lib/stubs" -L"/usr/local/cuda-12.1/targets/x86_64-linux/lib"

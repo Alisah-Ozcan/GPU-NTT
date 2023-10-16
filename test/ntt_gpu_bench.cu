@@ -30,8 +30,8 @@ int main(int argc, char* argv[])
     int N = 1 << LOGN;
     int ROOT_SIZE = N >> 1;
 
-    const int test_count = 5;
-    const int bestof = 3;
+    const int test_count = 100;
+    const int bestof = 25;
     float time_measurements[test_count];
     for (int loop = 0; loop < test_count; loop++)
     {
@@ -70,8 +70,7 @@ int main(int argc, char* argv[])
             inverse_root_table.push_back(inverse);
         }
 
-        Ninverse n_inv = ((__uint128_t)(dis(gen)) << (__uint128_t)64) +
-                         ((__uint128_t)(dis(gen)));
+        Ninverse n_inv = {.x = dis(gen), .y = dis(gen)};
 #else
         for (int i = 0; i < ROOT_SIZE; i++)
         {

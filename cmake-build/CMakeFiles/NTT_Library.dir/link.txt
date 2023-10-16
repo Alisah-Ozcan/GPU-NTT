@@ -1,0 +1,2 @@
+/usr/bin/ar qc libNTT_Library.a CMakeFiles/NTT_Library.dir/src/common.cu.o CMakeFiles/NTT_Library.dir/src/nttparameters.cu.o CMakeFiles/NTT_Library.dir/src/ntt_cpu.cu.o CMakeFiles/NTT_Library.dir/src/ntt.cu.o
+/usr/bin/ranlib libNTT_Library.a

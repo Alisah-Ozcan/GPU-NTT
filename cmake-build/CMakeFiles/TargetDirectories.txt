@@ -1,0 +1,6 @@
+/home/alisah/NTT_AFTER_ULVE/0_NTT_LIB_LIST/IEEE_ACCESS/github/GPU-NTT/cmake-build/CMakeFiles/NTT_Library.dir
+/home/alisah/NTT_AFTER_ULVE/0_NTT_LIB_LIST/IEEE_ACCESS/github/GPU-NTT/cmake-build/CMakeFiles/test_ntt_cpu.dir
+/home/alisah/NTT_AFTER_ULVE/0_NTT_LIB_LIST/IEEE_ACCESS/github/GPU-NTT/cmake-build/CMakeFiles/test_ntt_gpu.dir
+/home/alisah/NTT_AFTER_ULVE/0_NTT_LIB_LIST/IEEE_ACCESS/github/GPU-NTT/cmake-build/CMakeFiles/bench_ntt_gpu.dir
+/home/alisah/NTT_AFTER_ULVE/0_NTT_LIB_LIST/IEEE_ACCESS/github/GPU-NTT/cmake-build/CMakeFiles/edit_cache.dir
+/home/alisah/NTT_AFTER_ULVE/0_NTT_LIB_LIST/IEEE_ACCESS/github/GPU-NTT/cmake-build/CMakeFiles/rebuild_cache.dir
