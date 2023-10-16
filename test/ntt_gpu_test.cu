@@ -59,7 +59,8 @@ int main(int argc, char* argv[])
     NTT_CPU generator(parameters);
 
     std::random_device rd;
-    std::mt19937 gen(rd());
+    //std::mt19937 gen(rd());
+    std::mt19937 gen(0);
     unsigned long long minNumber = 0;
     unsigned long long maxNumber = parameters.modulus.value - 1;
     std::uniform_int_distribution<unsigned long long> dis(minNumber, maxNumber);

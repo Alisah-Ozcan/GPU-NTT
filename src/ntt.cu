@@ -707,7 +707,7 @@ __host__ void GPU_NTT(Data* device_inout, Root* root_of_unity_table,
                         (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
                     THROW_IF_CUDA_ERROR(cudaGetLastError());
                     ///////////////////////////////////////////////////////////
-                    ForwardCore_<<<dim3(32768, 1), dim3(512, 1),
+                    ForwardCore_<<<dim3(32768, 1, batch_size), dim3(512, 1),
                                   1024 * sizeof(Data), cfg.stream>>>(
                         device_inout, root_of_unity_table, modulus, 9, 15, 10,
                         cfg.n_power, false, false,
@@ -728,7 +728,7 @@ __host__ void GPU_NTT(Data* device_inout, Root* root_of_unity_table,
                         (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
                     THROW_IF_CUDA_ERROR(cudaGetLastError());
                     ///////////////////////////////////////////////////////////
-                    ForwardCore_<<<dim3(65536, 1), dim3(512, 1),
+                    ForwardCore_<<<dim3(65536, 1, batch_size), dim3(512, 1),
                                   1024 * sizeof(Data), cfg.stream>>>(
                         device_inout, root_of_unity_table, modulus, 9, 16, 10,
                         cfg.n_power, false, false,
@@ -756,7 +756,7 @@ __host__ void GPU_NTT(Data* device_inout, Root* root_of_unity_table,
                         (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
                     THROW_IF_CUDA_ERROR(cudaGetLastError());
                     ///////////////////////////////////////////////////////////
-                    ForwardCore_<<<dim3(262144, 1), dim3(256, 1),
+                    ForwardCore_<<<dim3(262144, 1, batch_size), dim3(256, 1),
                                   512 * sizeof(Data), cfg.stream>>>(
                         device_inout, root_of_unity_table, modulus, 8, 18, 9,
                         cfg.n_power, false, false,
@@ -776,7 +776,7 @@ __host__ void GPU_NTT(Data* device_inout, Root* root_of_unity_table,
                         (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
                     THROW_IF_CUDA_ERROR(cudaGetLastError());
                     ///////////////////////////////////////////////////////////
-                    ForwardCore_<<<dim3(131072, 1), dim3(512, 1),
+                    ForwardCore_<<<dim3(131072, 1, batch_size), dim3(512, 1),
                                   1024 * sizeof(Data), cfg.stream>>>(
                         device_inout, root_of_unity_table, modulus, 9, 17, 10,
                         cfg.n_power, false, false,
@@ -805,7 +805,7 @@ __host__ void GPU_NTT(Data* device_inout, Root* root_of_unity_table,
                         (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
                     THROW_IF_CUDA_ERROR(cudaGetLastError());
                     ///////////////////////////////////////////////////////////
-                    ForwardCore_<<<dim3(524288, 1), dim3(256, 1),
+                    ForwardCore_<<<dim3(524288, 1, batch_size), dim3(256, 1),
                                   512 * sizeof(Data), cfg.stream>>>(
                         device_inout, root_of_unity_table, modulus, 8, 19, 9,
                         cfg.n_power, false, false,
@@ -826,7 +826,7 @@ __host__ void GPU_NTT(Data* device_inout, Root* root_of_unity_table,
                         (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
                     THROW_IF_CUDA_ERROR(cudaGetLastError());
                     ///////////////////////////////////////////////////////////
-                    ForwardCore_<<<dim3(262144, 1), dim3(512, 1),
+                    ForwardCore_<<<dim3(262144, 1, batch_size), dim3(512, 1),
                                   1024 * sizeof(Data), cfg.stream>>>(
                         device_inout, root_of_unity_table, modulus, 9, 18, 10,
                         cfg.n_power, false, false,
