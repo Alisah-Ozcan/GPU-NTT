@@ -146,7 +146,7 @@ int main(int argc, char* argv[])
         cudaEventCreate(&stopx);
 
         cudaEventRecord(startx);
-        GPU_NTT(InOut_Datas, Forward_Omega_Table_Device, modulus, cfg_ntt,
+        GPU_NTT_Inplace(InOut_Datas, Forward_Omega_Table_Device, modulus, cfg_ntt,
                 BATCH);
 
         cudaEventRecord(stopx);
@@ -154,7 +154,7 @@ int main(int argc, char* argv[])
         cudaEventElapsedTime(&time, startx, stopx);
         time_measurements[loop] = time;
 
-        // GPU_NTT(InOut_Datas, Inverse_Omega_Table_Device, modulus,
+        // GPU_NTT_Inplace(InOut_Datas, Inverse_Omega_Table_Device, modulus,
         //         cfg_intt, BATCH);
 
         ////////////////////////////////////////////////////////////////////////////////////////////////////////////

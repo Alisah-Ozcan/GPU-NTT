@@ -128,25 +128,6 @@ int main(int argc, char* argv[])
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-    Modulus* test_modulus;
-    THROW_IF_CUDA_ERROR(
-        cudaMalloc(&test_modulus, sizeof(Modulus)));
-
-    Modulus test_modulus_[1] = {parameters.modulus};
-
-    THROW_IF_CUDA_ERROR(cudaMemcpy(
-        test_modulus, test_modulus_, sizeof(Modulus), cudaMemcpyHostToDevice));
-
-    
-    Ninverse* test_ninverse;
-    THROW_IF_CUDA_ERROR(
-        cudaMalloc(&test_ninverse, sizeof(Ninverse)));
-
-    Ninverse test_ninverse_[1] = {parameters.n_inv};
-
-    THROW_IF_CUDA_ERROR(cudaMemcpy(
-        test_ninverse, test_ninverse_, sizeof(Ninverse), cudaMemcpyHostToDevice));
-    
     ntt_configuration cfg_ntt = {
         .n_power = LOGN,
         .ntt_type = FORWARD,
@@ -165,7 +146,7 @@ int main(int argc, char* argv[])
         .stream = 0};
     GPU_NTT_Inplace(InOut_Datas, Inverse_Omega_Table_Device, parameters.modulus,
             cfg_intt, BATCH);
-    
+
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
     Data* Output_Host;
