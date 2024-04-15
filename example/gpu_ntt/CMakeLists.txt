@@ -1,0 +1,2 @@
+add_subdirectory(ntt_4step)
+add_subdirectory(ntt_merge)

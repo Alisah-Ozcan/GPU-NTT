@@ -1,0 +1,3 @@
+add_subdirectory(butterfly)
+add_subdirectory(ntt_merge)
+add_subdirectory(ntt_4step)
