@@ -23,3 +23,6 @@ elseif(MODULAR_REDUCTION_TYPE EQUAL 2)
 else()
     message(FATAL_ERROR "Please use valid MODULAR_REDUCTION_TYPE! (0,1,2)")
 endif()
+
+set_target_properties(common PROPERTIES
+        CUDA_SEPARABLE_COMPILATION ON)

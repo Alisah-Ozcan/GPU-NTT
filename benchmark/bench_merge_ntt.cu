@@ -23,6 +23,11 @@ int main(int argc, char* argv[])
     {
         LOGN = atoi(argv[1]);
         BATCH = atoi(argv[2]);
+
+        if((LOGN < 12) || (28 < LOGN))
+        {
+            throw std::runtime_error("LOGN should be in range 12 to 28.");
+        }
     }
 
     // NTT generator with certain modulus and root of unity

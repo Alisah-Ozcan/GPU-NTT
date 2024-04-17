@@ -117,3 +117,31 @@ bool check_result(T* input1, T* input2, int size)
 template bool check_result<unsigned long long>(unsigned long long* input1,
                                                unsigned long long* input2,
                                                int size);
+
+
+// GPU_ACTIVITY
+
+__global__ void GPU_ACTIVITY(unsigned long long* output, unsigned long long fix_num)
+{
+    int idx = blockIdx.x + blockDim.x + threadIdx.x;
+
+    output[idx] = fix_num;
+}
+
+__host__ void GPU_ACTIVITY_HOST(unsigned long long* output, unsigned long long fix_num)
+{
+    GPU_ACTIVITY<<<64, 512>>>(output, fix_num);
+}
+
+__global__ void GPU_ACTIVITY2(unsigned long long* input1, unsigned long long* input2)
+{
+    int idx = blockIdx.x + blockDim.x + threadIdx.x;
+
+    input1[idx] = input1[idx] + input2[idx];
+}
+
+__host__ void GPU_ACTIVITY2_HOST(unsigned long long* input1, unsigned long long* input2,
+                                 unsigned size)
+{
+    GPU_ACTIVITY2<<<(size >> 8), 256>>>(input1, input2);
+}

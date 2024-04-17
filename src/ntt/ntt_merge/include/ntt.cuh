@@ -4,18 +4,50 @@
 // Developer: Alişah Özcan
 // Paper: https://eprint.iacr.org/2023/1410
 
-#ifndef NTT_FFT_CORE_H
-#define NTT_FFT_CORE_H
+#ifndef NTT_CORE_H
+#define NTT_CORE_H
 
 #include <curand_kernel.h>
 
-#include "butterfly.cuh"
 #include "cuda_runtime.h"
 #include "ntt_cpu.cuh"
 
 // --------------------- //
 // Authors: Alisah Ozcan
 // --------------------- //
+typedef unsigned location_t;
+/*
+#if MAX_LOG2_RINGSIZE <= 32
+typedef unsigned location_t;
+#else
+typedef unsigned long long location_t;
+#endif
+*/
+
+
+struct ntt_configuration
+{
+    int n_power;
+    type ntt_type;
+    ReductionPolynomial reduction_poly;
+    bool zero_padding;
+    Ninverse mod_inverse;
+    cudaStream_t stream;
+};
+
+struct ntt_rns_configuration
+{
+    int n_power;
+    type ntt_type;
+    ReductionPolynomial reduction_poly;
+    bool zero_padding;
+    Ninverse* mod_inverse;
+    cudaStream_t stream;
+};
+
+__device__ void CooleyTukeyUnit(Data& U, Data& V, Root& root, Modulus& modulus);
+
+__device__ void GentlemanSandeUnit(Data& U, Data& V, Root& root, Modulus& modulus);
 
 // It provides multiple NTT operation with using single prime.
 __global__ void ForwardCore(Data* polynomial_in, Data* polynomial_out, Root* root_of_unity_table,
@@ -237,13 +269,4 @@ __host__ void GPU_NTT_Poly_Ordered_Inplace(Data* device_inout, Root* root_of_uni
                                            Modulus* modulus, ntt_rns_configuration cfg,
                                            int batch_size, int mod_count, int* order);
 
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-__global__ void GPU_ACTIVITY(unsigned long long* output, unsigned long long fix_num);
-__host__ void GPU_ACTIVITY_HOST(unsigned long long* output, unsigned long long fix_num);
-
-__global__ void GPU_ACTIVITY2(unsigned long long* input1, unsigned long long* input2);
-__host__ void GPU_ACTIVITY2_HOST(unsigned long long* input1, unsigned long long* input2,
-                                 unsigned size);
-
-#endif  // NTT_FFT_CORE_H
+#endif  // NTT_CORE_H

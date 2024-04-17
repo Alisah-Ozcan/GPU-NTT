@@ -23,7 +23,7 @@ else()
     message(FATAL_ERROR "Please use valid MODULAR_REDUCTION_TYPE! (0,1,2)")
 endif()
 
-target_link_libraries(benchmark_4step_ntt PRIVATE ntt ntt_4step)
+target_link_libraries(benchmark_4step_ntt PRIVATE ntt_4step)
 
 set_target_properties(benchmark_4step_ntt PROPERTIES
         CUDA_SEPARABLE_COMPILATION ON)
@@ -31,7 +31,7 @@ set_target_properties(benchmark_4step_ntt PROPERTIES
 target_include_directories(benchmark_4step_ntt PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../include)
 
 
-target_link_libraries(benchmark_merge_ntt PRIVATE ntt ntt_4step)
+target_link_libraries(benchmark_merge_ntt PRIVATE ntt)
 
 set_target_properties(benchmark_merge_ntt PROPERTIES
         CUDA_SEPARABLE_COMPILATION ON)

@@ -1,7 +1,6 @@
 #include <cstdlib>
 #include <random>
 
-#include "ntt.cuh"
 #include "ntt_4step.cuh"
 #include "ntt_4step_cpu.cuh"
 
@@ -25,6 +24,11 @@ int main(int argc, char* argv[])
     {
         LOGN = atoi(argv[1]);
         BATCH = atoi(argv[2]);
+        
+        if((LOGN < 12) || (24 < LOGN))
+        {
+            throw std::runtime_error("LOGN should be in range 12 to 24.");
+        }
     }
 
 #ifdef BARRETT_64
@@ -177,10 +181,8 @@ int main(int argc, char* argv[])
         THROW_IF_CUDA_ERROR(
             cudaMemcpy(ninverse_device, test_ninverse_, sizeof(Ninverse), cudaMemcpyHostToDevice));
 
-        ntt_rns_configuration cfg_ntt = {.n_power = LOGN,
+        ntt4step_configuration cfg_ntt = {.n_power = LOGN,
                                          .ntt_type = FORWARD,
-                                         //.reduction_poly = ReductionPolynomial::X_N_minus,
-                                         //.zero_padding = false,
                                          .stream = 0};
 
         float time = 0;
@@ -190,9 +192,12 @@ int main(int argc, char* argv[])
 
         cudaEventRecord(startx);
 
+        //GPU_4STEP_NTT(Input_Datas, Output_Datas, Forward_Omega_Table1_Device,
+        //              Forward_Omega_Table2_Device, W_Table_Device, modulus_device, cfg_ntt, BATCH,
+        //              1);
+
         GPU_4STEP_NTT(Input_Datas, Output_Datas, Forward_Omega_Table1_Device,
-                      Forward_Omega_Table2_Device, W_Table_Device, modulus_device, cfg_ntt, BATCH,
-                      1);
+                      Forward_Omega_Table2_Device, W_Table_Device, modulus, cfg_ntt, BATCH);
 
         cudaEventRecord(stopx);
         cudaEventSynchronize(stopx);

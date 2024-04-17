@@ -22,7 +22,7 @@ else()
     message(FATAL_ERROR "Please use valid MODULAR_REDUCTION_TYPE! (0,1,2)")
 endif()
 
-target_link_libraries(ntt PUBLIC common butterfly_units)
+target_link_libraries(ntt PUBLIC common)
 
 set_target_properties(ntt PROPERTIES
         CUDA_SEPARABLE_COMPILATION ON)

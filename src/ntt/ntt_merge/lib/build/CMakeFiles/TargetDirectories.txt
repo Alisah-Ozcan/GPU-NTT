@@ -1,3 +1,0 @@
-/home/alisah/Desktop/alanya_e/4-Step/NTT_5/src/ntt/ntt_merge/lib/build/CMakeFiles/ntt.dir
-/home/alisah/Desktop/alanya_e/4-Step/NTT_5/src/ntt/ntt_merge/lib/build/CMakeFiles/edit_cache.dir
-/home/alisah/Desktop/alanya_e/4-Step/NTT_5/src/ntt/ntt_merge/lib/build/CMakeFiles/rebuild_cache.dir

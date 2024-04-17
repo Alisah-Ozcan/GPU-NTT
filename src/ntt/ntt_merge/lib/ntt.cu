@@ -8,6 +8,26 @@
 
 #define CC_89  // for RTX 4090
 
+__device__ void CooleyTukeyUnit(Data& U, Data& V, Root& root, Modulus& modulus)
+{
+    Data u_ = U;
+    Data v_ = VALUE_GPU::mult(V, root, modulus);
+
+    U = VALUE_GPU::add(u_, v_, modulus);
+    V = VALUE_GPU::sub(u_, v_, modulus);
+}
+
+__device__ void GentlemanSandeUnit(Data& U, Data& V, Root& root, Modulus& modulus)
+{
+    Data u_ = U;
+    Data v_ = V;
+
+    U = VALUE_GPU::add(u_, v_, modulus);
+
+    v_ = VALUE_GPU::sub(u_, v_, modulus);
+    V = VALUE_GPU::mult(v_, root, modulus);
+}
+
 __global__ void ForwardCore(Data* polynomial_in, Data* polynomial_out, Root* root_of_unity_table,
                             Modulus modulus, int shared_index, int logm, int outer_iteration_count,
                             int N_power, bool zero_padding, bool not_last_kernel,
@@ -4733,35 +4753,3 @@ __host__ void GPU_NTT_Poly_Ordered_Inplace(Data* device_inout, Root* root_of_uni
     GPU_NTT_Poly_Ordered(device_inout, device_inout, root_of_unity_table, modulus, cfg, batch_size,
                          mod_count, order);
 }
-
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// GPU_ACTIVITY
-
-__global__ void GPU_ACTIVITY(unsigned long long* output, unsigned long long fix_num)
-{
-    int idx = blockIdx.x + blockDim.x + threadIdx.x;
-
-    output[idx] = fix_num;
-}
-
-__host__ void GPU_ACTIVITY_HOST(unsigned long long* output, unsigned long long fix_num)
-{
-    GPU_ACTIVITY<<<64, 512>>>(output, fix_num);
-}
-
-__global__ void GPU_ACTIVITY2(unsigned long long* input1, unsigned long long* input2)
-{
-    int idx = blockIdx.x + blockDim.x + threadIdx.x;
-
-    input1[idx] = input1[idx] + input2[idx];
-}
-
-__host__ void GPU_ACTIVITY2_HOST(unsigned long long* input1, unsigned long long* input2,
-                                 unsigned size)
-{
-    GPU_ACTIVITY2<<<(size >> 8), 256>>>(input1, input2);
-}
-
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

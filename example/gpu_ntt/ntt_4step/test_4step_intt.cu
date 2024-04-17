@@ -124,10 +124,8 @@ int main(int argc, char* argv[])
     THROW_IF_CUDA_ERROR(
         cudaMemcpy(test_ninverse, test_ninverse_, sizeof(Ninverse), cudaMemcpyHostToDevice));
 
-    ntt_rns_configuration cfg_intt = {.n_power = LOGN,
+    ntt4step_rns_configuration cfg_intt = {.n_power = LOGN,
                                       .ntt_type = INVERSE,
-                                      //.reduction_poly = ReductionPolynomial::X_N_minus,
-                                      //.zero_padding = false,
                                       .mod_inverse = test_ninverse,
                                       .stream = 0};
 

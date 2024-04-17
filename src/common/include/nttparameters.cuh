@@ -12,6 +12,12 @@
 
 int bitreverse(int index, int n_power);
 
+enum type
+{
+    FORWARD,
+    INVERSE
+};
+
 enum ReductionPolynomial
 {
     X_N_plus,
