@@ -150,10 +150,10 @@ namespace barrett64_cpu
         static __host__ Data exp(Data& base, Data& exponent, Modulus& modulus)
         {
             // with window method
-            unsigned long long result = 1;
+            Data result = 1ULL;
 
-            int modulus_bit = log2(modulus.value) + 1;
-            for (int i = modulus_bit - 1; i > -1; i--)
+            int exponent_bit = log2(exponent) + 1;
+            for (int i = exponent_bit - 1; i > -1; i--)
             {
                 result = barrett64_cpu::BarrettOperations::mult(result, result,
                                                                 modulus);
@@ -235,10 +235,10 @@ namespace goldilocks64_cpu
         {
             __uint128_t mult = (__uint128_t) input1 * (__uint128_t) input2;
 
-            unsigned long long lo = uint64_t(mult & UINT64_MAX);
-            unsigned long long hi = uint64_t(mult >> 64u);
-            unsigned long long hiL = uint64_t(hi & UINT32_MAX);
-            unsigned long long hiH = uint64_t(hi >> 32u);
+            Data lo = uint64_t(mult & UINT64_MAX);
+            Data hi = uint64_t(mult >> 64u);
+            Data hiL = uint64_t(hi & UINT32_MAX);
+            Data hiH = uint64_t(hi >> 32u);
 
             __uint128_t pre_result =
                 (__uint128_t) (hiL * 4294967295) + (__uint128_t) lo;
@@ -265,10 +265,10 @@ namespace goldilocks64_cpu
         static __host__ Data exp(Data& base, Data& exponent, Modulus& modulus)
         {
             // with window method
-            unsigned long long result = 1;
+            Data result = 1ULL;
 
-            int modulus_bit = log2(modulus.value) + 1;
-            for (int i = modulus_bit - 1; i > -1; i--)
+            int exponent_bit = log2(exponent) + 1;
+            for (int i = exponent_bit - 1; i > -1; i--)
             {
                 result = goldilocks64_cpu::GoldilocksOperations::mult(
                     result, result, modulus);
@@ -426,8 +426,8 @@ namespace barrett64_gpu
             return dif;
         }
 
-        static __device__ uint128_t mult128(const unsigned long long& a,
-                                            const unsigned long long& b)
+        static __device__ uint128_t mult128(const Data& a,
+                                            const Data& b)
         {
             uint128_t result;
 
@@ -531,7 +531,7 @@ namespace goldilocks64_gpu
         // x -> LSB side
         // y -> MSB side
         // ulonglong2 value;
-        unsigned long long x, y;
+        Data x, y;
 
         __device__ __forceinline__ uint128_t()
         {
@@ -721,7 +721,7 @@ namespace goldilocks64_gpu
             // Authors: Alisah Ozcan
             // --------------------- //
             uint128_t result;
-            unsigned long long q = 18446744069414584321;
+            Data q = 18446744069414584321ULL;
 
             asm("{\n\t"
                 ".reg .u64      r0, r1;         \n\t"
