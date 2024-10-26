@@ -152,12 +152,16 @@ namespace barrett64_cpu
             // with window method
             Data result = 1ULL;
 
+            if(exponent == 0ULL){
+                return result;
+            }
+
             int exponent_bit = log2(exponent) + 1;
             for (int i = exponent_bit - 1; i > -1; i--)
             {
                 result = barrett64_cpu::BarrettOperations::mult(result, result,
                                                                 modulus);
-                if (((exponent >> i) & 1u))
+                if (((exponent >> i) & 1ULL))
                 {
                     result = barrett64_cpu::BarrettOperations::mult(
                         result, base, modulus);
@@ -267,12 +271,16 @@ namespace goldilocks64_cpu
             // with window method
             Data result = 1ULL;
 
+            if(exponent == 0ULL){
+                return result;
+            }
+
             int exponent_bit = log2(exponent) + 1;
             for (int i = exponent_bit - 1; i > -1; i--)
             {
                 result = goldilocks64_cpu::GoldilocksOperations::mult(
                     result, result, modulus);
-                if (((exponent >> i) & 1u))
+                if (((exponent >> i) & 1ULL))
                 {
                     result = goldilocks64_cpu::GoldilocksOperations::mult(
                         result, base, modulus);
