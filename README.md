@@ -72,7 +72,7 @@ $ Example: ./build/bin/gpu_merge_ntt_examples 12 1
 To run benchmarks:
 
 ```bash
-$ cmake -D CMAKE_CUDA_ARCHITECTURES=86 -D MODULAR_REDUCTION_TYPE=0 -D GPUFFT_BUILD_BENCHMARKS=ON -B./build
+$ cmake -D CMAKE_CUDA_ARCHITECTURES=86 -D MODULAR_REDUCTION_TYPE=0 -D GPUNTT_BUILD_BENCHMARKS=ON -B./build
 $ cmake --build ./build/ --parallel
 
 $ ./build/bin/benchmark_4step_ntt <RING_SIZE_IN_LOG2> <BATCH_SIZE>
