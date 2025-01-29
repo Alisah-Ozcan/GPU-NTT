@@ -9,6 +9,7 @@
 #include <vector>
 #include "common.cuh"
 #include "modular_arith.cuh"
+#include <type_traits>
 
 int bitreverse(int index, int n_power);
 
@@ -27,19 +28,16 @@ enum ReductionPolynomial
 enum ModularReductionType
 {
     BARRET,
-    PLANTARD,
-    GOLDILOCK
 };
 
-// For any prime(64-bit)
-struct NTTFactors
+template <typename T> struct NTTFactors
 {
-    Modulus modulus;
-    Data omega;
-    Data psi;
+    Modulus<T> modulus;
+    T omega;
+    T psi;
 
     // Constructor to initialize the NTTFactors
-    __host__ NTTFactors(Modulus q_, Data omega_, Data psi_)
+    __host__ NTTFactors(Modulus<T> q_, T omega_, T psi_)
     {
         modulus = q_;
         omega = omega_;
@@ -50,50 +48,46 @@ struct NTTFactors
     // TODO: add check mechanism here
 };
 
-class NTTParameters
+template <typename T> class NTTParameters
 {
   public:
     int logn;
-    Data n;
+    T n;
 
     ReductionPolynomial poly_reduction;
     ModularReductionType modular_reduction;
 
-    Modulus modulus;
+    Modulus<T> modulus;
 
-    Data omega;
-    Data psi;
+    T omega;
+    T psi;
 
-    Ninverse n_inv;
+    Ninverse<T> n_inv;
 
-    Data root_of_unity;
-    Data inverse_root_of_unity;
+    T root_of_unity;
+    T inverse_root_of_unity;
 
-    Data root_of_unity_size;
+    T root_of_unity_size;
 
-    std::vector<Data> forward_root_of_unity_table;
-    std::vector<Data> inverse_root_of_unity_table;
-
-#ifdef PLANTARD_64
-    __uint128_t R; // For plantard Reduction
-#endif
+    std::vector<T> forward_root_of_unity_table;
+    std::vector<T> inverse_root_of_unity_table;
 
     // For testing all cases with barretti goldilock and plantard reduction
     NTTParameters(int LOGN, ModularReductionType modular_reduction_type,
                   ReductionPolynomial poly_reduce_type);
 
     // For any prime(64-bit)
-    NTTParameters(int LOGN, NTTFactors ntt_factors,
+    NTTParameters(int LOGN, NTTFactors<T> ntt_factors,
                   ReductionPolynomial poly_reduce_type);
 
-    NTTParameters();
+    NTTParameters(); // = delete;
 
   private:
-    Modulus modulus_pool();
+    Modulus<T> modulus_pool();
 
-    Data omega_pool();
+    T omega_pool();
 
-    Data psi_pool();
+    T psi_pool();
 
     void forward_root_of_unity_table_generator();
 
@@ -101,50 +95,42 @@ class NTTParameters
 
     void n_inverse_generator();
 
-#ifdef PLANTARD_64
-    __uint128_t R_pool();
-#endif
-
   public:
-    std::vector<Root_>
-    gpu_root_of_unity_table_generator(std::vector<Data> table);
+    std::vector<Root<T>>
+    gpu_root_of_unity_table_generator(std::vector<T> table);
 };
 
-class NTTParameters4Step
+template <typename T> class NTTParameters4Step
 {
   public:
     int logn;
-    Data n;
+    T n;
 
     ReductionPolynomial poly_reduction;
     ModularReductionType modular_reduction;
 
-    Modulus modulus;
+    Modulus<T> modulus;
 
-    Data omega;
-    Data psi;
+    T omega;
+    T psi;
 
-    Data n_inv;
-    Ninverse n_inv_gpu;
+    T n_inv;
+    Ninverse<T> n_inv_gpu;
 
-    Data root_of_unity;
-    Data inverse_root_of_unity;
+    T root_of_unity;
+    T inverse_root_of_unity;
 
-    Data root_of_unity_size;
+    T root_of_unity_size;
 
     // 4 STEP PARAMETERS
     int n1, n2;
-    std::vector<Data> n1_based_root_of_unity_table;
-    std::vector<Data> n2_based_root_of_unity_table;
-    std::vector<Data> W_root_of_unity_table;
+    std::vector<T> n1_based_root_of_unity_table;
+    std::vector<T> n2_based_root_of_unity_table;
+    std::vector<T> W_root_of_unity_table;
 
-    std::vector<Data> n1_based_inverse_root_of_unity_table;
-    std::vector<Data> n2_based_inverse_root_of_unity_table;
-    std::vector<Data> W_inverse_root_of_unity_table;
-
-#ifdef PLANTARD_64
-    __uint128_t R; // For plantard Reduction
-#endif
+    std::vector<T> n1_based_inverse_root_of_unity_table;
+    std::vector<T> n2_based_inverse_root_of_unity_table;
+    std::vector<T> W_inverse_root_of_unity_table;
 
     // For testing all cases with barretti goldilock and plantard reduction
     NTTParameters4Step(int LOGN, ModularReductionType modular_reduction_type,
@@ -154,14 +140,14 @@ class NTTParameters4Step
     // NTTParameters4Step(int LOGN, NTTFactors ntt_factors,
     //              ReductionPolynomial poly_reduce_type);
 
-    NTTParameters4Step();
+    NTTParameters4Step(); // = delete;
 
   private:
-    Modulus modulus_pool();
+    Modulus<T> modulus_pool();
 
-    Data omega_pool();
+    T omega_pool();
 
-    Data psi_pool();
+    T psi_pool();
 
     std::vector<int> matrix_dimention();
 
@@ -177,13 +163,9 @@ class NTTParameters4Step
 
     void n_inverse_generator_gpu();
 
-#ifdef PLANTARD_64
-    __uint128_t R_pool();
-#endif
-
   public:
-    std::vector<Root_>
-    gpu_root_of_unity_table_generator(std::vector<Data> table);
+    std::vector<Root<T>>
+    gpu_root_of_unity_table_generator(std::vector<T> table);
 };
 
 #endif // NTT_PARAMETERS_H

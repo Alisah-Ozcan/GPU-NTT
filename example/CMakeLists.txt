@@ -1,4 +1,4 @@
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${BINARY_LOCATION})
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${BINARY_LOCATION}/example)
 
 if(NOT DEFINED MODULAR_REDUCTION_TYPE)
     set(MODULAR_REDUCTION_TYPE 0)
@@ -36,20 +36,3 @@ foreach(i RANGE 0 ${EXECUTABLES_COUNT_LOOP})
     add_example(${exe} ${source})
 endforeach()
 
-if(MODULAR_REDUCTION_TYPE EQUAL 0)
-    set(DEFINITION BARRETT_64)
-elseif(MODULAR_REDUCTION_TYPE EQUAL 1)
-    set(DEFINITION GOLDILOCKS_64)
-elseif(MODULAR_REDUCTION_TYPE EQUAL 2)
-    set(DEFINITION PLANTARD_64)
-else()
-    message(FATAL_ERROR "Please use valid MODULAR_REDUCTION_TYPE! (0,1,2)")
-endif()
-
-add_compile_definitions(${DEFINITION})
-
-foreach(i RANGE 0 ${num_executables}-1)
-    math(EXPR index1 "${i} * 2")
-    list(GET EXECUTABLES ${index1} exe)
-    target_compile_definitions(${exe} PRIVATE ${DEFINITION})
-endforeach()

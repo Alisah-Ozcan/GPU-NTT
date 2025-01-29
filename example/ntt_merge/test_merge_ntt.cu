@@ -40,21 +40,11 @@ int main(int argc, char* argv[])
         BATCH = atoi(argv[2]);
     }
 
-#ifdef BARRETT_64
     ModularReductionType modular_reduction_type = ModularReductionType::BARRET;
-#elif defined(GOLDILOCKS_64)
-    ModularReductionType modular_reduction_type =
-        ModularReductionType::GOLDILOCK;
-#elif defined(PLANTARD_64)
-    ModularReductionType modular_reduction_type =
-        ModularReductionType::PLANTARD;
-#else
-#error "Please define reduction type."
-#endif
 
 #ifdef DEFAULT_MODULUS
-    NTTParameters parameters(LOGN, modular_reduction_type,
-                             ReductionPolynomial::X_N_minus);
+    NTTParameters<Data64> parameters(LOGN, modular_reduction_type,
+                                     ReductionPolynomial::X_N_minus);
 #else
     NTTFactors factor((Modulus) 576460752303415297, 288482366111684746,
                       238394956950829);
@@ -62,7 +52,7 @@ int main(int argc, char* argv[])
 #endif
 
     // NTT generator with certain modulus and root of unity
-    NTT_CPU generator(parameters);
+    NTTCPU<Data64> generator(parameters);
 
     std::random_device rd;
     // std::mt19937 gen(rd());
@@ -72,7 +62,7 @@ int main(int argc, char* argv[])
     std::uniform_int_distribution<unsigned long long> dis(minNumber, maxNumber);
 
     // Random data generation for polynomials
-    vector<vector<Data>> input1(BATCH);
+    vector<vector<Data64>> input1(BATCH);
     for (int j = 0; j < BATCH; j++)
     {
         for (int i = 0; i < parameters.n; i++)
@@ -82,68 +72,69 @@ int main(int argc, char* argv[])
     }
 
     // Performing CPU NTT
-    vector<vector<Data>> ntt_result(BATCH);
+    vector<vector<Data64>> ntt_result(BATCH);
     for (int i = 0; i < BATCH; i++)
     {
         ntt_result[i] = generator.ntt(input1[i]);
     }
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-    Data* InOut_Datas;
+    Data64* InOut_Datas;
 
     THROW_IF_CUDA_ERROR(
-        cudaMalloc(&InOut_Datas, BATCH * parameters.n * sizeof(Data)));
+        cudaMalloc(&InOut_Datas, BATCH * parameters.n * sizeof(Data64)));
 
     for (int j = 0; j < BATCH; j++)
     {
         THROW_IF_CUDA_ERROR(
             cudaMemcpy(InOut_Datas + (parameters.n * j), input1[j].data(),
-                       parameters.n * sizeof(Data), cudaMemcpyHostToDevice));
+                       parameters.n * sizeof(Data64), cudaMemcpyHostToDevice));
     }
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-    Root* Forward_Omega_Table_Device;
+    Root64* Forward_Omega_Table_Device;
 
     THROW_IF_CUDA_ERROR(
         cudaMalloc(&Forward_Omega_Table_Device,
-                   parameters.root_of_unity_size * sizeof(Root)));
+                   parameters.root_of_unity_size * sizeof(Root64)));
 
-    vector<Root_> forward_omega_table =
+    vector<Root64> forward_omega_table =
         parameters.gpu_root_of_unity_table_generator(
             parameters.forward_root_of_unity_table);
 
-    THROW_IF_CUDA_ERROR(cudaMemcpy(
-        Forward_Omega_Table_Device, forward_omega_table.data(),
-        parameters.root_of_unity_size * sizeof(Root), cudaMemcpyHostToDevice));
+    THROW_IF_CUDA_ERROR(
+        cudaMemcpy(Forward_Omega_Table_Device, forward_omega_table.data(),
+                   parameters.root_of_unity_size * sizeof(Root64),
+                   cudaMemcpyHostToDevice));
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-    Modulus* test_modulus;
-    THROW_IF_CUDA_ERROR(cudaMalloc(&test_modulus, sizeof(Modulus)));
+    Modulus64* test_modulus;
+    THROW_IF_CUDA_ERROR(cudaMalloc(&test_modulus, sizeof(Modulus64)));
 
-    Modulus test_modulus_[1] = {parameters.modulus};
+    Modulus64 test_modulus_[1] = {parameters.modulus};
 
-    THROW_IF_CUDA_ERROR(cudaMemcpy(test_modulus, test_modulus_, sizeof(Modulus),
-                                   cudaMemcpyHostToDevice));
+    THROW_IF_CUDA_ERROR(cudaMemcpy(test_modulus, test_modulus_,
+                                   sizeof(Modulus64), cudaMemcpyHostToDevice));
 
-    ntt_rns_configuration cfg_ntt = {.n_power = LOGN,
-                                     .ntt_type = FORWARD,
-                                     .reduction_poly =
-                                         ReductionPolynomial::X_N_minus,
-                                     .zero_padding = false,
-                                     .stream = 0};
+    ntt_rns_configuration<Data64> cfg_ntt = {.n_power = LOGN,
+                                             .ntt_type = FORWARD,
+                                             .reduction_poly =
+                                                 ReductionPolynomial::X_N_minus,
+                                             .zero_padding = false,
+                                             .stream = 0};
     GPU_NTT_Inplace(InOut_Datas, Forward_Omega_Table_Device, test_modulus,
                     cfg_ntt, BATCH, 1);
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-    Data* Output_Host;
+    Data64* Output_Host;
 
-    Output_Host = (Data*) malloc(BATCH * parameters.n * sizeof(Data));
+    Output_Host = (Data64*) malloc(BATCH * parameters.n * sizeof(Data64));
 
     THROW_IF_CUDA_ERROR(cudaMemcpy(Output_Host, InOut_Datas,
-                                   BATCH * parameters.n * sizeof(Data),
+                                   BATCH * parameters.n * sizeof(Data64),
                                    cudaMemcpyDeviceToHost));
 
     // Comparing GPU NTT results and CPU NTT results

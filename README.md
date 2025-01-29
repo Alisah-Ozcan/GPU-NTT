@@ -6,6 +6,9 @@ The associated research paper: https://eprint.iacr.org/2023/1410
 
 FFT variant of GPU-NTT is available: https://github.com/Alisah-Ozcan/GPU-FFT
 
+You no longer need to manually select a reduction method, as this version is now available in the [paper_version](https://github.com/Alisah-Ozcan/GPU-NTT/tree/paper_version)
+ branch. GPU-NTT now **automatically supports both 32-bit and 64-bit operations using Barrett Reduction**, and various optimizations will be introduced over time.
+
 ## Development
 
 ### Requirements
@@ -16,23 +19,17 @@ FFT variant of GPU-NTT is available: https://github.com/Alisah-Ozcan/GPU-FFT
 
 ### Build & Install
 
-Three different 64 modular reduction supported.(High bit sizes will added with using third-party codes.) They represented as numbers:
-
-- MODULAR_REDUCTION_TYPE=0 -> Barrett Reduction(64 bit)
-- MODULAR_REDUCTION_TYPE=1 -> Goldilocks Reduction(64 bit)
-- MODULAR_REDUCTION_TYPE=2 -> Plantard Reduction(64 bit)
-
 To build:
 
 ```bash
-$ cmake . -D CMAKE_CUDA_ARCHITECTURES=86 -D MODULAR_REDUCTION_TYPE=0 -B./build
+$ cmake . -D CMAKE_CUDA_ARCHITECTURES=86 -B./build
 $ cmake --build ./build/ --parallel
 ```
 
 To install:
 
 ```bash
-$ cmake . -D CMAKE_CUDA_ARCHITECTURES=86 -D MODULAR_REDUCTION_TYPE=0 -B./build
+$ cmake . -D CMAKE_CUDA_ARCHITECTURES=86 -B./build
 $ cmake --build ./build/ --parallel
 $ sudo cmake --install build
 ```
@@ -44,7 +41,7 @@ $ sudo cmake --install build
 To run examples:
 
 ```bash
-$ cmake -D CMAKE_CUDA_ARCHITECTURES=86 -D MODULAR_REDUCTION_TYPE=0 -D GPUNTT_BUILD_EXAMPLES=ON -B./build
+$ cmake -D CMAKE_CUDA_ARCHITECTURES=86 -D GPUNTT_BUILD_EXAMPLES=ON -B./build
 $ cmake --build ./build/ --parallel
 
 $ ./build/bin/cpu_4step_ntt <RING_SIZE_IN_LOG2> <BATCH_SIZE>
@@ -57,7 +54,7 @@ $ Example: ./build/bin/cpu_merge_ntt 15 1
 To run examples:
 
 ```bash
-$ cmake -D CMAKE_CUDA_ARCHITECTURES=86 -D MODULAR_REDUCTION_TYPE=0 -D GPUNTT_BUILD_EXAMPLES=ON -B./build
+$ cmake -D CMAKE_CUDA_ARCHITECTURES=86 -D GPUNTT_BUILD_EXAMPLES=ON -B./build
 $ cmake --build ./build/ --parallel
 
 $ ./build/bin/gpu_4step_ntt_examples <RING_SIZE_IN_LOG2> <BATCH_SIZE>
@@ -72,7 +69,7 @@ $ Example: ./build/bin/gpu_merge_ntt_examples 12 1
 To run benchmarks:
 
 ```bash
-$ cmake -D CMAKE_CUDA_ARCHITECTURES=86 -D MODULAR_REDUCTION_TYPE=0 -D GPUNTT_BUILD_BENCHMARKS=ON -B./build
+$ cmake -D CMAKE_CUDA_ARCHITECTURES=86 -D GPUNTT_BUILD_BENCHMARKS=ON -B./build
 $ cmake --build ./build/ --parallel
 
 $ ./build/bin/benchmark_4step_ntt <RING_SIZE_IN_LOG2> <BATCH_SIZE>
@@ -92,8 +89,6 @@ find_package(GPUNTT)
 # ...
 target_link_libraries(<your-target> (PRIVATE|PUBLIC|INTERFACE) GPUNTT::ntt CUDA::cudart)
 # ...
-add_compile_definitions(BARRETT_64) # Builded reduction method 
-target_compile_definitions(<your-target> PRIVATE BARRETT_64)
 set_target_properties(<your-target> PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
 # ...
 ```

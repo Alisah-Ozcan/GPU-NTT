@@ -35,19 +35,6 @@ target_include_directories(
     $<INSTALL_INTERFACE:include/GPUNTT-${PROJECT_VERSION}>
 )
 
-if(MODULAR_REDUCTION_TYPE EQUAL 0)
-    add_compile_definitions(BARRETT_64)
-    target_compile_definitions(ntt PRIVATE BARRETT_64)
-elseif(MODULAR_REDUCTION_TYPE EQUAL 1)
-    add_compile_definitions(GOLDILOCKS_64)
-    target_compile_definitions(ntt PRIVATE GOLDILOCKS_64)
-elseif(MODULAR_REDUCTION_TYPE EQUAL 2)
-    add_compile_definitions(PLANTARD_64)
-    target_compile_definitions(ntt PRIVATE PLANTARD_64)
-else()
-    message(FATAL_ERROR "Please use valid MODULAR_REDUCTION_TYPE! (0,1,2)")
-endif()
-
 set_target_properties(ntt PROPERTIES
         CUDA_SEPARABLE_COMPILATION ON
         POSITION_INDEPENDENT_CODE ON

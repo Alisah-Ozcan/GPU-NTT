@@ -55,10 +55,10 @@ int main(int argc, char* argv[])
 
         std::uniform_int_distribution<unsigned long long> dis2(0, number);
 
-        Modulus modulus(number);
+        Modulus64 modulus(number);
 
         // Random data generation for polynomials
-        vector<vector<Data>> input1(BATCH);
+        vector<vector<Data64>> input1(BATCH);
         for (int j = 0; j < BATCH; j++)
         {
             for (int i = 0; i < N; i++)
@@ -67,54 +67,40 @@ int main(int argc, char* argv[])
             }
         }
 
-        vector<Root_> forward_root_table;
-        vector<Root_> inverse_root_table;
-#ifdef PLANTARD_64
-        for (int i = 0; i < ROOT_SIZE; i++)
-        {
-            __uint128_t forward =
-                ((__uint128_t) (dis(gen)) << (__uint128_t) 64) +
-                ((__uint128_t) (dis(gen)));
-            __uint128_t inverse =
-                ((__uint128_t) (dis(gen)) << (__uint128_t) 64) +
-                ((__uint128_t) (dis(gen)));
-            forward_root_table.push_back(forward);
-            inverse_root_table.push_back(inverse);
-        }
+        vector<Root64> forward_root_table;
+        vector<Root64> inverse_root_table;
 
-        Ninverse n_inv = {.x = dis(gen), .y = dis(gen)};
-#else
         for (int i = 0; i < ROOT_SIZE; i++)
         {
             forward_root_table.push_back(dis2(gen));
             inverse_root_table.push_back(dis2(gen));
         }
-        Ninverse n_inv = dis2(gen);
-#endif
+        Ninverse64 n_inv = dis2(gen);
 
         ////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-        Data* InOut_Datas;
+        Data64* InOut_Datas;
 
-        THROW_IF_CUDA_ERROR(cudaMalloc(&InOut_Datas, BATCH * N * sizeof(Data)));
+        THROW_IF_CUDA_ERROR(
+            cudaMalloc(&InOut_Datas, BATCH * N * sizeof(Data64)));
 
         for (int j = 0; j < BATCH; j++)
         {
             THROW_IF_CUDA_ERROR(cudaMemcpy(InOut_Datas + (N * j),
-                                           input1[j].data(), N * sizeof(Data),
+                                           input1[j].data(), N * sizeof(Data64),
                                            cudaMemcpyHostToDevice));
         }
 
         ////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-        Root* Forward_Omega_Table_Device;
+        Root64* Forward_Omega_Table_Device;
 
-        THROW_IF_CUDA_ERROR(
-            cudaMalloc(&Forward_Omega_Table_Device, ROOT_SIZE * sizeof(Root)));
+        THROW_IF_CUDA_ERROR(cudaMalloc(&Forward_Omega_Table_Device,
+                                       ROOT_SIZE * sizeof(Root64)));
 
         THROW_IF_CUDA_ERROR(
             cudaMemcpy(Forward_Omega_Table_Device, forward_root_table.data(),
-                       ROOT_SIZE * sizeof(Root), cudaMemcpyHostToDevice));
+                       ROOT_SIZE * sizeof(Root64), cudaMemcpyHostToDevice));
 
         ////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -126,30 +112,30 @@ int main(int argc, char* argv[])
 
         ////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-        Modulus* modulus_device;
-        THROW_IF_CUDA_ERROR(cudaMalloc(&modulus_device, sizeof(Modulus)));
+        Modulus64* modulus_device;
+        THROW_IF_CUDA_ERROR(cudaMalloc(&modulus_device, sizeof(Modulus64)));
 
-        Modulus test_modulus_[1] = {modulus};
+        Modulus64 test_modulus_[1] = {modulus};
 
         THROW_IF_CUDA_ERROR(cudaMemcpy(modulus_device, test_modulus_,
-                                       sizeof(Modulus),
+                                       sizeof(Modulus64),
                                        cudaMemcpyHostToDevice));
 
-        Ninverse* ninverse_device;
-        THROW_IF_CUDA_ERROR(cudaMalloc(&ninverse_device, sizeof(Ninverse)));
+        Ninverse64* ninverse_device;
+        THROW_IF_CUDA_ERROR(cudaMalloc(&ninverse_device, sizeof(Ninverse64)));
 
-        Ninverse test_ninverse_[1] = {n_inv};
+        Ninverse64 test_ninverse_[1] = {n_inv};
 
         THROW_IF_CUDA_ERROR(cudaMemcpy(ninverse_device, test_ninverse_,
-                                       sizeof(Ninverse),
+                                       sizeof(Ninverse64),
                                        cudaMemcpyHostToDevice));
 
-        ntt_rns_configuration cfg_ntt = {.n_power = LOGN,
-                                         .ntt_type = FORWARD,
-                                         .reduction_poly =
-                                             ReductionPolynomial::X_N_minus,
-                                         .zero_padding = false,
-                                         .stream = 0};
+        ntt_rns_configuration<Data64> cfg_ntt = {
+            .n_power = LOGN,
+            .ntt_type = FORWARD,
+            .reduction_poly = ReductionPolynomial::X_N_minus,
+            .zero_padding = false,
+            .stream = 0};
 
         float time = 0;
         cudaEvent_t startx, stopx;

@@ -8,45 +8,44 @@
 
 #include "nttparameters.cuh"
 
-class NTT_4STEP_CPU
+template <typename T> class NTT_4STEP_CPU
 {
   public:
-    NTTParameters4Step parameters;
+    NTTParameters4Step<T> parameters;
 
-    NTT_4STEP_CPU(NTTParameters4Step parameters_);
+    NTT_4STEP_CPU(NTTParameters4Step<T> parameters_);
 
   public:
-    std::vector<Data> mult(std::vector<Data>& input1,
-                           std::vector<Data>& input2);
+    std::vector<T> mult(std::vector<T>& input1, std::vector<T>& input2);
 
-    std::vector<Data> ntt(std::vector<Data>& input);
+    std::vector<T> ntt(std::vector<T>& input);
 
-    std::vector<Data> intt(std::vector<Data>& input);
+    std::vector<T> intt(std::vector<T>& input);
 
   private:
-    void core_ntt(std::vector<Data>& input, std::vector<Data> root_table,
+    void core_ntt(std::vector<T>& input, std::vector<T> root_table,
                   int log_size);
 
-    void core_intt(std::vector<Data>& input, std::vector<Data> root_table,
+    void core_intt(std::vector<T>& input, std::vector<T> root_table,
                    int log_size);
 
-    void product(std::vector<Data>& input, std::vector<Data> root_table,
+    void product(std::vector<T>& input, std::vector<T> root_table,
                  int log_size);
 
-    std::vector<std::vector<Data>>
-    vector_to_matrix(const std::vector<Data>& array, int rows, int cols);
+    std::vector<std::vector<T>> vector_to_matrix(const std::vector<T>& array,
+                                                 int rows, int cols);
 
-    std::vector<std::vector<Data>>
-    vector_to_matrix_intt(const std::vector<Data>& array, int rows, int cols);
+    std::vector<std::vector<T>>
+    vector_to_matrix_intt(const std::vector<T>& array, int rows, int cols);
 
-    std::vector<Data>
-    matrix_to_vector(const std::vector<std::vector<Data>>& originalMatrix);
+    std::vector<T>
+    matrix_to_vector(const std::vector<std::vector<T>>& originalMatrix);
 
-    std::vector<std::vector<Data>>
-    transpose_matrix(const std::vector<std::vector<Data>>& originalMatrix);
+    std::vector<std::vector<T>>
+    transpose_matrix(const std::vector<std::vector<T>>& originalMatrix);
 
   public:
-    std::vector<Data> intt_first_transpose(const std::vector<Data>& input);
+    std::vector<T> intt_first_transpose(const std::vector<T>& input);
 };
 
 #endif // NTT_4STEP_CPU_H

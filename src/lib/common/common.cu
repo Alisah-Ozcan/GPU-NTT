@@ -117,6 +117,9 @@ template bool check_result<unsigned long long>(unsigned long long* input1,
                                                unsigned long long* input2,
                                                int size);
 
+template bool check_result<unsigned>(unsigned* input1, unsigned* input2,
+                                     int size);
+
 // GPU_ACTIVITY
 
 __global__ void GPU_ACTIVITY(unsigned long long* output,

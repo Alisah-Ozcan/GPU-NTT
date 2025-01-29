@@ -6,28 +6,31 @@
 
 #include "ntt_4step.cuh"
 
-__device__ void CooleyTukeyUnit_(Data& U, Data& V, Root& root, Modulus& modulus)
+template <typename T>
+__device__ void CooleyTukeyUnit_(T& U, T& V, Root<T>& root, Modulus<T>& modulus)
 {
-    Data u_ = U;
-    Data v_ = VALUE_GPU::mult(V, root, modulus);
+    T u_ = U;
+    T v_ = OPERATOR_GPU<T>::mult(V, root, modulus);
 
-    U = VALUE_GPU::add(u_, v_, modulus);
-    V = VALUE_GPU::sub(u_, v_, modulus);
+    U = OPERATOR_GPU<T>::add(u_, v_, modulus);
+    V = OPERATOR_GPU<T>::sub(u_, v_, modulus);
 }
 
-__device__ void GentlemanSandeUnit_(Data& U, Data& V, Root& root,
-                                    Modulus& modulus)
+template <typename T>
+__device__ void GentlemanSandeUnit_(T& U, T& V, Root<T>& root,
+                                    Modulus<T>& modulus)
 {
-    Data u_ = U;
-    Data v_ = V;
+    T u_ = U;
+    T v_ = V;
 
-    U = VALUE_GPU::add(u_, v_, modulus);
+    U = OPERATOR_GPU<T>::add(u_, v_, modulus);
 
-    v_ = VALUE_GPU::sub(u_, v_, modulus);
-    V = VALUE_GPU::mult(v_, root, modulus);
+    v_ = OPERATOR_GPU<T>::sub(u_, v_, modulus);
+    V = OPERATOR_GPU<T>::mult(v_, root, modulus);
 }
 
-__global__ void Transpose_Batch(Data* polynomial_in, Data* polynomial_out,
+template <typename T>
+__global__ void Transpose_Batch(T* polynomial_in, T* polynomial_out,
                                 const int row, const int col, int n_power)
 {
     int idx_x = threadIdx.x; // 16
@@ -38,7 +41,7 @@ __global__ void Transpose_Batch(Data* polynomial_in, Data* polynomial_out,
 
     int divindex = blockIdx.z << n_power;
 
-    __shared__ Data sharedmemorys[16][16];
+    __shared__ T sharedmemorys[16][16];
 
     sharedmemorys[idx_y][idx_x] =
         polynomial_in[((block_y + idx_y) * col) + block_x + idx_x + divindex];
@@ -48,35 +51,36 @@ __global__ void Transpose_Batch(Data* polynomial_in, Data* polynomial_out,
         sharedmemorys[idx_x][idx_y];
 }
 
-__host__ void GPU_Transpose(Data* input, Data* output, const int row,
-                            const int col, const int n_power,
-                            const int batch_size)
+template <typename T>
+__host__ void GPU_Transpose(T* input, T* output, const int row, const int col,
+                            const int n_power, const int batch_size)
 {
     Transpose_Batch<<<dim3(col >> 4, row >> 4, batch_size), dim3(16, 16)>>>(
         input, output, row, col, n_power);
     THROW_IF_CUDA_ERROR(cudaGetLastError());
 }
 
-__global__ void FourStepForwardCoreT1(Data* polynomial_in, Data* polynomial_out,
-                                      Root* n1_root_of_unity_table,
-                                      Modulus* modulus, int index1, int index2,
-                                      int n_power, int mod_count)
+template <typename T>
+__global__ void FourStepForwardCoreT1(T* polynomial_in, T* polynomial_out,
+                                      Root<T>* n1_root_of_unity_table,
+                                      Modulus<T>* modulus, int index1,
+                                      int index2, int n_power, int mod_count)
 {
     int idx_x = threadIdx.x;
     int idx_y = threadIdx.y;
     int block_x = blockIdx.x;
     int block_y = blockIdx.y;
 
-    __shared__ Data sharedmemorys[32][32 + 1];
+    __shared__ T sharedmemorys[32][32 + 1];
 
     int q_index = block_y % mod_count;
-    Modulus q_thread = modulus[q_index];
+    Modulus<T> q_thread = modulus[q_index];
 
     int idx_index = idx_x + (idx_y << 5);
     int global_addresss = idx_index + (block_x << 10);
     int divindex = block_y << n_power;
 
-    // Load data from global & store to shared
+    // Load T from global & store to shared
     sharedmemorys[idx_y][idx_x] = polynomial_in[global_addresss + divindex];
     sharedmemorys[idx_y + 8][idx_x] =
         polynomial_in[global_addresss + 256 + divindex];
@@ -133,25 +137,26 @@ __global__ void FourStepForwardCoreT1(Data* polynomial_in, Data* polynomial_out,
                    divindex] = sharedmemorys[idx_x][idx_y + 24];
 }
 
-__global__ void FourStepForwardCoreT1(Data* polynomial_in, Data* polynomial_out,
-                                      Root* n1_root_of_unity_table,
-                                      Modulus modulus, int index1, int index2,
-                                      int n_power)
+template <typename T>
+__global__ void FourStepForwardCoreT1(T* polynomial_in, T* polynomial_out,
+                                      Root<T>* n1_root_of_unity_table,
+                                      Modulus<T> modulus, int index1,
+                                      int index2, int n_power)
 {
     int idx_x = threadIdx.x;
     int idx_y = threadIdx.y;
     int block_x = blockIdx.x;
     int block_y = blockIdx.y;
 
-    __shared__ Data sharedmemorys[32][32 + 1];
+    __shared__ T sharedmemorys[32][32 + 1];
 
-    Modulus q_thread = modulus;
+    Modulus<T> q_thread = modulus;
 
     int idx_index = idx_x + (idx_y << 5);
     int global_addresss = idx_index + (block_x << 10);
     int divindex = block_y << n_power;
 
-    // Load data from global & store to shared
+    // Load T from global & store to shared
     sharedmemorys[idx_y][idx_x] = polynomial_in[global_addresss + divindex];
     sharedmemorys[idx_y + 8][idx_x] =
         polynomial_in[global_addresss + 256 + divindex];
@@ -208,20 +213,22 @@ __global__ void FourStepForwardCoreT1(Data* polynomial_in, Data* polynomial_out,
                    divindex] = sharedmemorys[idx_x][idx_y + 24];
 }
 
-__global__ void FourStepForwardCoreT2(Data* polynomial_in, Data* polynomial_out,
-                                      Root* n1_root_of_unity_table,
-                                      Modulus* modulus, int index1, int index2,
-                                      int index3, int n_power, int mod_count)
+template <typename T>
+__global__ void FourStepForwardCoreT2(T* polynomial_in, T* polynomial_out,
+                                      Root<T>* n1_root_of_unity_table,
+                                      Modulus<T>* modulus, int index1,
+                                      int index2, int index3, int n_power,
+                                      int mod_count)
 {
     int idx_x = threadIdx.x;
     int idx_y = threadIdx.y;
     int block_x = blockIdx.x;
     int block_y = blockIdx.y;
 
-    __shared__ Data sharedmemorys[16][64 + 1];
+    __shared__ T sharedmemorys[16][64 + 1];
 
     int q_index = block_y % mod_count;
-    Modulus q_thread = modulus[q_index];
+    Modulus<T> q_thread = modulus[q_index];
 
     int idx_index = idx_x + (idx_y << 5);
     int global_addresss = idx_index + (block_x << 10);
@@ -230,7 +237,7 @@ __global__ void FourStepForwardCoreT2(Data* polynomial_in, Data* polynomial_out,
     int shr_index1 = idx_y >> 1;
     int shr_index2 = idx_y % 2;
 
-    // Load data from global & store to shared
+    // Load T from global & store to shared
     sharedmemorys[shr_index1][idx_x + (shr_index2 << 5)] =
         polynomial_in[global_addresss + divindex];
     sharedmemorys[shr_index1 + 4][idx_x + (shr_index2 << 5)] =
@@ -290,19 +297,20 @@ __global__ void FourStepForwardCoreT2(Data* polynomial_in, Data* polynomial_out,
         sharedmemorys[global_index2][global_index1 + (idx_y << 1) + 48];
 }
 
-__global__ void FourStepForwardCoreT2(Data* polynomial_in, Data* polynomial_out,
-                                      Root* n1_root_of_unity_table,
-                                      Modulus modulus, int index1, int index2,
-                                      int index3, int n_power)
+template <typename T>
+__global__ void FourStepForwardCoreT2(T* polynomial_in, T* polynomial_out,
+                                      Root<T>* n1_root_of_unity_table,
+                                      Modulus<T> modulus, int index1,
+                                      int index2, int index3, int n_power)
 {
     int idx_x = threadIdx.x;
     int idx_y = threadIdx.y;
     int block_x = blockIdx.x;
     int block_y = blockIdx.y;
 
-    __shared__ Data sharedmemorys[16][64 + 1];
+    __shared__ T sharedmemorys[16][64 + 1];
 
-    Modulus q_thread = modulus;
+    Modulus<T> q_thread = modulus;
 
     int idx_index = idx_x + (idx_y << 5);
     int global_addresss = idx_index + (block_x << 10);
@@ -311,7 +319,7 @@ __global__ void FourStepForwardCoreT2(Data* polynomial_in, Data* polynomial_out,
     int shr_index1 = idx_y >> 1;
     int shr_index2 = idx_y % 2;
 
-    // Load data from global & store to shared
+    // Load T from global & store to shared
     sharedmemorys[shr_index1][idx_x + (shr_index2 << 5)] =
         polynomial_in[global_addresss + divindex];
     sharedmemorys[shr_index1 + 4][idx_x + (shr_index2 << 5)] =
@@ -371,20 +379,22 @@ __global__ void FourStepForwardCoreT2(Data* polynomial_in, Data* polynomial_out,
         sharedmemorys[global_index2][global_index1 + (idx_y << 1) + 48];
 }
 
-__global__ void FourStepForwardCoreT3(Data* polynomial_in, Data* polynomial_out,
-                                      Root* n1_root_of_unity_table,
-                                      Modulus* modulus, int index1, int index2,
-                                      int index3, int n_power, int mod_count)
+template <typename T>
+__global__ void FourStepForwardCoreT3(T* polynomial_in, T* polynomial_out,
+                                      Root<T>* n1_root_of_unity_table,
+                                      Modulus<T>* modulus, int index1,
+                                      int index2, int index3, int n_power,
+                                      int mod_count)
 {
     int idx_x = threadIdx.x;
     int idx_y = threadIdx.y;
     int block_x = blockIdx.x;
     int block_y = blockIdx.y;
 
-    __shared__ Data sharedmemorys[8][128 + 1];
+    __shared__ T sharedmemorys[8][128 + 1];
 
     int q_index = block_y % mod_count;
-    Modulus q_thread = modulus[q_index];
+    Modulus<T> q_thread = modulus[q_index];
 
     int idx_index = idx_x + (idx_y << 5);
     int global_addresss = idx_index + (block_x << 10);
@@ -393,7 +403,7 @@ __global__ void FourStepForwardCoreT3(Data* polynomial_in, Data* polynomial_out,
     int shr_index1 = idx_y >> 2;
     int shr_index2 = idx_y % 4;
 
-    // Load data from global & store to shared
+    // Load T from global & store to shared
     sharedmemorys[shr_index1][idx_x + (shr_index2 << 5)] =
         polynomial_in[global_addresss + divindex];
     sharedmemorys[shr_index1 + 2][idx_x + (shr_index2 << 5)] =
@@ -455,19 +465,20 @@ __global__ void FourStepForwardCoreT3(Data* polynomial_in, Data* polynomial_out,
         sharedmemorys[global_index2][global_index1 + (idx_y << 2) + 96];
 }
 
-__global__ void FourStepForwardCoreT3(Data* polynomial_in, Data* polynomial_out,
-                                      Root* n1_root_of_unity_table,
-                                      Modulus modulus, int index1, int index2,
-                                      int index3, int n_power)
+template <typename T>
+__global__ void FourStepForwardCoreT3(T* polynomial_in, T* polynomial_out,
+                                      Root<T>* n1_root_of_unity_table,
+                                      Modulus<T> modulus, int index1,
+                                      int index2, int index3, int n_power)
 {
     int idx_x = threadIdx.x;
     int idx_y = threadIdx.y;
     int block_x = blockIdx.x;
     int block_y = blockIdx.y;
 
-    __shared__ Data sharedmemorys[8][128 + 1];
+    __shared__ T sharedmemorys[8][128 + 1];
 
-    Modulus q_thread = modulus;
+    Modulus<T> q_thread = modulus;
 
     int idx_index = idx_x + (idx_y << 5);
     int global_addresss = idx_index + (block_x << 10);
@@ -476,7 +487,7 @@ __global__ void FourStepForwardCoreT3(Data* polynomial_in, Data* polynomial_out,
     int shr_index1 = idx_y >> 2;
     int shr_index2 = idx_y % 4;
 
-    // Load data from global & store to shared
+    // Load T from global & store to shared
     sharedmemorys[shr_index1][idx_x + (shr_index2 << 5)] =
         polynomial_in[global_addresss + divindex];
     sharedmemorys[shr_index1 + 2][idx_x + (shr_index2 << 5)] =
@@ -538,20 +549,22 @@ __global__ void FourStepForwardCoreT3(Data* polynomial_in, Data* polynomial_out,
         sharedmemorys[global_index2][global_index1 + (idx_y << 2) + 96];
 }
 
-__global__ void FourStepForwardCoreT4(Data* polynomial_in, Data* polynomial_out,
-                                      Root* n1_root_of_unity_table,
-                                      Modulus* modulus, int index1, int index2,
-                                      int index3, int n_power, int mod_count)
+template <typename T>
+__global__ void FourStepForwardCoreT4(T* polynomial_in, T* polynomial_out,
+                                      Root<T>* n1_root_of_unity_table,
+                                      Modulus<T>* modulus, int index1,
+                                      int index2, int index3, int n_power,
+                                      int mod_count)
 {
     int idx_x = threadIdx.x;
     int idx_y = threadIdx.y;
     int block_x = blockIdx.x;
     int block_y = blockIdx.y;
 
-    __shared__ Data sharedmemorys[4][256 + 1];
+    __shared__ T sharedmemorys[4][256 + 1];
 
     int q_index = block_y % mod_count;
-    Modulus q_thread = modulus[q_index];
+    Modulus<T> q_thread = modulus[q_index];
 
     int idx_index = idx_x + (idx_y << 5);
     int global_addresss = idx_index + (block_x << 10);
@@ -560,7 +573,7 @@ __global__ void FourStepForwardCoreT4(Data* polynomial_in, Data* polynomial_out,
     int shr_index1 = idx_y >> 3;
     int shr_index2 = idx_y % 8;
 
-    // Load data from global & store to shared
+    // Load T from global & store to shared
     sharedmemorys[shr_index1][idx_x + (shr_index2 << 5)] =
         polynomial_in[global_addresss + divindex];
     sharedmemorys[shr_index1 + 1][idx_x + (shr_index2 << 5)] =
@@ -622,19 +635,20 @@ __global__ void FourStepForwardCoreT4(Data* polynomial_in, Data* polynomial_out,
         sharedmemorys[global_index2][global_index1 + (idx_y << 3) + 192];
 }
 
-__global__ void FourStepForwardCoreT4(Data* polynomial_in, Data* polynomial_out,
-                                      Root* n1_root_of_unity_table,
-                                      Modulus modulus, int index1, int index2,
-                                      int index3, int n_power)
+template <typename T>
+__global__ void FourStepForwardCoreT4(T* polynomial_in, T* polynomial_out,
+                                      Root<T>* n1_root_of_unity_table,
+                                      Modulus<T> modulus, int index1,
+                                      int index2, int index3, int n_power)
 {
     int idx_x = threadIdx.x;
     int idx_y = threadIdx.y;
     int block_x = blockIdx.x;
     int block_y = blockIdx.y;
 
-    __shared__ Data sharedmemorys[4][256 + 1];
+    __shared__ T sharedmemorys[4][256 + 1];
 
-    Modulus q_thread = modulus;
+    Modulus<T> q_thread = modulus;
 
     int idx_index = idx_x + (idx_y << 5);
     int global_addresss = idx_index + (block_x << 10);
@@ -643,7 +657,7 @@ __global__ void FourStepForwardCoreT4(Data* polynomial_in, Data* polynomial_out,
     int shr_index1 = idx_y >> 3;
     int shr_index2 = idx_y % 8;
 
-    // Load data from global & store to shared
+    // Load T from global & store to shared
     sharedmemorys[shr_index1][idx_x + (shr_index2 << 5)] =
         polynomial_in[global_addresss + divindex];
     sharedmemorys[shr_index1 + 1][idx_x + (shr_index2 << 5)] =
@@ -705,12 +719,12 @@ __global__ void FourStepForwardCoreT4(Data* polynomial_in, Data* polynomial_out,
         sharedmemorys[global_index2][global_index1 + (idx_y << 3) + 192];
 }
 
-__global__ void FourStepPartialForwardCore1(Data* polynomial_in,
-                                            Root* n2_root_of_unity_table,
-                                            Root* w_root_of_unity_table,
-                                            Modulus* modulus, int small_npower,
-                                            int loc1, int loc2, int loop,
-                                            int n_power, int mod_count)
+template <typename T>
+__global__ void
+FourStepPartialForwardCore1(T* polynomial_in, Root<T>* n2_root_of_unity_table,
+                            Root<T>* w_root_of_unity_table, Modulus<T>* modulus,
+                            int small_npower, int loc1, int loc2, int loop,
+                            int n_power, int mod_count)
 {
     int idx_x = threadIdx.x;
     int idx_y = threadIdx.y;
@@ -718,13 +732,13 @@ __global__ void FourStepPartialForwardCore1(Data* polynomial_in,
     int block_y = blockIdx.y;
     int block_z = blockIdx.z;
 
-    __shared__ Data sharedmemorys[512];
+    __shared__ T sharedmemorys[512];
 
     int n_power__ = small_npower;
     int t_2 = n_power__ - 1;
 
     int q_index = block_z % mod_count;
-    Modulus q_thread = modulus[q_index];
+    Modulus<T> q_thread = modulus[q_index];
 
     int grid = (block_y << n_power__);
     int divindex = block_z << n_power;
@@ -734,12 +748,12 @@ __global__ void FourStepPartialForwardCore1(Data* polynomial_in,
 
     int load_store_address = global_addresss + grid;
 
-    Data mult_1 = polynomial_in[load_store_address + divindex];
-    Data mult_2 = polynomial_in[load_store_address + loc2 + divindex];
+    T mult_1 = polynomial_in[load_store_address + divindex];
+    T mult_2 = polynomial_in[load_store_address + loc2 + divindex];
 
-    mult_1 = VALUE_GPU::mult(mult_1, w_root_of_unity_table[load_store_address],
-                             q_thread);
-    mult_2 = VALUE_GPU::mult(
+    mult_1 = OPERATOR_GPU<T>::mult(
+        mult_1, w_root_of_unity_table[load_store_address], q_thread);
+    mult_2 = OPERATOR_GPU<T>::mult(
         mult_2, w_root_of_unity_table[load_store_address + loc2], q_thread);
 
     sharedmemorys[shared_addresss] = mult_1;
@@ -765,19 +779,19 @@ __global__ void FourStepPartialForwardCore1(Data* polynomial_in,
     }
     __syncthreads();
 
-    // Load data from shared & store to global
+    // Load T from shared & store to global
     polynomial_in[load_store_address + divindex] =
         sharedmemorys[shared_addresss];
     polynomial_in[load_store_address + loc2 + divindex] =
         sharedmemorys[shared_addresss + 256];
 }
 
-__global__ void FourStepPartialForwardCore1(Data* polynomial_in,
-                                            Root* n2_root_of_unity_table,
-                                            Root* w_root_of_unity_table,
-                                            Modulus modulus, int small_npower,
-                                            int loc1, int loc2, int loop,
-                                            int n_power)
+template <typename T>
+__global__ void
+FourStepPartialForwardCore1(T* polynomial_in, Root<T>* n2_root_of_unity_table,
+                            Root<T>* w_root_of_unity_table, Modulus<T> modulus,
+                            int small_npower, int loc1, int loc2, int loop,
+                            int n_power)
 {
     int idx_x = threadIdx.x;
     int idx_y = threadIdx.y;
@@ -785,12 +799,12 @@ __global__ void FourStepPartialForwardCore1(Data* polynomial_in,
     int block_y = blockIdx.y;
     int block_z = blockIdx.z;
 
-    __shared__ Data sharedmemorys[512];
+    __shared__ T sharedmemorys[512];
 
     int n_power__ = small_npower;
     int t_2 = n_power__ - 1;
 
-    Modulus q_thread = modulus;
+    Modulus<T> q_thread = modulus;
 
     int grid = (block_y << n_power__);
     int divindex = block_z << n_power;
@@ -800,12 +814,12 @@ __global__ void FourStepPartialForwardCore1(Data* polynomial_in,
 
     int load_store_address = global_addresss + grid;
 
-    Data mult_1 = polynomial_in[load_store_address + divindex];
-    Data mult_2 = polynomial_in[load_store_address + loc2 + divindex];
+    T mult_1 = polynomial_in[load_store_address + divindex];
+    T mult_2 = polynomial_in[load_store_address + loc2 + divindex];
 
-    mult_1 = VALUE_GPU::mult(mult_1, w_root_of_unity_table[load_store_address],
-                             q_thread);
-    mult_2 = VALUE_GPU::mult(
+    mult_1 = OPERATOR_GPU<T>::mult(
+        mult_1, w_root_of_unity_table[load_store_address], q_thread);
+    mult_2 = OPERATOR_GPU<T>::mult(
         mult_2, w_root_of_unity_table[load_store_address + loc2], q_thread);
 
     sharedmemorys[shared_addresss] = mult_1;
@@ -831,17 +845,18 @@ __global__ void FourStepPartialForwardCore1(Data* polynomial_in,
     }
     __syncthreads();
 
-    // Load data from shared & store to global
+    // Load T from shared & store to global
     polynomial_in[load_store_address + divindex] =
         sharedmemorys[shared_addresss];
     polynomial_in[load_store_address + loc2 + divindex] =
         sharedmemorys[shared_addresss + 256];
 }
 
-__global__ void FourStepPartialForwardCore2(Data* polynomial_in,
-                                            Root* n2_root_of_unity_table,
-                                            Modulus* modulus, int small_npower,
-                                            int n_power, int mod_count)
+template <typename T>
+__global__ void
+FourStepPartialForwardCore2(T* polynomial_in, Root<T>* n2_root_of_unity_table,
+                            Modulus<T>* modulus, int small_npower, int n_power,
+                            int mod_count)
 {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     int block_y = blockIdx.y;
@@ -849,7 +864,7 @@ __global__ void FourStepPartialForwardCore2(Data* polynomial_in,
 
     int local_idx = threadIdx.x;
 
-    __shared__ Data sharedmemorys[512];
+    __shared__ T sharedmemorys[512];
 
     int n_power__ = small_npower;
     int t_2 = 8;
@@ -859,7 +874,7 @@ __global__ void FourStepPartialForwardCore2(Data* polynomial_in,
     int divindex = block_z << n_power;
 
     int q_index = block_z % mod_count;
-    Modulus q_thread = modulus[q_index];
+    Modulus<T> q_thread = modulus[q_index];
 
     int address = dividx + ((idx >> t_2) << t_2) + idx;
 
@@ -907,10 +922,10 @@ __global__ void FourStepPartialForwardCore2(Data* polynomial_in,
     polynomial_in[address + t + divindex] = sharedmemorys[shrd_address + t];
 }
 
-__global__ void FourStepPartialForwardCore2(Data* polynomial_in,
-                                            Root* n2_root_of_unity_table,
-                                            Modulus modulus, int small_npower,
-                                            int n_power)
+template <typename T>
+__global__ void
+FourStepPartialForwardCore2(T* polynomial_in, Root<T>* n2_root_of_unity_table,
+                            Modulus<T> modulus, int small_npower, int n_power)
 {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     int block_y = blockIdx.y;
@@ -918,7 +933,7 @@ __global__ void FourStepPartialForwardCore2(Data* polynomial_in,
 
     int local_idx = threadIdx.x;
 
-    __shared__ Data sharedmemorys[512];
+    __shared__ T sharedmemorys[512];
 
     int n_power__ = small_npower;
     int t_2 = 8;
@@ -927,7 +942,7 @@ __global__ void FourStepPartialForwardCore2(Data* polynomial_in,
     int dividx = (block_y << n_power__);
     int divindex = block_z << n_power;
 
-    Modulus q_thread = modulus;
+    Modulus<T> q_thread = modulus;
 
     int address = dividx + ((idx >> t_2) << t_2) + idx;
 
@@ -975,40 +990,41 @@ __global__ void FourStepPartialForwardCore2(Data* polynomial_in,
     polynomial_in[address + t + divindex] = sharedmemorys[shrd_address + t];
 }
 
-__global__ void FourStepPartialForwardCore(Data* polynomial_in,
-                                           Root* n2_root_of_unity_table,
-                                           Root* w_root_of_unity_table,
-                                           Modulus* modulus, int small_npower,
-                                           int T, int LOOP, int n_power,
-                                           int mod_count)
+template <typename T>
+__global__ void
+FourStepPartialForwardCore(T* polynomial_in, Root<T>* n2_root_of_unity_table,
+                           Root<T>* w_root_of_unity_table, Modulus<T>* modulus,
+                           int small_npower, int t1, int LOOP, int n_power,
+                           int mod_count)
 {
     int local_idx = threadIdx.x;
     int block_x = blockIdx.x;
     int block_y = blockIdx.y;
 
-    __shared__ Data sharedmemorys[512];
+    __shared__ T sharedmemorys[512];
 
     int n_power__ = small_npower;
-    int t_2 = T;
+    int t_2 = t1;
     int t = 1 << t_2;
 
     int dividx = (block_x << n_power__);
     int divindex = block_y << n_power;
 
     int q_index = block_y % mod_count;
-    Modulus q_thread = modulus[q_index];
+    Modulus<T> q_thread = modulus[q_index];
 
     int address = dividx + ((local_idx >> t_2) << t_2) + local_idx;
 
     int shrd_dixidx_t = (local_idx >> t_2) << t_2;
     int shrd_address = shrd_dixidx_t + local_idx;
 
-    Data mult_1 = polynomial_in[address + divindex];
-    Data mult_2 = polynomial_in[address + t + divindex];
+    T mult_1 = polynomial_in[address + divindex];
+    T mult_2 = polynomial_in[address + t + divindex];
 
-    mult_1 = VALUE_GPU::mult(mult_1, w_root_of_unity_table[address], q_thread);
-    mult_2 =
-        VALUE_GPU::mult(mult_2, w_root_of_unity_table[address + t], q_thread);
+    mult_1 =
+        OPERATOR_GPU<T>::mult(mult_1, w_root_of_unity_table[address], q_thread);
+    mult_2 = OPERATOR_GPU<T>::mult(mult_2, w_root_of_unity_table[address + t],
+                                   q_thread);
 
     sharedmemorys[shrd_address] = mult_1;
     sharedmemorys[shrd_address + t] = mult_2;
@@ -1050,38 +1066,39 @@ __global__ void FourStepPartialForwardCore(Data* polynomial_in,
     polynomial_in[address + t + divindex] = sharedmemorys[shrd_address + t];
 }
 
-__global__ void FourStepPartialForwardCore(Data* polynomial_in,
-                                           Root* n2_root_of_unity_table,
-                                           Root* w_root_of_unity_table,
-                                           Modulus modulus, int small_npower,
-                                           int T, int LOOP, int n_power)
+template <typename T>
+__global__ void
+FourStepPartialForwardCore(T* polynomial_in, Root<T>* n2_root_of_unity_table,
+                           Root<T>* w_root_of_unity_table, Modulus<T> modulus,
+                           int small_npower, int t1, int LOOP, int n_power)
 {
     int local_idx = threadIdx.x;
     int block_x = blockIdx.x;
     int block_y = blockIdx.y;
 
-    __shared__ Data sharedmemorys[512];
+    __shared__ T sharedmemorys[512];
 
     int n_power__ = small_npower;
-    int t_2 = T;
+    int t_2 = t1;
     int t = 1 << t_2;
 
     int dividx = (block_x << n_power__);
     int divindex = block_y << n_power;
 
-    Modulus q_thread = modulus;
+    Modulus<T> q_thread = modulus;
 
     int address = dividx + ((local_idx >> t_2) << t_2) + local_idx;
 
     int shrd_dixidx_t = (local_idx >> t_2) << t_2;
     int shrd_address = shrd_dixidx_t + local_idx;
 
-    Data mult_1 = polynomial_in[address + divindex];
-    Data mult_2 = polynomial_in[address + t + divindex];
+    T mult_1 = polynomial_in[address + divindex];
+    T mult_2 = polynomial_in[address + t + divindex];
 
-    mult_1 = VALUE_GPU::mult(mult_1, w_root_of_unity_table[address], q_thread);
-    mult_2 =
-        VALUE_GPU::mult(mult_2, w_root_of_unity_table[address + t], q_thread);
+    mult_1 =
+        OPERATOR_GPU<T>::mult(mult_1, w_root_of_unity_table[address], q_thread);
+    mult_2 = OPERATOR_GPU<T>::mult(mult_2, w_root_of_unity_table[address + t],
+                                   q_thread);
 
     sharedmemorys[shrd_address] = mult_1;
     sharedmemorys[shrd_address + t] = mult_2;
@@ -1127,28 +1144,28 @@ __global__ void FourStepPartialForwardCore(Data* polynomial_in,
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // INTT PART
-
-__global__ void FourStepInverseCoreT1(Data* polynomial_in, Data* polynomial_out,
-                                      Root* n1_root_of_unity_table,
-                                      Modulus* modulus, int index1, int index2,
-                                      int n_power, int mod_count)
+template <typename T>
+__global__ void FourStepInverseCoreT1(T* polynomial_in, T* polynomial_out,
+                                      Root<T>* n1_root_of_unity_table,
+                                      Modulus<T>* modulus, int index1,
+                                      int index2, int n_power, int mod_count)
 {
     int idx_x = threadIdx.x;
     int idx_y = threadIdx.y;
     int block_x = blockIdx.x;
     int block_y = blockIdx.y;
 
-    __shared__ Data sharedmemorys[32][32 + 1];
+    __shared__ T sharedmemorys[32][32 + 1];
 
     int divindex = block_y << n_power;
 
     int q_index = block_y % mod_count;
-    Modulus q_thread = modulus[q_index];
+    Modulus<T> q_thread = modulus[q_index];
 
     int idx_index = idx_x + (idx_y << 5);
     int global_addresss = idx_index + (block_x << 10);
 
-    // Load data from global & store to shared
+    // Load T from global & store to shared
     sharedmemorys[idx_y][idx_x] = polynomial_in[global_addresss + divindex];
     sharedmemorys[idx_y + 8][idx_x] =
         polynomial_in[global_addresss + 256 + divindex];
@@ -1206,26 +1223,27 @@ __global__ void FourStepInverseCoreT1(Data* polynomial_in, Data* polynomial_out,
                    divindex] = sharedmemorys[idx_x][idx_y + 24];
 }
 
-__global__ void FourStepInverseCoreT1(Data* polynomial_in, Data* polynomial_out,
-                                      Root* n1_root_of_unity_table,
-                                      Modulus modulus, int index1, int index2,
-                                      int n_power)
+template <typename T>
+__global__ void FourStepInverseCoreT1(T* polynomial_in, T* polynomial_out,
+                                      Root<T>* n1_root_of_unity_table,
+                                      Modulus<T> modulus, int index1,
+                                      int index2, int n_power)
 {
     int idx_x = threadIdx.x;
     int idx_y = threadIdx.y;
     int block_x = blockIdx.x;
     int block_y = blockIdx.y;
 
-    __shared__ Data sharedmemorys[32][32 + 1];
+    __shared__ T sharedmemorys[32][32 + 1];
 
     int divindex = block_y << n_power;
 
-    Modulus q_thread = modulus;
+    Modulus<T> q_thread = modulus;
 
     int idx_index = idx_x + (idx_y << 5);
     int global_addresss = idx_index + (block_x << 10);
 
-    // Load data from global & store to shared
+    // Load T from global & store to shared
     sharedmemorys[idx_y][idx_x] = polynomial_in[global_addresss + divindex];
     sharedmemorys[idx_y + 8][idx_x] =
         polynomial_in[global_addresss + 256 + divindex];
@@ -1283,22 +1301,24 @@ __global__ void FourStepInverseCoreT1(Data* polynomial_in, Data* polynomial_out,
                    divindex] = sharedmemorys[idx_x][idx_y + 24];
 }
 
-__global__ void FourStepInverseCoreT2(Data* polynomial_in, Data* polynomial_out,
-                                      Root* n1_root_of_unity_table,
-                                      Modulus* modulus, int index1, int index2,
-                                      int index3, int n_power, int mod_count)
+template <typename T>
+__global__ void FourStepInverseCoreT2(T* polynomial_in, T* polynomial_out,
+                                      Root<T>* n1_root_of_unity_table,
+                                      Modulus<T>* modulus, int index1,
+                                      int index2, int index3, int n_power,
+                                      int mod_count)
 {
     int idx_x = threadIdx.x;
     int idx_y = threadIdx.y;
     int block_x = blockIdx.x;
     int block_y = blockIdx.y;
 
-    __shared__ Data sharedmemorys[16][64 + 1];
+    __shared__ T sharedmemorys[16][64 + 1];
 
     int divindex = block_y << n_power;
 
     int q_index = block_y % mod_count;
-    Modulus q_thread = modulus[q_index];
+    Modulus<T> q_thread = modulus[q_index];
 
     int idx_index = idx_x + (idx_y << 5);
     int global_addresss = idx_index + (block_x << 10);
@@ -1306,7 +1326,7 @@ __global__ void FourStepInverseCoreT2(Data* polynomial_in, Data* polynomial_out,
     int shr_index1 = idx_y >> 1;
     int shr_index2 = idx_y % 2;
 
-    // Load data from global & store to shared
+    // Load T from global & store to shared
     sharedmemorys[shr_index1][idx_x + (shr_index2 << 5)] =
         polynomial_in[global_addresss + divindex];
     sharedmemorys[shr_index1 + 4][idx_x + (shr_index2 << 5)] =
@@ -1365,21 +1385,22 @@ __global__ void FourStepInverseCoreT2(Data* polynomial_in, Data* polynomial_out,
         sharedmemorys[global_index2][global_index1 + (idx_y << 1) + 48];
 }
 
-__global__ void FourStepInverseCoreT2(Data* polynomial_in, Data* polynomial_out,
-                                      Root* n1_root_of_unity_table,
-                                      Modulus modulus, int index1, int index2,
-                                      int index3, int n_power)
+template <typename T>
+__global__ void FourStepInverseCoreT2(T* polynomial_in, T* polynomial_out,
+                                      Root<T>* n1_root_of_unity_table,
+                                      Modulus<T> modulus, int index1,
+                                      int index2, int index3, int n_power)
 {
     int idx_x = threadIdx.x;
     int idx_y = threadIdx.y;
     int block_x = blockIdx.x;
     int block_y = blockIdx.y;
 
-    __shared__ Data sharedmemorys[16][64 + 1];
+    __shared__ T sharedmemorys[16][64 + 1];
 
     int divindex = block_y << n_power;
 
-    Modulus q_thread = modulus;
+    Modulus<T> q_thread = modulus;
 
     int idx_index = idx_x + (idx_y << 5);
     int global_addresss = idx_index + (block_x << 10);
@@ -1387,7 +1408,7 @@ __global__ void FourStepInverseCoreT2(Data* polynomial_in, Data* polynomial_out,
     int shr_index1 = idx_y >> 1;
     int shr_index2 = idx_y % 2;
 
-    // Load data from global & store to shared
+    // Load T from global & store to shared
     sharedmemorys[shr_index1][idx_x + (shr_index2 << 5)] =
         polynomial_in[global_addresss + divindex];
     sharedmemorys[shr_index1 + 4][idx_x + (shr_index2 << 5)] =
@@ -1446,22 +1467,24 @@ __global__ void FourStepInverseCoreT2(Data* polynomial_in, Data* polynomial_out,
         sharedmemorys[global_index2][global_index1 + (idx_y << 1) + 48];
 }
 
-__global__ void FourStepInverseCoreT3(Data* polynomial_in, Data* polynomial_out,
-                                      Root* n1_root_of_unity_table,
-                                      Modulus* modulus, int index1, int index2,
-                                      int index3, int n_power, int mod_count)
+template <typename T>
+__global__ void FourStepInverseCoreT3(T* polynomial_in, T* polynomial_out,
+                                      Root<T>* n1_root_of_unity_table,
+                                      Modulus<T>* modulus, int index1,
+                                      int index2, int index3, int n_power,
+                                      int mod_count)
 {
     int idx_x = threadIdx.x;
     int idx_y = threadIdx.y;
     int block_x = blockIdx.x;
     int block_y = blockIdx.y;
 
-    __shared__ Data sharedmemorys[8][128 + 1];
+    __shared__ T sharedmemorys[8][128 + 1];
 
     int divindex = block_y << n_power;
 
     int q_index = block_y % mod_count;
-    Modulus q_thread = modulus[q_index];
+    Modulus<T> q_thread = modulus[q_index];
 
     int idx_index = idx_x + (idx_y << 5);
     int global_addresss = idx_index + (block_x << 10);
@@ -1469,7 +1492,7 @@ __global__ void FourStepInverseCoreT3(Data* polynomial_in, Data* polynomial_out,
     int shr_index1 = idx_y >> 2;
     int shr_index2 = idx_y % 4;
 
-    // Load data from global & store to shared
+    // Load T from global & store to shared
     sharedmemorys[shr_index1][idx_x + (shr_index2 << 5)] =
         polynomial_in[global_addresss + divindex];
     sharedmemorys[shr_index1 + 2][idx_x + (shr_index2 << 5)] =
@@ -1533,21 +1556,22 @@ __global__ void FourStepInverseCoreT3(Data* polynomial_in, Data* polynomial_out,
         sharedmemorys[global_index2][global_index1 + (idx_y << 2) + 96];
 }
 
-__global__ void FourStepInverseCoreT3(Data* polynomial_in, Data* polynomial_out,
-                                      Root* n1_root_of_unity_table,
-                                      Modulus modulus, int index1, int index2,
-                                      int index3, int n_power)
+template <typename T>
+__global__ void FourStepInverseCoreT3(T* polynomial_in, T* polynomial_out,
+                                      Root<T>* n1_root_of_unity_table,
+                                      Modulus<T> modulus, int index1,
+                                      int index2, int index3, int n_power)
 {
     int idx_x = threadIdx.x;
     int idx_y = threadIdx.y;
     int block_x = blockIdx.x;
     int block_y = blockIdx.y;
 
-    __shared__ Data sharedmemorys[8][128 + 1];
+    __shared__ T sharedmemorys[8][128 + 1];
 
     int divindex = block_y << n_power;
 
-    Modulus q_thread = modulus;
+    Modulus<T> q_thread = modulus;
 
     int idx_index = idx_x + (idx_y << 5);
     int global_addresss = idx_index + (block_x << 10);
@@ -1555,7 +1579,7 @@ __global__ void FourStepInverseCoreT3(Data* polynomial_in, Data* polynomial_out,
     int shr_index1 = idx_y >> 2;
     int shr_index2 = idx_y % 4;
 
-    // Load data from global & store to shared
+    // Load T from global & store to shared
     sharedmemorys[shr_index1][idx_x + (shr_index2 << 5)] =
         polynomial_in[global_addresss + divindex];
     sharedmemorys[shr_index1 + 2][idx_x + (shr_index2 << 5)] =
@@ -1619,22 +1643,24 @@ __global__ void FourStepInverseCoreT3(Data* polynomial_in, Data* polynomial_out,
         sharedmemorys[global_index2][global_index1 + (idx_y << 2) + 96];
 }
 
-__global__ void FourStepInverseCoreT4(Data* polynomial_in, Data* polynomial_out,
-                                      Root* n1_root_of_unity_table,
-                                      Modulus* modulus, int index1, int index2,
-                                      int index3, int n_power, int mod_count)
+template <typename T>
+__global__ void FourStepInverseCoreT4(T* polynomial_in, T* polynomial_out,
+                                      Root<T>* n1_root_of_unity_table,
+                                      Modulus<T>* modulus, int index1,
+                                      int index2, int index3, int n_power,
+                                      int mod_count)
 {
     int idx_x = threadIdx.x;
     int idx_y = threadIdx.y;
     int block_x = blockIdx.x;
     int block_y = blockIdx.y;
 
-    __shared__ Data sharedmemorys[4][256 + 1];
+    __shared__ T sharedmemorys[4][256 + 1];
 
     int divindex = block_y << n_power;
 
     int q_index = block_y % mod_count;
-    Modulus q_thread = modulus[q_index];
+    Modulus<T> q_thread = modulus[q_index];
 
     int idx_index = idx_x + (idx_y << 5);
     int global_addresss = idx_index + (block_x << 10);
@@ -1642,7 +1668,7 @@ __global__ void FourStepInverseCoreT4(Data* polynomial_in, Data* polynomial_out,
     int shr_index1 = idx_y >> 3;
     int shr_index2 = idx_y % 8;
 
-    // Load data from global & store to shared
+    // Load T from global & store to shared
     sharedmemorys[shr_index1][idx_x + (shr_index2 << 5)] =
         polynomial_in[global_addresss + divindex];
     sharedmemorys[shr_index1 + 1][idx_x + (shr_index2 << 5)] =
@@ -1706,21 +1732,22 @@ __global__ void FourStepInverseCoreT4(Data* polynomial_in, Data* polynomial_out,
         sharedmemorys[global_index2][global_index1 + (idx_y << 3) + 192];
 }
 
-__global__ void FourStepInverseCoreT4(Data* polynomial_in, Data* polynomial_out,
-                                      Root* n1_root_of_unity_table,
-                                      Modulus modulus, int index1, int index2,
-                                      int index3, int n_power)
+template <typename T>
+__global__ void FourStepInverseCoreT4(T* polynomial_in, T* polynomial_out,
+                                      Root<T>* n1_root_of_unity_table,
+                                      Modulus<T> modulus, int index1,
+                                      int index2, int index3, int n_power)
 {
     int idx_x = threadIdx.x;
     int idx_y = threadIdx.y;
     int block_x = blockIdx.x;
     int block_y = blockIdx.y;
 
-    __shared__ Data sharedmemorys[4][256 + 1];
+    __shared__ T sharedmemorys[4][256 + 1];
 
     int divindex = block_y << n_power;
 
-    Modulus q_thread = modulus;
+    Modulus<T> q_thread = modulus;
 
     int idx_index = idx_x + (idx_y << 5);
     int global_addresss = idx_index + (block_x << 10);
@@ -1728,7 +1755,7 @@ __global__ void FourStepInverseCoreT4(Data* polynomial_in, Data* polynomial_out,
     int shr_index1 = idx_y >> 3;
     int shr_index2 = idx_y % 8;
 
-    // Load data from global & store to shared
+    // Load T from global & store to shared
     sharedmemorys[shr_index1][idx_x + (shr_index2 << 5)] =
         polynomial_in[global_addresss + divindex];
     sharedmemorys[shr_index1 + 1][idx_x + (shr_index2 << 5)] =
@@ -1792,18 +1819,18 @@ __global__ void FourStepInverseCoreT4(Data* polynomial_in, Data* polynomial_out,
         sharedmemorys[global_index2][global_index1 + (idx_y << 3) + 192];
 }
 
-__global__ void FourStepPartialInverseCore(Data* polynomial_in,
-                                           Root* n2_root_of_unity_table,
-                                           Root* w_root_of_unity_table,
-                                           Modulus* modulus, int small_npower,
-                                           int LOOP, Ninverse* inverse,
-                                           int poly_n_power, int mod_count)
+template <typename T>
+__global__ void
+FourStepPartialInverseCore(T* polynomial_in, Root<T>* n2_root_of_unity_table,
+                           Root<T>* w_root_of_unity_table, Modulus<T>* modulus,
+                           int small_npower, int LOOP, Ninverse<T>* inverse,
+                           int poly_n_power, int mod_count)
 {
     int local_idx = threadIdx.x;
     int block_x = blockIdx.x;
     int block_y = blockIdx.y;
 
-    __shared__ Data sharedmemorys[512];
+    __shared__ T sharedmemorys[512];
 
     int small_npower_ = small_npower;
     int t_2 = 0;
@@ -1814,19 +1841,20 @@ __global__ void FourStepPartialInverseCore(Data* polynomial_in,
     int divindex = block_y << poly_n_power;
 
     int q_index = block_y % mod_count;
-    Modulus q_thread = modulus[q_index];
+    Modulus<T> q_thread = modulus[q_index];
 
     int address = dividx + ((local_idx >> t_2) << t_2) + local_idx;
 
     int shrd_dixidx_t = (local_idx >> t_2) << t_2;
     int shrd_address = shrd_dixidx_t + local_idx;
 
-    Data mult_1 = polynomial_in[address + divindex];
-    Data mult_2 = polynomial_in[address + t + divindex];
+    T mult_1 = polynomial_in[address + divindex];
+    T mult_2 = polynomial_in[address + t + divindex];
 
-    mult_1 = VALUE_GPU::mult(mult_1, w_root_of_unity_table[address], q_thread);
-    mult_2 =
-        VALUE_GPU::mult(mult_2, w_root_of_unity_table[address + t], q_thread);
+    mult_1 =
+        OPERATOR_GPU<T>::mult(mult_1, w_root_of_unity_table[address], q_thread);
+    mult_2 = OPERATOR_GPU<T>::mult(mult_2, w_root_of_unity_table[address + t],
+                                   q_thread);
 
     sharedmemorys[shrd_address] = mult_1;
     sharedmemorys[shrd_address + t] = mult_2;
@@ -1853,27 +1881,27 @@ __global__ void FourStepPartialInverseCore(Data* polynomial_in,
                         n2_root_of_unity_table[(local_idx >> t_2)], q_thread);
     __syncthreads();
 
-    Data temp1 =
-        VALUE_GPU::mult(sharedmemorys[shrd_address], inverse[0], q_thread);
+    T temp1 = OPERATOR_GPU<T>::mult(sharedmemorys[shrd_address], inverse[0],
+                                    q_thread);
     polynomial_in[address + divindex] = temp1;
 
-    Data temp2 =
-        VALUE_GPU::mult(sharedmemorys[shrd_address + t], inverse[0], q_thread);
+    T temp2 = OPERATOR_GPU<T>::mult(sharedmemorys[shrd_address + t], inverse[0],
+                                    q_thread);
     polynomial_in[address + t + divindex] = temp2;
 }
 
-__global__ void FourStepPartialInverseCore(Data* polynomial_in,
-                                           Root* n2_root_of_unity_table,
-                                           Root* w_root_of_unity_table,
-                                           Modulus modulus, int small_npower,
-                                           int LOOP, Ninverse inverse,
-                                           int poly_n_power)
+template <typename T>
+__global__ void
+FourStepPartialInverseCore(T* polynomial_in, Root<T>* n2_root_of_unity_table,
+                           Root<T>* w_root_of_unity_table, Modulus<T> modulus,
+                           int small_npower, int LOOP, Ninverse<T> inverse,
+                           int poly_n_power)
 {
     int local_idx = threadIdx.x;
     int block_x = blockIdx.x;
     int block_y = blockIdx.y;
 
-    __shared__ Data sharedmemorys[512];
+    __shared__ T sharedmemorys[512];
 
     int small_npower_ = small_npower;
     int t_2 = 0;
@@ -1883,19 +1911,20 @@ __global__ void FourStepPartialInverseCore(Data* polynomial_in,
 
     int divindex = block_y << poly_n_power;
 
-    Modulus q_thread = modulus;
+    Modulus<T> q_thread = modulus;
 
     int address = dividx + ((local_idx >> t_2) << t_2) + local_idx;
 
     int shrd_dixidx_t = (local_idx >> t_2) << t_2;
     int shrd_address = shrd_dixidx_t + local_idx;
 
-    Data mult_1 = polynomial_in[address + divindex];
-    Data mult_2 = polynomial_in[address + t + divindex];
+    T mult_1 = polynomial_in[address + divindex];
+    T mult_2 = polynomial_in[address + t + divindex];
 
-    mult_1 = VALUE_GPU::mult(mult_1, w_root_of_unity_table[address], q_thread);
-    mult_2 =
-        VALUE_GPU::mult(mult_2, w_root_of_unity_table[address + t], q_thread);
+    mult_1 =
+        OPERATOR_GPU<T>::mult(mult_1, w_root_of_unity_table[address], q_thread);
+    mult_2 = OPERATOR_GPU<T>::mult(mult_2, w_root_of_unity_table[address + t],
+                                   q_thread);
 
     sharedmemorys[shrd_address] = mult_1;
     sharedmemorys[shrd_address + t] = mult_2;
@@ -1922,22 +1951,22 @@ __global__ void FourStepPartialInverseCore(Data* polynomial_in,
                         n2_root_of_unity_table[(local_idx >> t_2)], q_thread);
     __syncthreads();
 
-    Data temp1 =
-        VALUE_GPU::mult(sharedmemorys[shrd_address], inverse, q_thread);
+    T temp1 =
+        OPERATOR_GPU<T>::mult(sharedmemorys[shrd_address], inverse, q_thread);
     polynomial_in[address + divindex] = temp1;
 
-    Data temp2 =
-        VALUE_GPU::mult(sharedmemorys[shrd_address + t], inverse, q_thread);
+    T temp2 = OPERATOR_GPU<T>::mult(sharedmemorys[shrd_address + t], inverse,
+                                    q_thread);
     polynomial_in[address + t + divindex] = temp2;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-__global__ void FourStepPartialInverseCore1(Data* polynomial_in,
-                                            Root* n2_root_of_unity_table,
-                                            Root* w_root_of_unity_table,
-                                            Modulus* modulus, int small_npower,
-                                            int poly_n_power, int mod_count)
+template <typename T>
+__global__ void
+FourStepPartialInverseCore1(T* polynomial_in, Root<T>* n2_root_of_unity_table,
+                            Root<T>* w_root_of_unity_table, Modulus<T>* modulus,
+                            int small_npower, int poly_n_power, int mod_count)
 {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     int block_y = blockIdx.y;
@@ -1945,7 +1974,7 @@ __global__ void FourStepPartialInverseCore1(Data* polynomial_in,
 
     int local_idx = threadIdx.x;
 
-    __shared__ Data sharedmemorys[512];
+    __shared__ T sharedmemorys[512];
 
     int small_npower_ = small_npower;
     int t_2 = 0;
@@ -1956,19 +1985,20 @@ __global__ void FourStepPartialInverseCore1(Data* polynomial_in,
     int divindex = block_z << poly_n_power;
 
     int q_index = block_z % mod_count;
-    Modulus q_thread = modulus[q_index];
+    Modulus<T> q_thread = modulus[q_index];
 
     int address = dividx + ((idx >> t_2) << t_2) + idx;
 
     int shrd_dixidx_t = (local_idx >> t_2) << t_2;
     int shrd_address = shrd_dixidx_t + local_idx;
 
-    Data mult_1 = polynomial_in[address + divindex];
-    Data mult_2 = polynomial_in[address + t + divindex];
+    T mult_1 = polynomial_in[address + divindex];
+    T mult_2 = polynomial_in[address + t + divindex];
 
-    mult_1 = VALUE_GPU::mult(mult_1, w_root_of_unity_table[address], q_thread);
-    mult_2 =
-        VALUE_GPU::mult(mult_2, w_root_of_unity_table[address + t], q_thread);
+    mult_1 =
+        OPERATOR_GPU<T>::mult(mult_1, w_root_of_unity_table[address], q_thread);
+    mult_2 = OPERATOR_GPU<T>::mult(mult_2, w_root_of_unity_table[address + t],
+                                   q_thread);
 
     sharedmemorys[shrd_address] = mult_1;
     sharedmemorys[shrd_address + t] = mult_2;
@@ -1997,11 +2027,11 @@ __global__ void FourStepPartialInverseCore1(Data* polynomial_in,
     polynomial_in[address + t + divindex] = sharedmemorys[shrd_address + t];
 }
 
-__global__ void FourStepPartialInverseCore1(Data* polynomial_in,
-                                            Root* n2_root_of_unity_table,
-                                            Root* w_root_of_unity_table,
-                                            Modulus modulus, int small_npower,
-                                            int poly_n_power)
+template <typename T>
+__global__ void
+FourStepPartialInverseCore1(T* polynomial_in, Root<T>* n2_root_of_unity_table,
+                            Root<T>* w_root_of_unity_table, Modulus<T> modulus,
+                            int small_npower, int poly_n_power)
 {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     int block_y = blockIdx.y;
@@ -2009,7 +2039,7 @@ __global__ void FourStepPartialInverseCore1(Data* polynomial_in,
 
     int local_idx = threadIdx.x;
 
-    __shared__ Data sharedmemorys[512];
+    __shared__ T sharedmemorys[512];
 
     int small_npower_ = small_npower;
     int t_2 = 0;
@@ -2019,19 +2049,20 @@ __global__ void FourStepPartialInverseCore1(Data* polynomial_in,
 
     int divindex = block_z << poly_n_power;
 
-    Modulus q_thread = modulus;
+    Modulus<T> q_thread = modulus;
 
     int address = dividx + ((idx >> t_2) << t_2) + idx;
 
     int shrd_dixidx_t = (local_idx >> t_2) << t_2;
     int shrd_address = shrd_dixidx_t + local_idx;
 
-    Data mult_1 = polynomial_in[address + divindex];
-    Data mult_2 = polynomial_in[address + t + divindex];
+    T mult_1 = polynomial_in[address + divindex];
+    T mult_2 = polynomial_in[address + t + divindex];
 
-    mult_1 = VALUE_GPU::mult(mult_1, w_root_of_unity_table[address], q_thread);
-    mult_2 =
-        VALUE_GPU::mult(mult_2, w_root_of_unity_table[address + t], q_thread);
+    mult_1 =
+        OPERATOR_GPU<T>::mult(mult_1, w_root_of_unity_table[address], q_thread);
+    mult_2 = OPERATOR_GPU<T>::mult(mult_2, w_root_of_unity_table[address + t],
+                                   q_thread);
 
     sharedmemorys[shrd_address] = mult_1;
     sharedmemorys[shrd_address + t] = mult_2;
@@ -2060,12 +2091,11 @@ __global__ void FourStepPartialInverseCore1(Data* polynomial_in,
     polynomial_in[address + t + divindex] = sharedmemorys[shrd_address + t];
 }
 
-__global__ void FourStepPartialInverseCore2(Data* polynomial_in,
-                                            Root* n2_root_of_unity_table,
-                                            Modulus* modulus, int small_npower,
-                                            int T, int loc1, int loc2, int loc3,
-                                            int loop, Ninverse* inverse,
-                                            int poly_n_power, int mod_count)
+template <typename T>
+__global__ void FourStepPartialInverseCore2(
+    T* polynomial_in, Root<T>* n2_root_of_unity_table, Modulus<T>* modulus,
+    int small_npower, int t1, int loc1, int loc2, int loc3, int loop,
+    Ninverse<T>* inverse, int poly_n_power, int mod_count)
 {
     int idx_x = threadIdx.x;
     int idx_y = threadIdx.y;
@@ -2073,15 +2103,15 @@ __global__ void FourStepPartialInverseCore2(Data* polynomial_in,
     int block_y = blockIdx.y;
     int block_z = blockIdx.z;
 
-    __shared__ Data sharedmemorys[512];
+    __shared__ T sharedmemorys[512];
 
     int small_npower_ = small_npower;
-    int t_2 = T;
+    int t_2 = t1;
 
     int divindex = block_z << poly_n_power;
 
     int q_index = block_z % mod_count;
-    Modulus q_thread = modulus[q_index];
+    Modulus<T> q_thread = modulus[q_index];
 
     int grid = block_y << small_npower_;
 
@@ -2090,7 +2120,7 @@ __global__ void FourStepPartialInverseCore2(Data* polynomial_in,
 
     int load_store_address = global_addresss + grid;
 
-    // Load data from global & store to shared
+    // Load T from global & store to shared
     sharedmemorys[shared_addresss] =
         polynomial_in[load_store_address + divindex];
     sharedmemorys[shared_addresss + 256] =
@@ -2122,21 +2152,21 @@ __global__ void FourStepPartialInverseCore2(Data* polynomial_in,
         __syncthreads();
     }
 
-    Data temp1 =
-        VALUE_GPU::mult(sharedmemorys[shared_addresss], inverse[0], q_thread);
+    T temp1 = OPERATOR_GPU<T>::mult(sharedmemorys[shared_addresss], inverse[0],
+                                    q_thread);
     polynomial_in[load_store_address + divindex] = temp1;
 
-    Data temp2 = VALUE_GPU::mult(sharedmemorys[shared_addresss + 256],
-                                 inverse[0], q_thread);
+    T temp2 = OPERATOR_GPU<T>::mult(sharedmemorys[shared_addresss + 256],
+                                    inverse[0], q_thread);
     polynomial_in[load_store_address + loc2 + divindex] = temp2;
 }
 
-__global__ void FourStepPartialInverseCore2(Data* polynomial_in,
-                                            Root* n2_root_of_unity_table,
-                                            Modulus modulus, int small_npower,
-                                            int T, int loc1, int loc2, int loc3,
-                                            int loop, Ninverse inverse,
-                                            int poly_n_power)
+template <typename T>
+__global__ void
+FourStepPartialInverseCore2(T* polynomial_in, Root<T>* n2_root_of_unity_table,
+                            Modulus<T> modulus, int small_npower, int t1,
+                            int loc1, int loc2, int loc3, int loop,
+                            Ninverse<T> inverse, int poly_n_power)
 {
     int idx_x = threadIdx.x;
     int idx_y = threadIdx.y;
@@ -2144,14 +2174,14 @@ __global__ void FourStepPartialInverseCore2(Data* polynomial_in,
     int block_y = blockIdx.y;
     int block_z = blockIdx.z;
 
-    __shared__ Data sharedmemorys[512];
+    __shared__ T sharedmemorys[512];
 
     int small_npower_ = small_npower;
-    int t_2 = T;
+    int t_2 = t1;
 
     int divindex = block_z << poly_n_power;
 
-    Modulus q_thread = modulus;
+    Modulus<T> q_thread = modulus;
 
     int grid = block_y << small_npower_;
 
@@ -2160,7 +2190,7 @@ __global__ void FourStepPartialInverseCore2(Data* polynomial_in,
 
     int load_store_address = global_addresss + grid;
 
-    // Load data from global & store to shared
+    // Load T from global & store to shared
     sharedmemorys[shared_addresss] =
         polynomial_in[load_store_address + divindex];
     sharedmemorys[shared_addresss + 256] =
@@ -2192,21 +2222,21 @@ __global__ void FourStepPartialInverseCore2(Data* polynomial_in,
         __syncthreads();
     }
 
-    Data temp1 =
-        VALUE_GPU::mult(sharedmemorys[shared_addresss], inverse, q_thread);
+    T temp1 = OPERATOR_GPU<T>::mult(sharedmemorys[shared_addresss], inverse,
+                                    q_thread);
     polynomial_in[load_store_address + divindex] = temp1;
 
-    Data temp2 = VALUE_GPU::mult(sharedmemorys[shared_addresss + 256], inverse,
-                                 q_thread);
+    T temp2 = OPERATOR_GPU<T>::mult(sharedmemorys[shared_addresss + 256],
+                                    inverse, q_thread);
     polynomial_in[load_store_address + loc2 + divindex] = temp2;
 }
 
-__host__ void GPU_4STEP_NTT(Data* device_in, Data* device_out,
-                            Root* n1_root_of_unity_table,
-                            Root* n2_root_of_unity_table,
-                            Root* W_root_of_unity_table, Modulus* modulus,
-                            ntt4step_rns_configuration cfg, int batch_size,
-                            int mod_count)
+template <typename T>
+__host__ void
+GPU_4STEP_NTT(T* device_in, T* device_out, Root<T>* n1_root_of_unity_table,
+              Root<T>* n2_root_of_unity_table, Root<T>* W_root_of_unity_table,
+              Modulus<T>* modulus, ntt4step_rns_configuration<T> cfg,
+              int batch_size, int mod_count)
 {
     switch (cfg.ntt_type)
     {
@@ -2655,11 +2685,11 @@ __host__ void GPU_4STEP_NTT(Data* device_in, Data* device_out,
     }
 }
 
-__host__ void GPU_4STEP_NTT(Data* device_in, Data* device_out,
-                            Root* n1_root_of_unity_table,
-                            Root* n2_root_of_unity_table,
-                            Root* W_root_of_unity_table, Modulus modulus,
-                            ntt4step_configuration cfg, int batch_size)
+template <typename T>
+__host__ void
+GPU_4STEP_NTT(T* device_in, T* device_out, Root<T>* n1_root_of_unity_table,
+              Root<T>* n2_root_of_unity_table, Root<T>* W_root_of_unity_table,
+              Modulus<T> modulus, ntt4step_configuration<T> cfg, int batch_size)
 {
     switch (cfg.ntt_type)
     {
@@ -3091,3 +3121,413 @@ __host__ void GPU_4STEP_NTT(Data* device_in, Data* device_out,
             break;
     }
 }
+
+////////////////////////////////////
+// Explicit Template Specializations
+////////////////////////////////////
+
+template <> struct ntt4step_configuration<Data32>
+{
+    int n_power;
+    type ntt_type;
+    Ninverse<Data32> mod_inverse;
+    cudaStream_t stream;
+};
+
+template <> struct ntt4step_configuration<Data64>
+{
+    int n_power;
+    type ntt_type;
+    Ninverse<Data64> mod_inverse;
+    cudaStream_t stream;
+};
+
+template <> struct ntt4step_rns_configuration<Data32>
+{
+    int n_power;
+    type ntt_type;
+    Ninverse<Data32>* mod_inverse;
+    cudaStream_t stream;
+};
+
+template <> struct ntt4step_rns_configuration<Data64>
+{
+    int n_power;
+    type ntt_type;
+    Ninverse<Data64>* mod_inverse;
+    cudaStream_t stream;
+};
+
+template __device__ void CooleyTukeyUnit_<Data32>(Data32& U, Data32& V,
+                                                  Root<Data32>& root,
+                                                  Modulus<Data32>& modulus);
+
+template __device__ void CooleyTukeyUnit_<Data64>(Data64& U, Data64& V,
+                                                  Root<Data64>& root,
+                                                  Modulus<Data64>& modulus);
+
+template __device__ void GentlemanSandeUnit_<Data32>(Data32& U, Data32& V,
+                                                     Root<Data32>& root,
+                                                     Modulus<Data32>& modulus);
+
+template __device__ void GentlemanSandeUnit_<Data64>(Data64& U, Data64& V,
+                                                     Root<Data64>& root,
+                                                     Modulus<Data64>& modulus);
+
+template __global__ void Transpose_Batch<Data32>(Data32* polynomial_in,
+                                                 Data32* polynomial_out,
+                                                 const int row, const int col,
+                                                 int n_power);
+
+template __global__ void Transpose_Batch<Data64>(Data64* polynomial_in,
+                                                 Data64* polynomial_out,
+                                                 const int row, const int col,
+                                                 int n_power);
+
+template __host__ void GPU_Transpose<Data32>(Data32* polynomial_in,
+                                             Data32* polynomial_out,
+                                             const int row, const int col,
+                                             const int n_power,
+                                             const int batch_size);
+
+template __host__ void GPU_Transpose<Data64>(Data64* polynomial_in,
+                                             Data64* polynomial_out,
+                                             const int row, const int col,
+                                             const int n_power,
+                                             const int batch_size);
+
+template __global__ void
+FourStepForwardCoreT1<Data32>(Data32* polynomial_in, Data32* polynomial_out,
+                              Root<Data32>* n1_root_of_unity_table,
+                              Modulus<Data32>* modulus, int index1, int index2,
+                              int n_power, int mod_count);
+
+template __global__ void
+FourStepForwardCoreT1<Data64>(Data64* polynomial_in, Data64* polynomial_out,
+                              Root<Data64>* n1_root_of_unity_table,
+                              Modulus<Data64>* modulus, int index1, int index2,
+                              int n_power, int mod_count);
+
+template __global__ void
+FourStepForwardCoreT1<Data32>(Data32* polynomial_in, Data32* polynomial_out,
+                              Root<Data32>* n1_root_of_unity_table,
+                              Modulus<Data32> modulus, int index1, int index2,
+                              int n_power);
+
+template __global__ void
+FourStepForwardCoreT1<Data64>(Data64* polynomial_in, Data64* polynomial_out,
+                              Root<Data64>* n1_root_of_unity_table,
+                              Modulus<Data64> modulus, int index1, int index2,
+                              int n_power);
+
+template __global__ void
+FourStepForwardCoreT2<Data32>(Data32* polynomial_in, Data32* polynomial_out,
+                              Root<Data32>* n1_root_of_unity_table,
+                              Modulus<Data32>* modulus, int index1, int index2,
+                              int index3, int n_power, int mod_count);
+
+template __global__ void
+FourStepForwardCoreT2<Data64>(Data64* polynomial_in, Data64* polynomial_out,
+                              Root<Data64>* n1_root_of_unity_table,
+                              Modulus<Data64>* modulus, int index1, int index2,
+                              int index3, int n_power, int mod_count);
+
+template __global__ void
+FourStepForwardCoreT2<Data32>(Data32* polynomial_in, Data32* polynomial_out,
+                              Root<Data32>* n1_root_of_unity_table,
+                              Modulus<Data32> modulus, int index1, int index2,
+                              int index3, int n_power);
+
+template __global__ void
+FourStepForwardCoreT2<Data64>(Data64* polynomial_in, Data64* polynomial_out,
+                              Root<Data64>* n1_root_of_unity_table,
+                              Modulus<Data64> modulus, int index1, int index2,
+                              int index3, int n_power);
+
+template __global__ void
+FourStepForwardCoreT3<Data32>(Data32* polynomial_in, Data32* polynomial_out,
+                              Root<Data32>* n1_root_of_unity_table,
+                              Modulus<Data32>* modulus, int index1, int index2,
+                              int index3, int n_power, int mod_count);
+
+template __global__ void
+FourStepForwardCoreT3<Data64>(Data64* polynomial_in, Data64* polynomial_out,
+                              Root<Data64>* n1_root_of_unity_table,
+                              Modulus<Data64>* modulus, int index1, int index2,
+                              int index3, int n_power, int mod_count);
+
+template __global__ void
+FourStepForwardCoreT3<Data32>(Data32* polynomial_in, Data32* polynomial_out,
+                              Root<Data32>* n1_root_of_unity_table,
+                              Modulus<Data32> modulus, int index1, int index2,
+                              int index3, int n_power);
+
+template __global__ void
+FourStepForwardCoreT3<Data64>(Data64* polynomial_in, Data64* polynomial_out,
+                              Root<Data64>* n1_root_of_unity_table,
+                              Modulus<Data64> modulus, int index1, int index2,
+                              int index3, int n_power);
+
+template __global__ void
+FourStepForwardCoreT4<Data32>(Data32* polynomial_in, Data32* polynomial_out,
+                              Root<Data32>* n1_root_of_unity_table,
+                              Modulus<Data32>* modulus, int index1, int index2,
+                              int index3, int n_power, int mod_count);
+
+template __global__ void
+FourStepForwardCoreT4<Data64>(Data64* polynomial_in, Data64* polynomial_out,
+                              Root<Data64>* n1_root_of_unity_table,
+                              Modulus<Data64>* modulus, int index1, int index2,
+                              int index3, int n_power, int mod_count);
+
+template __global__ void
+FourStepForwardCoreT4<Data32>(Data32* polynomial_in, Data32* polynomial_out,
+                              Root<Data32>* n1_root_of_unity_table,
+                              Modulus<Data32> modulus, int index1, int index2,
+                              int index3, int n_power);
+
+template __global__ void
+FourStepForwardCoreT4<Data64>(Data64* polynomial_in, Data64* polynomial_out,
+                              Root<Data64>* n1_root_of_unity_table,
+                              Modulus<Data64> modulus, int index1, int index2,
+                              int index3, int n_power);
+
+template __global__ void FourStepPartialForwardCore1<Data32>(
+    Data32* polynomial_in, Root<Data32>* n2_root_of_unity_table,
+    Root<Data32>* w_root_of_unity_table, Modulus<Data32>* modulus,
+    int small_npower, int loc1, int loc2, int loop, int n_power, int mod_count);
+
+template __global__ void FourStepPartialForwardCore1<Data64>(
+    Data64* polynomial_in, Root<Data64>* n2_root_of_unity_table,
+    Root<Data64>* w_root_of_unity_table, Modulus<Data64>* modulus,
+    int small_npower, int loc1, int loc2, int loop, int n_power, int mod_count);
+
+template __global__ void FourStepPartialForwardCore1<Data32>(
+    Data32* polynomial_in, Root<Data32>* n2_root_of_unity_table,
+    Root<Data32>* w_root_of_unity_table, Modulus<Data32> modulus,
+    int small_npower, int loc1, int loc2, int loop, int n_power);
+
+template __global__ void FourStepPartialForwardCore1<Data64>(
+    Data64* polynomial_in, Root<Data64>* n2_root_of_unity_table,
+    Root<Data64>* w_root_of_unity_table, Modulus<Data64> modulus,
+    int small_npower, int loc1, int loc2, int loop, int n_power);
+
+template __global__ void FourStepPartialForwardCore2<Data32>(
+    Data32* polynomial_in, Root<Data32>* n2_root_of_unity_table,
+    Modulus<Data32>* modulus, int small_npower, int n_power, int mod_count);
+
+template __global__ void FourStepPartialForwardCore2<Data64>(
+    Data64* polynomial_in, Root<Data64>* n2_root_of_unity_table,
+    Modulus<Data64>* modulus, int small_npower, int n_power, int mod_count);
+
+template __global__ void FourStepPartialForwardCore2<Data32>(
+    Data32* polynomial_in, Root<Data32>* n2_root_of_unity_table,
+    Modulus<Data32> modulus, int small_npower, int n_power);
+
+template __global__ void FourStepPartialForwardCore2<Data64>(
+    Data64* polynomial_in, Root<Data64>* n2_root_of_unity_table,
+    Modulus<Data64> modulus, int small_npower, int n_power);
+
+template __global__ void FourStepPartialForwardCore<Data32>(
+    Data32* polynomial_in, Root<Data32>* n2_root_of_unity_table,
+    Root<Data32>* w_root_of_unity_table, Modulus<Data32>* modulus,
+    int small_npower, int t1, int LOOP, int n_power, int mod_count);
+
+template __global__ void FourStepPartialForwardCore<Data64>(
+    Data64* polynomial_in, Root<Data64>* n2_root_of_unity_table,
+    Root<Data64>* w_root_of_unity_table, Modulus<Data64>* modulus,
+    int small_npower, int t1, int LOOP, int n_power, int mod_count);
+
+template __global__ void FourStepPartialForwardCore<Data32>(
+    Data32* polynomial_in, Root<Data32>* n2_root_of_unity_table,
+    Root<Data32>* w_root_of_unity_table, Modulus<Data32> modulus,
+    int small_npower, int t1, int LOOP, int n_power);
+
+template __global__ void FourStepPartialForwardCore<Data64>(
+    Data64* polynomial_in, Root<Data64>* n2_root_of_unity_table,
+    Root<Data64>* w_root_of_unity_table, Modulus<Data64> modulus,
+    int small_npower, int t1, int LOOP, int n_power);
+
+template __global__ void
+FourStepInverseCoreT1<Data32>(Data32* polynomial_in, Data32* polynomial_out,
+                              Root<Data32>* n1_root_of_unity_table,
+                              Modulus<Data32>* modulus, int index1, int index2,
+                              int n_power, int mod_count);
+
+template __global__ void
+FourStepInverseCoreT1<Data64>(Data64* polynomial_in, Data64* polynomial_out,
+                              Root<Data64>* n1_root_of_unity_table,
+                              Modulus<Data64>* modulus, int index1, int index2,
+                              int n_power, int mod_count);
+
+template __global__ void
+FourStepInverseCoreT1<Data32>(Data32* polynomial_in, Data32* polynomial_out,
+                              Root<Data32>* n1_root_of_unity_table,
+                              Modulus<Data32> modulus, int index1, int index2,
+                              int n_power);
+
+template __global__ void
+FourStepInverseCoreT1<Data64>(Data64* polynomial_in, Data64* polynomial_out,
+                              Root<Data64>* n1_root_of_unity_table,
+                              Modulus<Data64> modulus, int index1, int index2,
+                              int n_power);
+
+template __global__ void
+FourStepInverseCoreT2<Data32>(Data32* polynomial_in, Data32* polynomial_out,
+                              Root<Data32>* n1_root_of_unity_table,
+                              Modulus<Data32>* modulus, int index1, int index2,
+                              int index3, int n_power, int mod_count);
+
+template __global__ void
+FourStepInverseCoreT2<Data64>(Data64* polynomial_in, Data64* polynomial_out,
+                              Root<Data64>* n1_root_of_unity_table,
+                              Modulus<Data64>* modulus, int index1, int index2,
+                              int index3, int n_power, int mod_count);
+
+template __global__ void
+FourStepInverseCoreT2<Data32>(Data32* polynomial_in, Data32* polynomial_out,
+                              Root<Data32>* n1_root_of_unity_table,
+                              Modulus<Data32> modulus, int index1, int index2,
+                              int index3, int n_power);
+
+template __global__ void
+FourStepInverseCoreT2<Data64>(Data64* polynomial_in, Data64* polynomial_out,
+                              Root<Data64>* n1_root_of_unity_table,
+                              Modulus<Data64> modulus, int index1, int index2,
+                              int index3, int n_power);
+
+template __global__ void
+FourStepInverseCoreT3<Data32>(Data32* polynomial_in, Data32* polynomial_out,
+                              Root<Data32>* n1_root_of_unity_table,
+                              Modulus<Data32>* modulus, int index1, int index2,
+                              int index3, int n_power, int mod_count);
+
+template __global__ void
+FourStepInverseCoreT3<Data64>(Data64* polynomial_in, Data64* polynomial_out,
+                              Root<Data64>* n1_root_of_unity_table,
+                              Modulus<Data64>* modulus, int index1, int index2,
+                              int index3, int n_power, int mod_count);
+
+template __global__ void
+FourStepInverseCoreT3<Data32>(Data32* polynomial_in, Data32* polynomial_out,
+                              Root<Data32>* n1_root_of_unity_table,
+                              Modulus<Data32> modulus, int index1, int index2,
+                              int index3, int n_power);
+
+template __global__ void
+FourStepInverseCoreT3<Data64>(Data64* polynomial_in, Data64* polynomial_out,
+                              Root<Data64>* n1_root_of_unity_table,
+                              Modulus<Data64> modulus, int index1, int index2,
+                              int index3, int n_power);
+
+template __global__ void
+FourStepInverseCoreT4<Data32>(Data32* polynomial_in, Data32* polynomial_out,
+                              Root<Data32>* n1_root_of_unity_table,
+                              Modulus<Data32>* modulus, int index1, int index2,
+                              int index3, int n_power, int mod_count);
+
+template __global__ void
+FourStepInverseCoreT4<Data64>(Data64* polynomial_in, Data64* polynomial_out,
+                              Root<Data64>* n1_root_of_unity_table,
+                              Modulus<Data64>* modulus, int index1, int index2,
+                              int index3, int n_power, int mod_count);
+
+template __global__ void
+FourStepInverseCoreT4<Data32>(Data32* polynomial_in, Data32* polynomial_out,
+                              Root<Data32>* n1_root_of_unity_table,
+                              Modulus<Data32> modulus, int index1, int index2,
+                              int index3, int n_power);
+
+template __global__ void
+FourStepInverseCoreT4<Data64>(Data64* polynomial_in, Data64* polynomial_out,
+                              Root<Data64>* n1_root_of_unity_table,
+                              Modulus<Data64> modulus, int index1, int index2,
+                              int index3, int n_power);
+
+template __global__ void FourStepPartialInverseCore<Data32>(
+    Data32* polynomial_in, Root<Data32>* n2_root_of_unity_table,
+    Root<Data32>* w_root_of_unity_table, Modulus<Data32>* modulus,
+    int small_npower, int LOOP, Ninverse<Data32>* inverse, int poly_n_power,
+    int mod_count);
+
+template __global__ void FourStepPartialInverseCore<Data64>(
+    Data64* polynomial_in, Root<Data64>* n2_root_of_unity_table,
+    Root<Data64>* w_root_of_unity_table, Modulus<Data64>* modulus,
+    int small_npower, int LOOP, Ninverse<Data64>* inverse, int poly_n_power,
+    int mod_count);
+
+template __global__ void FourStepPartialInverseCore<Data32>(
+    Data32* polynomial_in, Root<Data32>* n2_root_of_unity_table,
+    Root<Data32>* w_root_of_unity_table, Modulus<Data32> modulus,
+    int small_npower, int LOOP, Ninverse<Data32> inverse, int poly_n_power);
+
+template __global__ void FourStepPartialInverseCore<Data64>(
+    Data64* polynomial_in, Root<Data64>* n2_root_of_unity_table,
+    Root<Data64>* w_root_of_unity_table, Modulus<Data64> modulus,
+    int small_npower, int LOOP, Ninverse<Data64> inverse, int poly_n_power);
+
+template __global__ void FourStepPartialInverseCore1<Data32>(
+    Data32* polynomial_in, Root<Data32>* n2_root_of_unity_table,
+    Root<Data32>* w_root_of_unity_table, Modulus<Data32>* modulus,
+    int small_npower, int poly_n_power, int mod_count);
+
+template __global__ void FourStepPartialInverseCore1<Data64>(
+    Data64* polynomial_in, Root<Data64>* n2_root_of_unity_table,
+    Root<Data64>* w_root_of_unity_table, Modulus<Data64>* modulus,
+    int small_npower, int poly_n_power, int mod_count);
+
+template __global__ void FourStepPartialInverseCore1<Data32>(
+    Data32* polynomial_in, Root<Data32>* n2_root_of_unity_table,
+    Root<Data32>* w_root_of_unity_table, Modulus<Data32> modulus,
+    int small_npower, int poly_n_power);
+
+template __global__ void FourStepPartialInverseCore1<Data64>(
+    Data64* polynomial_in, Root<Data64>* n2_root_of_unity_table,
+    Root<Data64>* w_root_of_unity_table, Modulus<Data64> modulus,
+    int small_npower, int poly_n_power);
+
+template __global__ void FourStepPartialInverseCore2<Data32>(
+    Data32* polynomial_in, Root<Data32>* n2_root_of_unity_table,
+    Modulus<Data32>* modulus, int small_npower, int t1, int loc1, int loc2,
+    int loc3, int loop, Ninverse<Data32>* inverse, int poly_n_power,
+    int mod_count);
+
+template __global__ void FourStepPartialInverseCore2<Data64>(
+    Data64* polynomial_in, Root<Data64>* n2_root_of_unity_table,
+    Modulus<Data64>* modulus, int small_npower, int t1, int loc1, int loc2,
+    int loc3, int loop, Ninverse<Data64>* inverse, int poly_n_power,
+    int mod_count);
+
+template __global__ void FourStepPartialInverseCore2<Data32>(
+    Data32* polynomial_in, Root<Data32>* n2_root_of_unity_table,
+    Modulus<Data32> modulus, int small_npower, int t1, int loc1, int loc2,
+    int loc3, int loop, Ninverse<Data32> inverse, int poly_n_power);
+
+template __global__ void FourStepPartialInverseCore2<Data64>(
+    Data64* polynomial_in, Root<Data64>* n2_root_of_unity_table,
+    Modulus<Data64> modulus, int small_npower, int t1, int loc1, int loc2,
+    int loc3, int loop, Ninverse<Data64> inverse, int poly_n_power);
+
+template __host__ void GPU_4STEP_NTT<Data32>(
+    Data32* device_in, Data32* device_out, Root<Data32>* n1_root_of_unity_table,
+    Root<Data32>* n2_root_of_unity_table, Root<Data32>* W_root_of_unity_table,
+    Modulus<Data32> modulus, ntt4step_configuration<Data32> cfg,
+    int batch_size);
+
+template __host__ void GPU_4STEP_NTT<Data64>(
+    Data64* device_in, Data64* device_out, Root<Data64>* n1_root_of_unity_table,
+    Root<Data64>* n2_root_of_unity_table, Root<Data64>* W_root_of_unity_table,
+    Modulus<Data64> modulus, ntt4step_configuration<Data64> cfg,
+    int batch_size);
+
+template __host__ void GPU_4STEP_NTT<Data32>(
+    Data32* device_in, Data32* device_out, Root<Data32>* n1_root_of_unity_table,
+    Root<Data32>* n2_root_of_unity_table, Root<Data32>* W_root_of_unity_table,
+    Modulus<Data32>* modulus, ntt4step_rns_configuration<Data32> cfg,
+    int batch_size, int mod_count);
+
+template __host__ void GPU_4STEP_NTT<Data64>(
+    Data64* device_in, Data64* device_out, Root<Data64>* n1_root_of_unity_table,
+    Root<Data64>* n2_root_of_unity_table, Root<Data64>* W_root_of_unity_table,
+    Modulus<Data64>* modulus, ntt4step_rns_configuration<Data64> cfg,
+    int batch_size, int mod_count);

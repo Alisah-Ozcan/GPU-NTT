@@ -6,35 +6,36 @@
 
 #include "ntt.cuh"
 
-#define CC_89 // for RTX 4090
-
-__device__ void CooleyTukeyUnit(Data& U, Data& V, Root& root, Modulus& modulus)
+template <typename T>
+__device__ void CooleyTukeyUnit(T& U, T& V, const Root<T>& root,
+                                const Modulus<T>& modulus)
 {
-    Data u_ = U;
-    Data v_ = VALUE_GPU::mult(V, root, modulus);
+    T u_ = U;
+    T v_ = OPERATOR_GPU<T>::mult(V, root, modulus);
 
-    U = VALUE_GPU::add(u_, v_, modulus);
-    V = VALUE_GPU::sub(u_, v_, modulus);
+    U = OPERATOR_GPU<T>::add(u_, v_, modulus);
+    V = OPERATOR_GPU<T>::sub(u_, v_, modulus);
 }
 
-__device__ void GentlemanSandeUnit(Data& U, Data& V, Root& root,
-                                   Modulus& modulus)
+template <typename T>
+__device__ void GentlemanSandeUnit(T& U, T& V, const Root<T>& root,
+                                   const Modulus<T>& modulus)
 {
-    Data u_ = U;
-    Data v_ = V;
+    T u_ = U;
+    T v_ = V;
 
-    U = VALUE_GPU::add(u_, v_, modulus);
+    U = OPERATOR_GPU<T>::add(u_, v_, modulus);
 
-    v_ = VALUE_GPU::sub(u_, v_, modulus);
-    V = VALUE_GPU::mult(v_, root, modulus);
+    v_ = OPERATOR_GPU<T>::sub(u_, v_, modulus);
+    V = OPERATOR_GPU<T>::mult(v_, root, modulus);
 }
 
-__global__ void ForwardCore(Data* polynomial_in, Data* polynomial_out,
-                            Root* root_of_unity_table, Modulus modulus,
-                            int shared_index, int logm,
-                            int outer_iteration_count, int N_power,
-                            bool zero_padding, bool not_last_kernel,
-                            bool reduction_poly_check)
+template <typename T>
+__global__ void
+ForwardCore(T* polynomial_in, T* polynomial_out,
+            const Root<T>* __restrict__ root_of_unity_table, Modulus<T> modulus,
+            int shared_index, int logm, int outer_iteration_count, int N_power,
+            bool zero_padding, bool not_last_kernel, bool reduction_poly_check)
 {
     const int idx_x = threadIdx.x;
     const int idx_y = threadIdx.y;
@@ -42,7 +43,9 @@ __global__ void ForwardCore(Data* polynomial_in, Data* polynomial_out,
     const int block_y = blockIdx.y;
     const int block_z = blockIdx.z;
 
-    extern __shared__ Data shared_memory[];
+    // extern __shared__ T shared_memory[];
+    extern __shared__ char shared_memory_typed[];
+    T* shared_memory = reinterpret_cast<T*>(shared_memory_typed);
 
     int t_2 = N_power - logm - 1;
     location_t offset = 1 << (N_power - logm - 1);
@@ -62,7 +65,7 @@ __global__ void ForwardCore(Data* polynomial_in, Data* polynomial_out,
 
     location_t shared_addresss = (idx_x + (idx_y * blockDim.x));
 
-    // Load data from global & store to shared
+    // Load T from global & store to shared
     shared_memory[shared_addresss] = polynomial_in[global_addresss];
     shared_memory[shared_addresss + (blockDim.x * blockDim.y)] =
         polynomial_in[global_addresss + offset];
@@ -160,9 +163,10 @@ __global__ void ForwardCore(Data* polynomial_in, Data* polynomial_out,
         shared_memory[shared_addresss + (blockDim.x * blockDim.y)];
 }
 
-__global__ void ForwardCore(Data* polynomial_in, Data* polynomial_out,
-                            Root* root_of_unity_table, Modulus* modulus,
-                            int shared_index, int logm,
+template <typename T>
+__global__ void ForwardCore(T* polynomial_in, T* polynomial_out,
+                            const Root<T>* __restrict__ root_of_unity_table,
+                            Modulus<T>* modulus, int shared_index, int logm,
                             int outer_iteration_count, int N_power,
                             bool zero_padding, bool not_last_kernel,
                             bool reduction_poly_check, int mod_count)
@@ -175,7 +179,9 @@ __global__ void ForwardCore(Data* polynomial_in, Data* polynomial_out,
 
     const int mod_index = block_z % mod_count;
 
-    extern __shared__ Data shared_memory[];
+    // extern __shared__ T shared_memory[];
+    extern __shared__ char shared_memory_typed[];
+    T* shared_memory = reinterpret_cast<T*>(shared_memory_typed);
 
     int t_2 = N_power - logm - 1;
     location_t offset = 1 << (N_power - logm - 1);
@@ -195,7 +201,7 @@ __global__ void ForwardCore(Data* polynomial_in, Data* polynomial_out,
 
     location_t shared_addresss = (idx_x + (idx_y * blockDim.x));
 
-    // Load data from global & store to shared
+    // Load T from global & store to shared
     shared_memory[shared_addresss] = polynomial_in[global_addresss];
     shared_memory[shared_addresss + (blockDim.x * blockDim.y)] =
         polynomial_in[global_addresss + offset];
@@ -302,9 +308,10 @@ __global__ void ForwardCore(Data* polynomial_in, Data* polynomial_out,
         shared_memory[shared_addresss + (blockDim.x * blockDim.y)];
 }
 
-__global__ void ForwardCore_(Data* polynomial_in, Data* polynomial_out,
-                             Root* root_of_unity_table, Modulus modulus,
-                             int shared_index, int logm,
+template <typename T>
+__global__ void ForwardCore_(T* polynomial_in, T* polynomial_out,
+                             const Root<T>* __restrict__ root_of_unity_table,
+                             Modulus<T> modulus, int shared_index, int logm,
                              int outer_iteration_count, int N_power,
                              bool zero_padding, bool not_last_kernel,
                              bool reduction_poly_check)
@@ -315,7 +322,9 @@ __global__ void ForwardCore_(Data* polynomial_in, Data* polynomial_out,
     const int block_y = blockIdx.y;
     const int block_z = blockIdx.z;
 
-    extern __shared__ Data shared_memory[];
+    // extern __shared__ T shared_memory[];
+    extern __shared__ char shared_memory_typed[];
+    T* shared_memory = reinterpret_cast<T*>(shared_memory_typed);
 
     int t_2 = N_power - logm - 1;
     location_t offset = 1 << (N_power - logm - 1);
@@ -333,7 +342,7 @@ __global__ void ForwardCore_(Data* polynomial_in, Data* polynomial_out,
         (location_t) (blockDim.x * block_y) + (location_t) (block_x * offset);
     location_t shared_addresss = (idx_x + (idx_y * blockDim.x));
 
-    // Load data from global & store to shared
+    // Load T from global & store to shared
     shared_memory[shared_addresss] = polynomial_in[global_addresss];
     shared_memory[shared_addresss + (blockDim.x * blockDim.y)] =
         polynomial_in[global_addresss + offset];
@@ -431,9 +440,10 @@ __global__ void ForwardCore_(Data* polynomial_in, Data* polynomial_out,
         shared_memory[shared_addresss + (blockDim.x * blockDim.y)];
 }
 
-__global__ void ForwardCore_(Data* polynomial_in, Data* polynomial_out,
-                             Root* root_of_unity_table, Modulus* modulus,
-                             int shared_index, int logm,
+template <typename T>
+__global__ void ForwardCore_(T* polynomial_in, T* polynomial_out,
+                             const Root<T>* __restrict__ root_of_unity_table,
+                             Modulus<T>* modulus, int shared_index, int logm,
                              int outer_iteration_count, int N_power,
                              bool zero_padding, bool not_last_kernel,
                              bool reduction_poly_check, int mod_count)
@@ -446,7 +456,9 @@ __global__ void ForwardCore_(Data* polynomial_in, Data* polynomial_out,
 
     const int mod_index = block_z % mod_count;
 
-    extern __shared__ Data shared_memory[];
+    // extern __shared__ T shared_memory[];
+    extern __shared__ char shared_memory_typed[];
+    T* shared_memory = reinterpret_cast<T*>(shared_memory_typed);
 
     int t_2 = N_power - logm - 1;
     location_t offset = 1 << (N_power - logm - 1);
@@ -464,7 +476,7 @@ __global__ void ForwardCore_(Data* polynomial_in, Data* polynomial_out,
         (location_t) (blockDim.x * block_y) + (location_t) (block_x * offset);
     location_t shared_addresss = (idx_x + (idx_y * blockDim.x));
 
-    // Load data from global & store to shared
+    // Load T from global & store to shared
     shared_memory[shared_addresss] = polynomial_in[global_addresss];
     shared_memory[shared_addresss + (blockDim.x * blockDim.y)] =
         polynomial_in[global_addresss + offset];
@@ -570,12 +582,13 @@ __global__ void ForwardCore_(Data* polynomial_in, Data* polynomial_out,
         shared_memory[shared_addresss + (blockDim.x * blockDim.y)];
 }
 
-__global__ void InverseCore(Data* polynomial_in, Data* polynomial_out,
-                            Root* inverse_root_of_unity_table, Modulus modulus,
-                            int shared_index, int logm, int k,
-                            int outer_iteration_count, int N_power,
-                            Ninverse n_inverse, bool last_kernel,
-                            bool reduction_poly_check)
+template <typename T>
+__global__ void
+InverseCore(T* polynomial_in, T* polynomial_out,
+            const Root<T>* __restrict__ inverse_root_of_unity_table,
+            Modulus<T> modulus, int shared_index, int logm, int k,
+            int outer_iteration_count, int N_power, Ninverse<T> n_inverse,
+            bool last_kernel, bool reduction_poly_check)
 {
     const int idx_x = threadIdx.x;
     const int idx_y = threadIdx.y;
@@ -583,7 +596,9 @@ __global__ void InverseCore(Data* polynomial_in, Data* polynomial_out,
     const int block_y = blockIdx.y;
     const int block_z = blockIdx.z;
 
-    extern __shared__ Data shared_memory[];
+    // extern __shared__ T shared_memory[];
+    extern __shared__ char shared_memory_typed[];
+    T* shared_memory = reinterpret_cast<T*>(shared_memory_typed);
 
     int t_2 = N_power - logm - 1;
     location_t offset = 1 << (N_power - k - 1);
@@ -640,9 +655,9 @@ __global__ void InverseCore(Data* polynomial_in, Data* polynomial_out,
 
     if (last_kernel)
     {
-        polynomial_out[global_addresss] =
-            VALUE_GPU::mult(shared_memory[shared_addresss], n_inverse, modulus);
-        polynomial_out[global_addresss + offset] = VALUE_GPU::mult(
+        polynomial_out[global_addresss] = OPERATOR_GPU<T>::mult(
+            shared_memory[shared_addresss], n_inverse, modulus);
+        polynomial_out[global_addresss + offset] = OPERATOR_GPU<T>::mult(
             shared_memory[shared_addresss + (blockDim.x * blockDim.y)],
             n_inverse, modulus);
     }
@@ -654,12 +669,13 @@ __global__ void InverseCore(Data* polynomial_in, Data* polynomial_out,
     }
 }
 
-__global__ void InverseCore(Data* polynomial_in, Data* polynomial_out,
-                            Root* inverse_root_of_unity_table, Modulus* modulus,
-                            int shared_index, int logm, int k,
-                            int outer_iteration_count, int N_power,
-                            Ninverse* n_inverse, bool last_kernel,
-                            bool reduction_poly_check, int mod_count)
+template <typename T>
+__global__ void
+InverseCore(T* polynomial_in, T* polynomial_out,
+            const Root<T>* __restrict__ inverse_root_of_unity_table,
+            Modulus<T>* modulus, int shared_index, int logm, int k,
+            int outer_iteration_count, int N_power, Ninverse<T>* n_inverse,
+            bool last_kernel, bool reduction_poly_check, int mod_count)
 {
     const int idx_x = threadIdx.x;
     const int idx_y = threadIdx.y;
@@ -669,7 +685,9 @@ __global__ void InverseCore(Data* polynomial_in, Data* polynomial_out,
 
     const int mod_index = block_z % mod_count;
 
-    extern __shared__ Data shared_memory[];
+    // extern __shared__ T shared_memory[];
+    extern __shared__ char shared_memory_typed[];
+    T* shared_memory = reinterpret_cast<T*>(shared_memory_typed);
 
     int t_2 = N_power - logm - 1;
     location_t offset = 1 << (N_power - k - 1);
@@ -729,9 +747,9 @@ __global__ void InverseCore(Data* polynomial_in, Data* polynomial_out,
     if (last_kernel)
     {
         polynomial_out[global_addresss] =
-            VALUE_GPU::mult(shared_memory[shared_addresss],
-                            n_inverse[mod_index], modulus[mod_index]);
-        polynomial_out[global_addresss + offset] = VALUE_GPU::mult(
+            OPERATOR_GPU<T>::mult(shared_memory[shared_addresss],
+                                  n_inverse[mod_index], modulus[mod_index]);
+        polynomial_out[global_addresss + offset] = OPERATOR_GPU<T>::mult(
             shared_memory[shared_addresss + (blockDim.x * blockDim.y)],
             n_inverse[mod_index], modulus[mod_index]);
     }
@@ -743,12 +761,13 @@ __global__ void InverseCore(Data* polynomial_in, Data* polynomial_out,
     }
 }
 
-__global__ void InverseCore_(Data* polynomial_in, Data* polynomial_out,
-                             Root* inverse_root_of_unity_table, Modulus modulus,
-                             int shared_index, int logm, int k,
-                             int outer_iteration_count, int N_power,
-                             Ninverse n_inverse, bool last_kernel,
-                             bool reduction_poly_check)
+template <typename T>
+__global__ void
+InverseCore_(T* polynomial_in, T* polynomial_out,
+             const Root<T>* __restrict__ inverse_root_of_unity_table,
+             Modulus<T> modulus, int shared_index, int logm, int k,
+             int outer_iteration_count, int N_power, Ninverse<T> n_inverse,
+             bool last_kernel, bool reduction_poly_check)
 {
     const int idx_x = threadIdx.x;
     const int idx_y = threadIdx.y;
@@ -756,7 +775,9 @@ __global__ void InverseCore_(Data* polynomial_in, Data* polynomial_out,
     const int block_y = blockIdx.y;
     const int block_z = blockIdx.z;
 
-    extern __shared__ Data shared_memory[];
+    // extern __shared__ T shared_memory[];
+    extern __shared__ char shared_memory_typed[];
+    T* shared_memory = reinterpret_cast<T*>(shared_memory_typed);
 
     int t_2 = N_power - logm - 1;
     location_t offset = 1 << (N_power - k - 1);
@@ -813,9 +834,9 @@ __global__ void InverseCore_(Data* polynomial_in, Data* polynomial_out,
 
     if (last_kernel)
     {
-        polynomial_out[global_addresss] =
-            VALUE_GPU::mult(shared_memory[shared_addresss], n_inverse, modulus);
-        polynomial_out[global_addresss + offset] = VALUE_GPU::mult(
+        polynomial_out[global_addresss] = OPERATOR_GPU<T>::mult(
+            shared_memory[shared_addresss], n_inverse, modulus);
+        polynomial_out[global_addresss + offset] = OPERATOR_GPU<T>::mult(
             shared_memory[shared_addresss + (blockDim.x * blockDim.y)],
             n_inverse, modulus);
     }
@@ -827,12 +848,13 @@ __global__ void InverseCore_(Data* polynomial_in, Data* polynomial_out,
     }
 }
 
-__global__ void InverseCore_(Data* polynomial_in, Data* polynomial_out,
-                             Root* inverse_root_of_unity_table,
-                             Modulus* modulus, int shared_index, int logm,
-                             int k, int outer_iteration_count, int N_power,
-                             Ninverse* n_inverse, bool last_kernel,
-                             bool reduction_poly_check, int mod_count)
+template <typename T>
+__global__ void
+InverseCore_(T* polynomial_in, T* polynomial_out,
+             const Root<T>* __restrict__ inverse_root_of_unity_table,
+             Modulus<T>* modulus, int shared_index, int logm, int k,
+             int outer_iteration_count, int N_power, Ninverse<T>* n_inverse,
+             bool last_kernel, bool reduction_poly_check, int mod_count)
 {
     const int idx_x = threadIdx.x;
     const int idx_y = threadIdx.y;
@@ -842,7 +864,9 @@ __global__ void InverseCore_(Data* polynomial_in, Data* polynomial_out,
 
     const int mod_index = block_z % mod_count;
 
-    extern __shared__ Data shared_memory[];
+    // extern __shared__ T shared_memory[];
+    extern __shared__ char shared_memory_typed[];
+    T* shared_memory = reinterpret_cast<T*>(shared_memory_typed);
 
     int t_2 = N_power - logm - 1;
     location_t offset = 1 << (N_power - k - 1);
@@ -902,9 +926,9 @@ __global__ void InverseCore_(Data* polynomial_in, Data* polynomial_out,
     if (last_kernel)
     {
         polynomial_out[global_addresss] =
-            VALUE_GPU::mult(shared_memory[shared_addresss],
-                            n_inverse[mod_index], modulus[mod_index]);
-        polynomial_out[global_addresss + offset] = VALUE_GPU::mult(
+            OPERATOR_GPU<T>::mult(shared_memory[shared_addresss],
+                                  n_inverse[mod_index], modulus[mod_index]);
+        polynomial_out[global_addresss + offset] = OPERATOR_GPU<T>::mult(
             shared_memory[shared_addresss + (blockDim.x * blockDim.y)],
             n_inverse[mod_index], modulus[mod_index]);
     }
@@ -916,1677 +940,331 @@ __global__ void InverseCore_(Data* polynomial_in, Data* polynomial_out,
     }
 }
 
-__host__ void GPU_NTT(Data* device_in, Data* device_out,
-                      Root* root_of_unity_table, Modulus modulus,
-                      ntt_configuration cfg, int batch_size)
+template <typename T>
+__host__ void GPU_NTT(T* device_in, T* device_out, Root<T>* root_of_unity_table,
+                      Modulus<T> modulus, ntt_configuration<T> cfg,
+                      int batch_size)
 {
+    if ((cfg.n_power <= 11 || cfg.n_power >= 29))
+    {
+        throw std::invalid_argument("Invalid n_power range!");
+    }
+
+    auto kernel_parameters = (cfg.ntt_type == FORWARD)
+                                 ? CreateForwardNTTKernel<T>()
+                                 : CreateInverseNTTKernel<T>();
+    bool standart_kernel = (cfg.n_power < 25) ? true : false;
+    T* device_in_ = device_in;
+
     switch (cfg.ntt_type)
     {
         case FORWARD:
-            switch (cfg.n_power)
+            if (standart_kernel)
             {
-                case 12:
-                    ForwardCore<<<dim3(8, 1, batch_size), dim3(64, 4),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        0, 3, cfg.n_power, cfg.zero_padding, true,
+                for (int i = 0; i < kernel_parameters[cfg.n_power].size(); i++)
+                {
+                    auto& current_kernel_params =
+                        kernel_parameters[cfg.n_power][i];
+                    ForwardCore<<<
+                        dim3(current_kernel_params.griddim_x,
+                             current_kernel_params.griddim_y, batch_size),
+                        dim3(current_kernel_params.blockdim_x,
+                             current_kernel_params.blockdim_y),
+                        current_kernel_params.shared_memory, cfg.stream>>>(
+                        device_in_, device_out, root_of_unity_table, modulus,
+                        current_kernel_params.shared_index,
+                        current_kernel_params.logm,
+                        current_kernel_params.outer_iteration_count,
+                        cfg.n_power, cfg.zero_padding,
+                        current_kernel_params.not_last_kernel,
                         (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCore<<<dim3(1, 8, batch_size), dim3(256, 1),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        3, 9, cfg.n_power, false, false,
+                    device_in_ = device_out;
+                }
+            }
+            else
+            {
+                for (int i = 0; i < kernel_parameters[cfg.n_power].size() - 1;
+                     i++)
+                {
+                    auto& current_kernel_params =
+                        kernel_parameters[cfg.n_power][i];
+                    ForwardCore<<<
+                        dim3(current_kernel_params.griddim_x,
+                             current_kernel_params.griddim_y, batch_size),
+                        dim3(current_kernel_params.blockdim_x,
+                             current_kernel_params.blockdim_y),
+                        current_kernel_params.shared_memory, cfg.stream>>>(
+                        device_in_, device_out, root_of_unity_table, modulus,
+                        current_kernel_params.shared_index,
+                        current_kernel_params.logm,
+                        current_kernel_params.outer_iteration_count,
+                        cfg.n_power, cfg.zero_padding,
+                        current_kernel_params.not_last_kernel,
                         (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 13:
-                    ForwardCore<<<dim3(16, 1, batch_size), dim3(32, 8),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        0, 4, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCore<<<dim3(1, 16, batch_size), dim3(256, 1),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        4, 9, cfg.n_power, false, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 14:
-                    ForwardCore<<<dim3(32, 1, batch_size), dim3(16, 16),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        0, 5, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCore<<<dim3(1, 32, batch_size), dim3(256, 1),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        5, 9, cfg.n_power, false, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 15:
-                    ForwardCore<<<dim3(64, 1, batch_size), dim3(8, 32),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        0, 6, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCore<<<dim3(1, 64, batch_size), dim3(256, 1),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        6, 9, cfg.n_power, false, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 16:
-                    ForwardCore<<<dim3(128, 1, batch_size), dim3(4, 64),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        0, 7, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCore<<<dim3(1, 128, batch_size), dim3(256, 1),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        7, 9, cfg.n_power, false, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 17:
-                    ForwardCore<<<dim3(256, 1, batch_size), dim3(32, 8),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        0, 4, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCore<<<dim3(16, 16, batch_size), dim3(32, 8),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        4, 4, cfg.n_power, false, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCore<<<dim3(1, 256, batch_size), dim3(256, 1),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        8, 9, cfg.n_power, false, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 18:
-                    ForwardCore<<<dim3(512, 1, batch_size), dim3(32, 8),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        0, 4, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCore<<<dim3(32, 16, batch_size), dim3(16, 16),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        4, 5, cfg.n_power, false, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCore<<<dim3(1, 512, batch_size), dim3(256, 1),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        9, 9, cfg.n_power, false, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 19:
-                    ForwardCore<<<dim3(1024, 1, batch_size), dim3(16, 16),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        0, 5, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCore<<<dim3(32, 32, batch_size), dim3(16, 16),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        5, 5, cfg.n_power, false, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCore<<<dim3(1, 1024, batch_size), dim3(256, 1),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        10, 9, cfg.n_power, false, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 20:
-                    ForwardCore<<<dim3(2048, 1, batch_size), dim3(16, 16),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        0, 5, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCore<<<dim3(64, 32, batch_size), dim3(8, 32),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        5, 6, cfg.n_power, false, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCore<<<dim3(1, 2048, batch_size), dim3(256, 1),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        11, 9, cfg.n_power, false, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 21:
-                    ForwardCore<<<dim3(4096, 1, batch_size), dim3(8, 32),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        0, 6, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCore<<<dim3(64, 64, batch_size), dim3(8, 32),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        6, 6, cfg.n_power, false, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCore<<<dim3(1, 4096, batch_size), dim3(256, 1),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        12, 9, cfg.n_power, false, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 22:
-                    ForwardCore<<<dim3(8192, 1, batch_size), dim3(8, 32),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        0, 6, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCore<<<dim3(128, 64, batch_size), dim3(4, 64),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        6, 7, cfg.n_power, false, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCore<<<dim3(1, 8192, batch_size), dim3(256, 1),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        13, 9, cfg.n_power, false, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-
-                    break;
-                case 23:
-                    ForwardCore<<<dim3(16384, 1, batch_size), dim3(4, 64),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        0, 7, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCore<<<dim3(128, 128, batch_size), dim3(4, 64),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        7, 7, cfg.n_power, false, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCore<<<dim3(1, 16384, batch_size), dim3(256, 1),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        14, 9, cfg.n_power, false, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 24:
-                    ForwardCore<<<dim3(16384, 1, batch_size), dim3(8, 64),
-                                  1024 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 9,
-                        0, 7, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCore<<<dim3(128, 128, batch_size), dim3(8, 64),
-                                  1024 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        7, 7, cfg.n_power, false, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCore<<<dim3(1, 16384, batch_size), dim3(512, 1),
-                                  1024 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        14, 10, cfg.n_power, false, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 25:
-                    ForwardCore<<<dim3(32768, 1, batch_size), dim3(8, 64),
-                                  1024 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 9,
-                        0, 7, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCore<<<dim3(256, 128, batch_size), dim3(4, 128),
-                                  1024 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        7, 8, cfg.n_power, false, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ///////////////////////////////////////////////////////////
-                    ForwardCore_<<<dim3(32768, 1, batch_size), dim3(512, 1),
-                                   1024 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        15, 10, cfg.n_power, false, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 26:
-                    ForwardCore<<<dim3(65536, 1, batch_size), dim3(4, 128),
-                                  1024 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 9,
-                        0, 8, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCore<<<dim3(256, 256, batch_size), dim3(4, 128),
-                                  1024 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        8, 8, cfg.n_power, false, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ///////////////////////////////////////////////////////////
-                    ForwardCore_<<<dim3(65536, 1, batch_size), dim3(512, 1),
-                                   1024 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        16, 10, cfg.n_power, false, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 27:
-#ifndef CC_89
-                    ForwardCore<<<dim3(262144, 1, batch_size), dim3(16, 16),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        0, 5, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCore<<<dim3(8192, 32, batch_size), dim3(8, 32),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        5, 6, cfg.n_power, false, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCore<<<dim3(128, 2048, batch_size), dim3(4, 64),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        11, 7, cfg.n_power, false, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ///////////////////////////////////////////////////////////
-                    ForwardCore_<<<dim3(262144, 1, batch_size), dim3(256, 1),
-                                   512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        18, 9, cfg.n_power, false, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-#else
-                    ForwardCore<<<dim3(131072, 1, batch_size), dim3(4, 128),
-                                  1024 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 9,
-                        0, 8, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCore<<<dim3(512, 256, batch_size), dim3(2, 256),
-                                  1024 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        8, 9, cfg.n_power, false, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ///////////////////////////////////////////////////////////
-                    ForwardCore_<<<dim3(131072, 1, batch_size), dim3(512, 1),
-                                   1024 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        17, 10, cfg.n_power, false, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-#endif
-                    break;
-                case 28:
-#ifndef CC_89
-                    ForwardCore<<<dim3(524288, 1, batch_size), dim3(8, 32),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        0, 6, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCore<<<dim3(8192, 64, batch_size), dim3(8, 32),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        6, 6, cfg.n_power, false, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCore<<<dim3(128, 4096, batch_size), dim3(4, 64),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        12, 7, cfg.n_power, false, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ///////////////////////////////////////////////////////////
-                    ForwardCore_<<<dim3(524288, 1, batch_size), dim3(256, 1),
-                                   512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        19, 9, cfg.n_power, false, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-#else
-                    ForwardCore<<<dim3(262144, 1, batch_size), dim3(2, 256),
-                                  1024 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 9,
-                        0, 9, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCore<<<dim3(512, 512, batch_size), dim3(2, 256),
-                                  1024 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        9, 9, cfg.n_power, false, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ///////////////////////////////////////////////////////////
-                    ForwardCore_<<<dim3(262144, 1, batch_size), dim3(512, 1),
-                                   1024 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        18, 10, cfg.n_power, false, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-#endif
-                    break;
-
-                default:
-                    break;
+                    device_in_ = device_out;
+                }
+                auto& current_kernel_params =
+                    kernel_parameters[cfg.n_power]
+                                     [kernel_parameters[cfg.n_power].size() -
+                                      1];
+                ForwardCore_<<<
+                    dim3(current_kernel_params.griddim_x,
+                         current_kernel_params.griddim_y, batch_size),
+                    dim3(current_kernel_params.blockdim_x,
+                         current_kernel_params.blockdim_y),
+                    current_kernel_params.shared_memory, cfg.stream>>>(
+                    device_in_, device_out, root_of_unity_table, modulus,
+                    current_kernel_params.shared_index,
+                    current_kernel_params.logm,
+                    current_kernel_params.outer_iteration_count, cfg.n_power,
+                    cfg.zero_padding, current_kernel_params.not_last_kernel,
+                    (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
             }
             break;
         case INVERSE:
-            switch (cfg.n_power)
+            if (standart_kernel)
             {
-                case 12:
-                    InverseCore<<<dim3(1, 8, batch_size), dim3(256, 1),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        11, 3, 9, cfg.n_power, cfg.mod_inverse, false,
+                for (int i = 0; i < kernel_parameters[cfg.n_power].size(); i++)
+                {
+                    auto& current_kernel_params =
+                        kernel_parameters[cfg.n_power][i];
+                    InverseCore<<<
+                        dim3(current_kernel_params.griddim_x,
+                             current_kernel_params.griddim_y, batch_size),
+                        dim3(current_kernel_params.blockdim_x,
+                             current_kernel_params.blockdim_y),
+                        current_kernel_params.shared_memory, cfg.stream>>>(
+                        device_in_, device_out, root_of_unity_table, modulus,
+                        current_kernel_params.shared_index,
+                        current_kernel_params.logm, current_kernel_params.k,
+                        current_kernel_params.outer_iteration_count,
+                        cfg.n_power, cfg.mod_inverse,
+                        current_kernel_params.not_last_kernel,
                         (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCore<<<dim3(8, 1, batch_size), dim3(64, 4),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        2, 0, 3, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 13:
-                    InverseCore<<<dim3(1, 16, batch_size), dim3(256, 1),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        12, 4, 9, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCore<<<dim3(16, 1, batch_size), dim3(32, 8),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        3, 0, 4, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 14:
-                    InverseCore<<<dim3(1, 32, batch_size), dim3(256, 1),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        13, 5, 9, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCore<<<dim3(32, 1, batch_size), dim3(16, 16),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        4, 0, 5, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 15:
-                    InverseCore<<<dim3(1, 64, batch_size), dim3(256, 1),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        14, 6, 9, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCore<<<dim3(64, 1, batch_size), dim3(8, 32),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        5, 0, 6, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 16:
-                    InverseCore<<<dim3(1, 128, batch_size), dim3(256, 1),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        15, 7, 9, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCore<<<dim3(128, 1, batch_size), dim3(4, 64),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        6, 0, 7, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 17:
-                    InverseCore<<<dim3(1, 256, batch_size), dim3(256, 1),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        16, 8, 9, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCore<<<dim3(16, 16, batch_size), dim3(32, 8),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        7, 4, 4, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCore<<<dim3(256, 1, batch_size), dim3(32, 8),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        3, 0, 4, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 18:
-                    InverseCore<<<dim3(1, 512, batch_size), dim3(256, 1),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        17, 9, 9, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCore<<<dim3(32, 16, batch_size), dim3(16, 16),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        8, 4, 5, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCore<<<dim3(512, 1, batch_size), dim3(32, 8),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        3, 0, 4, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 19:
-                    InverseCore<<<dim3(1, 1024, batch_size), dim3(256, 1),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        18, 10, 9, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCore<<<dim3(32, 32, batch_size), dim3(16, 16),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        9, 5, 5, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCore<<<dim3(1024, 1, batch_size), dim3(16, 16),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        4, 0, 5, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 20:
-                    InverseCore<<<dim3(1, 2048, batch_size), dim3(256, 1),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        19, 11, 9, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCore<<<dim3(64, 32, batch_size), dim3(8, 32),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        10, 5, 6, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCore<<<dim3(2048, 1, batch_size), dim3(16, 16),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        4, 0, 5, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 21: //
-                    InverseCore<<<dim3(1, 4096, batch_size), dim3(256, 1),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        20, 12, 9, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCore<<<dim3(64, 64, batch_size), dim3(8, 32),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        11, 6, 6, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCore<<<dim3(4096, 1, batch_size), dim3(8, 32),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        5, 0, 6, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 22:
-                    InverseCore<<<dim3(1, 8192, batch_size), dim3(256, 1),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        21, 13, 9, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCore<<<dim3(128, 64, batch_size), dim3(4, 64),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        12, 6, 7, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCore<<<dim3(8192, 1, batch_size), dim3(8, 32),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        5, 0, 6, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 23:
-                    InverseCore<<<dim3(1, 16384, batch_size), dim3(256, 1),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        22, 14, 9, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCore<<<dim3(128, 128, batch_size), dim3(4, 64),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        13, 7, 7, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCore<<<dim3(16384, 1, batch_size), dim3(4, 64),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        6, 0, 7, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 24:
-                    InverseCore<<<dim3(1, 16384, batch_size), dim3(512, 1),
-                                  1024 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 9,
-                        23, 14, 10, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCore<<<dim3(128, 128, batch_size), dim3(8, 64),
-                                  1024 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        13, 7, 7, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCore<<<dim3(16384, 1, batch_size), dim3(8, 64),
-                                  1024 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        6, 0, 7, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 25:
-                    InverseCore_<<<dim3(32768, 1, batch_size), dim3(512, 1),
-                                   1024 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 9,
-                        24, 15, 10, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ///////////////////////////////////////////////////////////
-                    InverseCore<<<dim3(256, 128, batch_size), dim3(4, 128),
-                                  1024 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        14, 7, 8, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCore<<<dim3(32768, 1, batch_size), dim3(8, 64),
-                                  1024 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        6, 0, 7, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 26:
-                    InverseCore_<<<dim3(65536, 1, batch_size), dim3(512, 1),
-                                   1024 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 9,
-                        25, 16, 10, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ///////////////////////////////////////////////////////////
-                    InverseCore<<<dim3(256, 256, batch_size), dim3(4, 128),
-                                  1024 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        15, 8, 8, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCore<<<dim3(65536, 1, batch_size), dim3(4, 128),
-                                  1024 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        7, 0, 8, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 27:
-#ifndef CC_89
-                    InverseCore_<<<dim3(262144, 1, batch_size), dim3(256, 1),
-                                   512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        26, 18, 9, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ///////////////////////////////////////////////////////////
-                    InverseCore<<<dim3(128, 2048, batch_size), dim3(4, 64),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        17, 11, 7, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCore<<<dim3(8192, 32, batch_size), dim3(8, 32),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        10, 5, 6, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCore<<<dim3(262144, 1, batch_size), dim3(16, 16),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        4, 0, 5, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-#else
-                    InverseCore_<<<dim3(131072, 1, batch_size), dim3(512, 1),
-                                   1024 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 9,
-                        26, 17, 10, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ///////////////////////////////////////////////////////////
-                    InverseCore<<<dim3(512, 256, batch_size), dim3(2, 256),
-                                  1024 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        16, 8, 9, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCore<<<dim3(131072, 1, batch_size), dim3(4, 128),
-                                  1024 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        7, 0, 8, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-#endif
-                    break;
-                case 28:
-#ifndef CC_89
-                    InverseCore_<<<dim3(524288, 1, batch_size), dim3(256, 1),
-                                   512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        27, 19, 9, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ///////////////////////////////////////////////////////////
-                    InverseCore<<<dim3(128, 4096, batch_size), dim3(4, 64),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        18, 12, 7, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCore<<<dim3(8192, 64, batch_size), dim3(8, 32),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        11, 6, 6, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCore<<<dim3(524288, 1, batch_size), dim3(8, 32),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        5, 0, 6, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-#else
-                    InverseCore_<<<dim3(262144, 1, batch_size), dim3(512, 1),
-                                   1024 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 9,
-                        27, 18, 10, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ///////////////////////////////////////////////////////////
-                    InverseCore<<<dim3(512, 512, batch_size), dim3(2, 256),
-                                  1024 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        17, 9, 9, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCore<<<dim3(262144, 1, batch_size), dim3(2, 256),
-                                  1024 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        8, 0, 9, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-#endif
-                    break;
-
-                default:
-                    break;
+                    device_in_ = device_out;
+                }
             }
-            break;
+            else
+            {
+                auto& current_kernel_params = kernel_parameters[cfg.n_power][0];
+                InverseCore_<<<
+                    dim3(current_kernel_params.griddim_x,
+                         current_kernel_params.griddim_y, batch_size),
+                    dim3(current_kernel_params.blockdim_x,
+                         current_kernel_params.blockdim_y),
+                    current_kernel_params.shared_memory, cfg.stream>>>(
+                    device_in_, device_out, root_of_unity_table, modulus,
+                    current_kernel_params.shared_index,
+                    current_kernel_params.logm, current_kernel_params.k,
+                    current_kernel_params.outer_iteration_count, cfg.n_power,
+                    cfg.mod_inverse, current_kernel_params.not_last_kernel,
+                    (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
+                device_in_ = device_out;
+                for (int i = 1; i < kernel_parameters[cfg.n_power].size(); i++)
+                {
+                    auto& current_kernel_params =
+                        kernel_parameters[cfg.n_power][i];
+                    InverseCore<<<
+                        dim3(current_kernel_params.griddim_x,
+                             current_kernel_params.griddim_y, batch_size),
+                        dim3(current_kernel_params.blockdim_x,
+                             current_kernel_params.blockdim_y),
+                        current_kernel_params.shared_memory, cfg.stream>>>(
+                        device_in_, device_out, root_of_unity_table, modulus,
+                        current_kernel_params.shared_index,
+                        current_kernel_params.logm, current_kernel_params.k,
+                        current_kernel_params.outer_iteration_count,
+                        cfg.n_power, cfg.mod_inverse,
+                        current_kernel_params.not_last_kernel,
+                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
+                }
+            }
 
+            break;
         default:
+            throw std::invalid_argument("Invalid ntt_type!");
             break;
     }
 }
 
-__host__ void GPU_NTT(Data* device_in, Data* device_out,
-                      Root* root_of_unity_table, Modulus* modulus,
-                      ntt_rns_configuration cfg, int batch_size, int mod_count)
+template <typename T>
+__host__ void GPU_NTT(T* device_in, T* device_out, Root<T>* root_of_unity_table,
+                      Modulus<T>* modulus, ntt_rns_configuration<T> cfg,
+                      int batch_size, int mod_count)
 {
+    if ((cfg.n_power <= 11 || cfg.n_power >= 29))
+    {
+        throw std::invalid_argument("Invalid n_power range!");
+    }
+
+    auto kernel_parameters = (cfg.ntt_type == FORWARD)
+                                 ? CreateForwardNTTKernel<T>()
+                                 : CreateInverseNTTKernel<T>();
+    bool standart_kernel = (cfg.n_power < 25) ? true : false;
+    T* device_in_ = device_in;
+
     switch (cfg.ntt_type)
     {
         case FORWARD:
-            switch (cfg.n_power)
+            if (standart_kernel)
             {
-                case 12:
-                    ForwardCore<<<dim3(8, 1, batch_size), dim3(64, 4),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        0, 3, cfg.n_power, cfg.zero_padding, true,
+                for (int i = 0; i < kernel_parameters[cfg.n_power].size(); i++)
+                {
+                    auto& current_kernel_params =
+                        kernel_parameters[cfg.n_power][i];
+                    ForwardCore<<<
+                        dim3(current_kernel_params.griddim_x,
+                             current_kernel_params.griddim_y, batch_size),
+                        dim3(current_kernel_params.blockdim_x,
+                             current_kernel_params.blockdim_y),
+                        current_kernel_params.shared_memory, cfg.stream>>>(
+                        device_in_, device_out, root_of_unity_table, modulus,
+                        current_kernel_params.shared_index,
+                        current_kernel_params.logm,
+                        current_kernel_params.outer_iteration_count,
+                        cfg.n_power, cfg.zero_padding,
+                        current_kernel_params.not_last_kernel,
                         (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
                         mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCore<<<dim3(1, 8, batch_size), dim3(256, 1),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        3, 9, cfg.n_power, false, false,
+                    device_in_ = device_out;
+                }
+            }
+            else
+            {
+                for (int i = 0; i < kernel_parameters[cfg.n_power].size() - 1;
+                     i++)
+                {
+                    auto& current_kernel_params =
+                        kernel_parameters[cfg.n_power][i];
+                    ForwardCore<<<
+                        dim3(current_kernel_params.griddim_x,
+                             current_kernel_params.griddim_y, batch_size),
+                        dim3(current_kernel_params.blockdim_x,
+                             current_kernel_params.blockdim_y),
+                        current_kernel_params.shared_memory, cfg.stream>>>(
+                        device_in_, device_out, root_of_unity_table, modulus,
+                        current_kernel_params.shared_index,
+                        current_kernel_params.logm,
+                        current_kernel_params.outer_iteration_count,
+                        cfg.n_power, cfg.zero_padding,
+                        current_kernel_params.not_last_kernel,
                         (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
                         mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 13:
-                    ForwardCore<<<dim3(16, 1, batch_size), dim3(32, 8),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        0, 4, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCore<<<dim3(1, 16, batch_size), dim3(256, 1),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        4, 9, cfg.n_power, false, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 14:
-                    ForwardCore<<<dim3(32, 1, batch_size), dim3(16, 16),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        0, 5, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCore<<<dim3(1, 32, batch_size), dim3(256, 1),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        5, 9, cfg.n_power, false, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 15:
-                    ForwardCore<<<dim3(64, 1, batch_size), dim3(8, 32),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        0, 6, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCore<<<dim3(1, 64, batch_size), dim3(256, 1),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        6, 9, cfg.n_power, false, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 16:
-                    ForwardCore<<<dim3(128, 1, batch_size), dim3(4, 64),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        0, 7, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCore<<<dim3(1, 128, batch_size), dim3(256, 1),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        7, 9, cfg.n_power, false, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 17:
-                    ForwardCore<<<dim3(256, 1, batch_size), dim3(32, 8),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        0, 4, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCore<<<dim3(16, 16, batch_size), dim3(32, 8),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        4, 4, cfg.n_power, false, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCore<<<dim3(1, 256, batch_size), dim3(256, 1),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        8, 9, cfg.n_power, false, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 18:
-                    ForwardCore<<<dim3(512, 1, batch_size), dim3(32, 8),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        0, 4, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCore<<<dim3(32, 16, batch_size), dim3(16, 16),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        4, 5, cfg.n_power, false, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCore<<<dim3(1, 512, batch_size), dim3(256, 1),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        9, 9, cfg.n_power, false, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 19:
-                    ForwardCore<<<dim3(1024, 1, batch_size), dim3(16, 16),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        0, 5, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCore<<<dim3(32, 32, batch_size), dim3(16, 16),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        5, 5, cfg.n_power, false, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCore<<<dim3(1, 1024, batch_size), dim3(256, 1),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        10, 9, cfg.n_power, false, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 20:
-                    ForwardCore<<<dim3(2048, 1, batch_size), dim3(16, 16),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        0, 5, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCore<<<dim3(64, 32, batch_size), dim3(8, 32),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        5, 6, cfg.n_power, false, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCore<<<dim3(1, 2048, batch_size), dim3(256, 1),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        11, 9, cfg.n_power, false, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 21:
-                    ForwardCore<<<dim3(4096, 1, batch_size), dim3(8, 32),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        0, 6, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCore<<<dim3(64, 64, batch_size), dim3(8, 32),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        6, 6, cfg.n_power, false, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCore<<<dim3(1, 4096, batch_size), dim3(256, 1),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        12, 9, cfg.n_power, false, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 22:
-                    ForwardCore<<<dim3(8192, 1, batch_size), dim3(8, 32),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        0, 6, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCore<<<dim3(128, 64, batch_size), dim3(4, 64),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        6, 7, cfg.n_power, false, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCore<<<dim3(1, 8192, batch_size), dim3(256, 1),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        13, 9, cfg.n_power, false, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-
-                    break;
-                case 23:
-                    ForwardCore<<<dim3(16384, 1, batch_size), dim3(4, 64),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        0, 7, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCore<<<dim3(128, 128, batch_size), dim3(4, 64),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        7, 7, cfg.n_power, false, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCore<<<dim3(1, 16384, batch_size), dim3(256, 1),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        14, 9, cfg.n_power, false, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 24:
-                    ForwardCore<<<dim3(16384, 1, batch_size), dim3(8, 64),
-                                  1024 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 9,
-                        0, 7, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCore<<<dim3(128, 128, batch_size), dim3(8, 64),
-                                  1024 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        7, 7, cfg.n_power, false, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCore<<<dim3(1, 16384, batch_size), dim3(512, 1),
-                                  1024 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        14, 10, cfg.n_power, false, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 25:
-                    ForwardCore<<<dim3(32768, 1, batch_size), dim3(8, 64),
-                                  1024 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 9,
-                        0, 7, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCore<<<dim3(256, 128, batch_size), dim3(4, 128),
-                                  1024 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        7, 8, cfg.n_power, false, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ///////////////////////////////////////////////////////////
-                    ForwardCore_<<<dim3(32768, 1, batch_size), dim3(512, 1),
-                                   1024 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        15, 10, cfg.n_power, false, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 26:
-                    ForwardCore<<<dim3(65536, 1, batch_size), dim3(4, 128),
-                                  1024 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 9,
-                        0, 8, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCore<<<dim3(256, 256, batch_size), dim3(4, 128),
-                                  1024 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        8, 8, cfg.n_power, false, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ///////////////////////////////////////////////////////////
-                    ForwardCore_<<<dim3(65536, 1, batch_size), dim3(512, 1),
-                                   1024 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        16, 10, cfg.n_power, false, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 27:
-#ifndef CC_89
-                    ForwardCore<<<dim3(262144, 1, batch_size), dim3(16, 16),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        0, 5, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCore<<<dim3(8192, 32, batch_size), dim3(8, 32),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        5, 6, cfg.n_power, false, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCore<<<dim3(128, 2048, batch_size), dim3(4, 64),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        11, 7, cfg.n_power, false, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ///////////////////////////////////////////////////////////
-                    ForwardCore_<<<dim3(262144, 1, batch_size), dim3(256, 1),
-                                   512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        18, 9, cfg.n_power, false, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-#else
-                    ForwardCore<<<dim3(131072, 1, batch_size), dim3(4, 128),
-                                  1024 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 9,
-                        0, 8, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCore<<<dim3(512, 256, batch_size), dim3(2, 256),
-                                  1024 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        8, 9, cfg.n_power, false, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ///////////////////////////////////////////////////////////
-                    ForwardCore_<<<dim3(131072, 1, batch_size), dim3(512, 1),
-                                   1024 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        17, 10, cfg.n_power, false, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-#endif
-                    break;
-                case 28:
-#ifndef CC_89
-                    ForwardCore<<<dim3(524288, 1, batch_size), dim3(8, 32),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        0, 6, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCore<<<dim3(8192, 64, batch_size), dim3(8, 32),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        6, 6, cfg.n_power, false, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCore<<<dim3(128, 4096, batch_size), dim3(4, 64),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        12, 7, cfg.n_power, false, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ///////////////////////////////////////////////////////////
-                    ForwardCore_<<<dim3(524288, 1, batch_size), dim3(256, 1),
-                                   512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        19, 9, cfg.n_power, false, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-#else
-                    ForwardCore<<<dim3(262144, 1, batch_size), dim3(2, 256),
-                                  1024 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 9,
-                        0, 9, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCore<<<dim3(512, 512, batch_size), dim3(2, 256),
-                                  1024 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        9, 9, cfg.n_power, false, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ///////////////////////////////////////////////////////////
-                    ForwardCore_<<<dim3(262144, 1, batch_size), dim3(512, 1),
-                                   1024 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        18, 10, cfg.n_power, false, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-#endif
-                    break;
-
-                default:
-                    break;
+                    device_in_ = device_out;
+                }
+                auto& current_kernel_params =
+                    kernel_parameters[cfg.n_power]
+                                     [kernel_parameters[cfg.n_power].size() -
+                                      1];
+                ForwardCore_<<<
+                    dim3(current_kernel_params.griddim_x,
+                         current_kernel_params.griddim_y, batch_size),
+                    dim3(current_kernel_params.blockdim_x,
+                         current_kernel_params.blockdim_y),
+                    current_kernel_params.shared_memory, cfg.stream>>>(
+                    device_in_, device_out, root_of_unity_table, modulus,
+                    current_kernel_params.shared_index,
+                    current_kernel_params.logm,
+                    current_kernel_params.outer_iteration_count, cfg.n_power,
+                    cfg.zero_padding, current_kernel_params.not_last_kernel,
+                    (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
+                    mod_count);
             }
             break;
         case INVERSE:
-            switch (cfg.n_power)
+            if (standart_kernel)
             {
-                case 12:
-                    InverseCore<<<dim3(1, 8, batch_size), dim3(256, 1),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        11, 3, 9, cfg.n_power, cfg.mod_inverse, false,
+                for (int i = 0; i < kernel_parameters[cfg.n_power].size(); i++)
+                {
+                    auto& current_kernel_params =
+                        kernel_parameters[cfg.n_power][i];
+                    InverseCore<<<
+                        dim3(current_kernel_params.griddim_x,
+                             current_kernel_params.griddim_y, batch_size),
+                        dim3(current_kernel_params.blockdim_x,
+                             current_kernel_params.blockdim_y),
+                        current_kernel_params.shared_memory, cfg.stream>>>(
+                        device_in_, device_out, root_of_unity_table, modulus,
+                        current_kernel_params.shared_index,
+                        current_kernel_params.logm, current_kernel_params.k,
+                        current_kernel_params.outer_iteration_count,
+                        cfg.n_power, cfg.mod_inverse,
+                        current_kernel_params.not_last_kernel,
                         (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
                         mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCore<<<dim3(8, 1, batch_size), dim3(64, 4),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        2, 0, 3, cfg.n_power, cfg.mod_inverse, true,
+                    device_in_ = device_out;
+                }
+            }
+            else
+            {
+                auto& current_kernel_params = kernel_parameters[cfg.n_power][0];
+                InverseCore_<<<
+                    dim3(current_kernel_params.griddim_x,
+                         current_kernel_params.griddim_y, batch_size),
+                    dim3(current_kernel_params.blockdim_x,
+                         current_kernel_params.blockdim_y),
+                    current_kernel_params.shared_memory, cfg.stream>>>(
+                    device_in_, device_out, root_of_unity_table, modulus,
+                    current_kernel_params.shared_index,
+                    current_kernel_params.logm, current_kernel_params.k,
+                    current_kernel_params.outer_iteration_count, cfg.n_power,
+                    cfg.mod_inverse, current_kernel_params.not_last_kernel,
+                    (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
+                    mod_count);
+                device_in_ = device_out;
+                for (int i = 1; i < kernel_parameters[cfg.n_power].size(); i++)
+                {
+                    auto& current_kernel_params =
+                        kernel_parameters[cfg.n_power][i];
+                    InverseCore<<<
+                        dim3(current_kernel_params.griddim_x,
+                             current_kernel_params.griddim_y, batch_size),
+                        dim3(current_kernel_params.blockdim_x,
+                             current_kernel_params.blockdim_y),
+                        current_kernel_params.shared_memory, cfg.stream>>>(
+                        device_in_, device_out, root_of_unity_table, modulus,
+                        current_kernel_params.shared_index,
+                        current_kernel_params.logm, current_kernel_params.k,
+                        current_kernel_params.outer_iteration_count,
+                        cfg.n_power, cfg.mod_inverse,
+                        current_kernel_params.not_last_kernel,
                         (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
                         mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 13:
-                    InverseCore<<<dim3(1, 16, batch_size), dim3(256, 1),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        12, 4, 9, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCore<<<dim3(16, 1, batch_size), dim3(32, 8),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        3, 0, 4, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 14:
-                    InverseCore<<<dim3(1, 32, batch_size), dim3(256, 1),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        13, 5, 9, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCore<<<dim3(32, 1, batch_size), dim3(16, 16),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        4, 0, 5, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 15:
-                    InverseCore<<<dim3(1, 64, batch_size), dim3(256, 1),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        14, 6, 9, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCore<<<dim3(64, 1, batch_size), dim3(8, 32),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        5, 0, 6, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 16:
-                    InverseCore<<<dim3(1, 128, batch_size), dim3(256, 1),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        15, 7, 9, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCore<<<dim3(128, 1, batch_size), dim3(4, 64),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        6, 0, 7, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 17:
-                    InverseCore<<<dim3(1, 256, batch_size), dim3(256, 1),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        16, 8, 9, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCore<<<dim3(16, 16, batch_size), dim3(32, 8),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        7, 4, 4, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCore<<<dim3(256, 1, batch_size), dim3(32, 8),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        3, 0, 4, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 18:
-                    InverseCore<<<dim3(1, 512, batch_size), dim3(256, 1),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        17, 9, 9, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCore<<<dim3(32, 16, batch_size), dim3(16, 16),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        8, 4, 5, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCore<<<dim3(512, 1, batch_size), dim3(32, 8),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        3, 0, 4, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 19:
-                    InverseCore<<<dim3(1, 1024, batch_size), dim3(256, 1),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        18, 10, 9, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCore<<<dim3(32, 32, batch_size), dim3(16, 16),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        9, 5, 5, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCore<<<dim3(1024, 1, batch_size), dim3(16, 16),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        4, 0, 5, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 20:
-                    InverseCore<<<dim3(1, 2048, batch_size), dim3(256, 1),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        19, 11, 9, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCore<<<dim3(64, 32, batch_size), dim3(8, 32),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        10, 5, 6, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCore<<<dim3(2048, 1, batch_size), dim3(16, 16),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        4, 0, 5, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 21: //
-                    InverseCore<<<dim3(1, 4096, batch_size), dim3(256, 1),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        20, 12, 9, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCore<<<dim3(64, 64, batch_size), dim3(8, 32),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        11, 6, 6, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCore<<<dim3(4096, 1, batch_size), dim3(8, 32),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        5, 0, 6, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 22:
-                    InverseCore<<<dim3(1, 8192, batch_size), dim3(256, 1),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        21, 13, 9, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCore<<<dim3(128, 64, batch_size), dim3(4, 64),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        12, 6, 7, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCore<<<dim3(8192, 1, batch_size), dim3(8, 32),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        5, 0, 6, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 23:
-                    InverseCore<<<dim3(1, 16384, batch_size), dim3(256, 1),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        22, 14, 9, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCore<<<dim3(128, 128, batch_size), dim3(4, 64),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        13, 7, 7, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCore<<<dim3(16384, 1, batch_size), dim3(4, 64),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        6, 0, 7, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 24:
-                    InverseCore<<<dim3(1, 16384, batch_size), dim3(512, 1),
-                                  1024 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 9,
-                        23, 14, 10, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCore<<<dim3(128, 128, batch_size), dim3(8, 64),
-                                  1024 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        13, 7, 7, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCore<<<dim3(16384, 1, batch_size), dim3(8, 64),
-                                  1024 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        6, 0, 7, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 25:
-                    InverseCore_<<<dim3(32768, 1, batch_size), dim3(512, 1),
-                                   1024 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 9,
-                        24, 15, 10, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ///////////////////////////////////////////////////////////
-                    InverseCore<<<dim3(256, 128, batch_size), dim3(4, 128),
-                                  1024 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        14, 7, 8, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCore<<<dim3(32768, 1, batch_size), dim3(8, 64),
-                                  1024 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        6, 0, 7, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 26:
-                    InverseCore_<<<dim3(65536, 1, batch_size), dim3(512, 1),
-                                   1024 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 9,
-                        25, 16, 10, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ///////////////////////////////////////////////////////////
-                    InverseCore<<<dim3(256, 256, batch_size), dim3(4, 128),
-                                  1024 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        15, 8, 8, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCore<<<dim3(65536, 1, batch_size), dim3(4, 128),
-                                  1024 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        7, 0, 8, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 27:
-#ifndef CC_89
-                    InverseCore_<<<dim3(262144, 1, batch_size), dim3(256, 1),
-                                   512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        26, 18, 9, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ///////////////////////////////////////////////////////////
-                    InverseCore<<<dim3(128, 2048, batch_size), dim3(4, 64),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        17, 11, 7, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCore<<<dim3(8192, 32, batch_size), dim3(8, 32),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        10, 5, 6, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCore<<<dim3(262144, 1, batch_size), dim3(16, 16),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        4, 0, 5, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-#else
-                    InverseCore_<<<dim3(131072, 1, batch_size), dim3(512, 1),
-                                   1024 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 9,
-                        26, 17, 10, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ///////////////////////////////////////////////////////////
-                    InverseCore<<<dim3(512, 256, batch_size), dim3(2, 256),
-                                  1024 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        16, 8, 9, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCore<<<dim3(131072, 1, batch_size), dim3(4, 128),
-                                  1024 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        7, 0, 8, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-#endif
-                    break;
-                case 28:
-#ifndef CC_89
-                    InverseCore_<<<dim3(524288, 1, batch_size), dim3(256, 1),
-                                   512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        27, 19, 9, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ///////////////////////////////////////////////////////////
-                    InverseCore<<<dim3(128, 4096, batch_size), dim3(4, 64),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        18, 12, 7, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCore<<<dim3(8192, 64, batch_size), dim3(8, 32),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        11, 6, 6, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCore<<<dim3(524288, 1, batch_size), dim3(8, 32),
-                                  512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        5, 0, 6, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-#else
-                    InverseCore_<<<dim3(262144, 1, batch_size), dim3(512, 1),
-                                   1024 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 9,
-                        27, 18, 10, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ///////////////////////////////////////////////////////////
-                    InverseCore<<<dim3(512, 512, batch_size), dim3(2, 256),
-                                  1024 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        17, 9, 9, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCore<<<dim3(262144, 1, batch_size), dim3(2, 256),
-                                  1024 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        8, 0, 9, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-#endif
-                    break;
-
-                default:
-                    break;
+                }
             }
             break;
-
         default:
+            throw std::invalid_argument("Invalid ntt_type!");
             break;
     }
 }
 
-__host__ void GPU_NTT_Inplace(Data* device_inout, Root* root_of_unity_table,
-                              Modulus modulus, ntt_configuration cfg,
+template <typename T>
+__host__ void GPU_NTT_Inplace(T* device_inout, Root<T>* root_of_unity_table,
+                              Modulus<T> modulus, ntt_configuration<T> cfg,
                               int batch_size)
 {
     GPU_NTT(device_inout, device_inout, root_of_unity_table, modulus, cfg,
             batch_size);
 }
 
-__host__ void GPU_NTT_Inplace(Data* device_inout, Root* root_of_unity_table,
-                              Modulus* modulus, ntt_rns_configuration cfg,
+template <typename T>
+__host__ void GPU_NTT_Inplace(T* device_inout, Root<T>* root_of_unity_table,
+                              Modulus<T>* modulus, ntt_rns_configuration<T> cfg,
                               int batch_size, int mod_count)
 {
     GPU_NTT(device_inout, device_inout, root_of_unity_table, modulus, cfg,
             batch_size, mod_count);
 }
 
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////
 // Modulus Ordered
+////////////////////////////////////
 
+template <typename T>
 __global__ void
-ForwardCoreModulusOrdered(Data* polynomial_in, Data* polynomial_out,
-                          Root* root_of_unity_table, Modulus* modulus,
+ForwardCoreModulusOrdered(T* polynomial_in, T* polynomial_out,
+                          Root<T>* root_of_unity_table, Modulus<T>* modulus,
                           int shared_index, int logm, int outer_iteration_count,
                           int N_power, bool zero_padding, bool not_last_kernel,
                           bool reduction_poly_check, int mod_count, int* order)
@@ -2600,7 +1278,9 @@ ForwardCoreModulusOrdered(Data* polynomial_in, Data* polynomial_out,
     const int mod_index = block_z % mod_count;
     const int prime_index = order[mod_index];
 
-    extern __shared__ Data shared_memory[];
+    // extern __shared__ T shared_memory[];
+    extern __shared__ char shared_memory_typed[];
+    T* shared_memory = reinterpret_cast<T*>(shared_memory_typed);
 
     int t_2 = N_power - logm - 1;
     location_t offset = 1 << (N_power - logm - 1);
@@ -2620,7 +1300,7 @@ ForwardCoreModulusOrdered(Data* polynomial_in, Data* polynomial_out,
 
     location_t shared_addresss = (idx_x + (idx_y * blockDim.x));
 
-    // Load data from global & store to shared
+    // Load Data64 from global & store to shared
     shared_memory[shared_addresss] = polynomial_in[global_addresss];
     shared_memory[shared_addresss + (blockDim.x * blockDim.y)] =
         polynomial_in[global_addresss + offset];
@@ -2727,9 +1407,10 @@ ForwardCoreModulusOrdered(Data* polynomial_in, Data* polynomial_out,
         shared_memory[shared_addresss + (blockDim.x * blockDim.y)];
 }
 
+template <typename T>
 __global__ void ForwardCoreModulusOrdered_(
-    Data* polynomial_in, Data* polynomial_out, Root* root_of_unity_table,
-    Modulus* modulus, int shared_index, int logm, int outer_iteration_count,
+    T* polynomial_in, T* polynomial_out, Root<T>* root_of_unity_table,
+    Modulus<T>* modulus, int shared_index, int logm, int outer_iteration_count,
     int N_power, bool zero_padding, bool not_last_kernel,
     bool reduction_poly_check, int mod_count, int* order)
 {
@@ -2742,7 +1423,9 @@ __global__ void ForwardCoreModulusOrdered_(
     const int mod_index = block_z % mod_count;
     const int prime_index = order[mod_index];
 
-    extern __shared__ Data shared_memory[];
+    // extern __shared__ T shared_memory[];
+    extern __shared__ char shared_memory_typed[];
+    T* shared_memory = reinterpret_cast<T*>(shared_memory_typed);
 
     int t_2 = N_power - logm - 1;
     location_t offset = 1 << (N_power - logm - 1);
@@ -2760,7 +1443,7 @@ __global__ void ForwardCoreModulusOrdered_(
         (location_t) (blockDim.x * block_y) + (location_t) (block_x * offset);
     location_t shared_addresss = (idx_x + (idx_y * blockDim.x));
 
-    // Load data from global & store to shared
+    // Load Data64 from global & store to shared
     shared_memory[shared_addresss] = polynomial_in[global_addresss];
     shared_memory[shared_addresss + (blockDim.x * blockDim.y)] =
         polynomial_in[global_addresss + offset];
@@ -2866,13 +1549,12 @@ __global__ void ForwardCoreModulusOrdered_(
         shared_memory[shared_addresss + (blockDim.x * blockDim.y)];
 }
 
-__global__ void
-InverseCoreModulusOrdered(Data* polynomial_in, Data* polynomial_out,
-                          Root* inverse_root_of_unity_table, Modulus* modulus,
-                          int shared_index, int logm, int k,
-                          int outer_iteration_count, int N_power,
-                          Ninverse* n_inverse, bool last_kernel,
-                          bool reduction_poly_check, int mod_count, int* order)
+template <typename T>
+__global__ void InverseCoreModulusOrdered(
+    T* polynomial_in, T* polynomial_out, Root<T>* inverse_root_of_unity_table,
+    Modulus<T>* modulus, int shared_index, int logm, int k,
+    int outer_iteration_count, int N_power, Ninverse<T>* n_inverse,
+    bool last_kernel, bool reduction_poly_check, int mod_count, int* order)
 {
     const int idx_x = threadIdx.x;
     const int idx_y = threadIdx.y;
@@ -2883,7 +1565,9 @@ InverseCoreModulusOrdered(Data* polynomial_in, Data* polynomial_out,
     const int mod_index = block_z % mod_count;
     const int prime_index = order[mod_index];
 
-    extern __shared__ Data shared_memory[];
+    // extern __shared__ T shared_memory[];
+    extern __shared__ char shared_memory_typed[];
+    T* shared_memory = reinterpret_cast<T*>(shared_memory_typed);
 
     int t_2 = N_power - logm - 1;
     location_t offset = 1 << (N_power - k - 1);
@@ -2943,9 +1627,9 @@ InverseCoreModulusOrdered(Data* polynomial_in, Data* polynomial_out,
     if (last_kernel)
     {
         polynomial_out[global_addresss] =
-            VALUE_GPU::mult(shared_memory[shared_addresss],
-                            n_inverse[prime_index], modulus[prime_index]);
-        polynomial_out[global_addresss + offset] = VALUE_GPU::mult(
+            OPERATOR_GPU<T>::mult(shared_memory[shared_addresss],
+                                  n_inverse[prime_index], modulus[prime_index]);
+        polynomial_out[global_addresss + offset] = OPERATOR_GPU<T>::mult(
             shared_memory[shared_addresss + (blockDim.x * blockDim.y)],
             n_inverse[prime_index], modulus[prime_index]);
     }
@@ -2957,13 +1641,12 @@ InverseCoreModulusOrdered(Data* polynomial_in, Data* polynomial_out,
     }
 }
 
-__global__ void
-InverseCoreModulusOrdered_(Data* polynomial_in, Data* polynomial_out,
-                           Root* inverse_root_of_unity_table, Modulus* modulus,
-                           int shared_index, int logm, int k,
-                           int outer_iteration_count, int N_power,
-                           Ninverse* n_inverse, bool last_kernel,
-                           bool reduction_poly_check, int mod_count, int* order)
+template <typename T>
+__global__ void InverseCoreModulusOrdered_(
+    T* polynomial_in, T* polynomial_out, Root<T>* inverse_root_of_unity_table,
+    Modulus<T>* modulus, int shared_index, int logm, int k,
+    int outer_iteration_count, int N_power, Ninverse<T>* n_inverse,
+    bool last_kernel, bool reduction_poly_check, int mod_count, int* order)
 {
     const int idx_x = threadIdx.x;
     const int idx_y = threadIdx.y;
@@ -2974,7 +1657,9 @@ InverseCoreModulusOrdered_(Data* polynomial_in, Data* polynomial_out,
     const int mod_index = block_z % mod_count;
     const int prime_index = order[mod_index];
 
-    extern __shared__ Data shared_memory[];
+    // extern __shared__ T shared_memory[];
+    extern __shared__ char shared_memory_typed[];
+    T* shared_memory = reinterpret_cast<T*>(shared_memory_typed);
 
     int t_2 = N_power - logm - 1;
     location_t offset = 1 << (N_power - k - 1);
@@ -3034,9 +1719,9 @@ InverseCoreModulusOrdered_(Data* polynomial_in, Data* polynomial_out,
     if (last_kernel)
     {
         polynomial_out[global_addresss] =
-            VALUE_GPU::mult(shared_memory[shared_addresss],
-                            n_inverse[prime_index], modulus[prime_index]);
-        polynomial_out[global_addresss + offset] = VALUE_GPU::mult(
+            OPERATOR_GPU<T>::mult(shared_memory[shared_addresss],
+                                  n_inverse[prime_index], modulus[prime_index]);
+        polynomial_out[global_addresss + offset] = OPERATOR_GPU<T>::mult(
             shared_memory[shared_addresss + (blockDim.x * blockDim.y)],
             n_inverse[prime_index], modulus[prime_index]);
     }
@@ -3048,1013 +1733,177 @@ InverseCoreModulusOrdered_(Data* polynomial_in, Data* polynomial_out,
     }
 }
 
-__host__ void GPU_NTT_Modulus_Ordered(Data* device_in, Data* device_out,
-                                      Root* root_of_unity_table,
-                                      Modulus* modulus,
-                                      ntt_rns_configuration cfg, int batch_size,
-                                      int mod_count, int* order)
+template <typename T>
+__host__ void GPU_NTT_Modulus_Ordered(T* device_in, T* device_out,
+                                      Root<T>* root_of_unity_table,
+                                      Modulus<T>* modulus,
+                                      ntt_rns_configuration<T> cfg,
+                                      int batch_size, int mod_count, int* order)
 {
+    if ((cfg.n_power <= 11 || cfg.n_power >= 29))
+    {
+        throw std::invalid_argument("Invalid n_power range!");
+    }
+
+    auto kernel_parameters = (cfg.ntt_type == FORWARD)
+                                 ? CreateForwardNTTKernel<T>()
+                                 : CreateInverseNTTKernel<T>();
+    bool standart_kernel = (cfg.n_power < 25) ? true : false;
+    T* device_in_ = device_in;
+
     switch (cfg.ntt_type)
     {
         case FORWARD:
-            switch (cfg.n_power)
+            if (standart_kernel)
             {
-                case 12:
-                    ForwardCoreModulusOrdered<<<dim3(8, 1, batch_size),
-                                                dim3(64, 4), 512 * sizeof(Data),
-                                                cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        0, 3, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
+                for (int i = 0; i < kernel_parameters[cfg.n_power].size(); i++)
+                {
+                    auto& current_kernel_params =
+                        kernel_parameters[cfg.n_power][i];
                     ForwardCoreModulusOrdered<<<
-                        dim3(1, 8, batch_size), dim3(256, 1),
-                        512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        3, 9, cfg.n_power, false, false,
+                        dim3(current_kernel_params.griddim_x,
+                             current_kernel_params.griddim_y, batch_size),
+                        dim3(current_kernel_params.blockdim_x,
+                             current_kernel_params.blockdim_y),
+                        current_kernel_params.shared_memory, cfg.stream>>>(
+                        device_in_, device_out, root_of_unity_table, modulus,
+                        current_kernel_params.shared_index,
+                        current_kernel_params.logm,
+                        current_kernel_params.outer_iteration_count,
+                        cfg.n_power, cfg.zero_padding,
+                        current_kernel_params.not_last_kernel,
                         (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
                         mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 13:
-                    ForwardCoreModulusOrdered<<<dim3(16, 1, batch_size),
-                                                dim3(32, 8), 512 * sizeof(Data),
-                                                cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        0, 4, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
+                    device_in_ = device_out;
+                }
+            }
+            else
+            {
+                for (int i = 0; i < kernel_parameters[cfg.n_power].size() - 1;
+                     i++)
+                {
+                    auto& current_kernel_params =
+                        kernel_parameters[cfg.n_power][i];
                     ForwardCoreModulusOrdered<<<
-                        dim3(1, 16, batch_size), dim3(256, 1),
-                        512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        4, 9, cfg.n_power, false, false,
+                        dim3(current_kernel_params.griddim_x,
+                             current_kernel_params.griddim_y, batch_size),
+                        dim3(current_kernel_params.blockdim_x,
+                             current_kernel_params.blockdim_y),
+                        current_kernel_params.shared_memory, cfg.stream>>>(
+                        device_in_, device_out, root_of_unity_table, modulus,
+                        current_kernel_params.shared_index,
+                        current_kernel_params.logm,
+                        current_kernel_params.outer_iteration_count,
+                        cfg.n_power, cfg.zero_padding,
+                        current_kernel_params.not_last_kernel,
                         (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
                         mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 14:
-                    ForwardCoreModulusOrdered<<<
-                        dim3(32, 1, batch_size), dim3(16, 16),
-                        512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        0, 5, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCoreModulusOrdered<<<
-                        dim3(1, 32, batch_size), dim3(256, 1),
-                        512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        5, 9, cfg.n_power, false, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 15:
-                    ForwardCoreModulusOrdered<<<dim3(64, 1, batch_size),
-                                                dim3(8, 32), 512 * sizeof(Data),
-                                                cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        0, 6, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCoreModulusOrdered<<<
-                        dim3(1, 64, batch_size), dim3(256, 1),
-                        512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        6, 9, cfg.n_power, false, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 16:
-                    ForwardCoreModulusOrdered<<<dim3(128, 1, batch_size),
-                                                dim3(4, 64), 512 * sizeof(Data),
-                                                cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        0, 7, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCoreModulusOrdered<<<
-                        dim3(1, 128, batch_size), dim3(256, 1),
-                        512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        7, 9, cfg.n_power, false, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 17:
-                    ForwardCoreModulusOrdered<<<dim3(256, 1, batch_size),
-                                                dim3(32, 8), 512 * sizeof(Data),
-                                                cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        0, 4, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCoreModulusOrdered<<<dim3(16, 16, batch_size),
-                                                dim3(32, 8), 512 * sizeof(Data),
-                                                cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        4, 4, cfg.n_power, false, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCoreModulusOrdered<<<
-                        dim3(1, 256, batch_size), dim3(256, 1),
-                        512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        8, 9, cfg.n_power, false, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 18:
-                    ForwardCoreModulusOrdered<<<dim3(512, 1, batch_size),
-                                                dim3(32, 8), 512 * sizeof(Data),
-                                                cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        0, 4, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCoreModulusOrdered<<<
-                        dim3(32, 16, batch_size), dim3(16, 16),
-                        512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        4, 5, cfg.n_power, false, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCoreModulusOrdered<<<
-                        dim3(1, 512, batch_size), dim3(256, 1),
-                        512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        9, 9, cfg.n_power, false, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 19:
-                    ForwardCoreModulusOrdered<<<
-                        dim3(1024, 1, batch_size), dim3(16, 16),
-                        512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        0, 5, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCoreModulusOrdered<<<
-                        dim3(32, 32, batch_size), dim3(16, 16),
-                        512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        5, 5, cfg.n_power, false, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCoreModulusOrdered<<<
-                        dim3(1, 1024, batch_size), dim3(256, 1),
-                        512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        10, 9, cfg.n_power, false, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 20:
-                    ForwardCoreModulusOrdered<<<
-                        dim3(2048, 1, batch_size), dim3(16, 16),
-                        512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        0, 5, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCoreModulusOrdered<<<dim3(64, 32, batch_size),
-                                                dim3(8, 32), 512 * sizeof(Data),
-                                                cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        5, 6, cfg.n_power, false, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCoreModulusOrdered<<<
-                        dim3(1, 2048, batch_size), dim3(256, 1),
-                        512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        11, 9, cfg.n_power, false, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 21:
-                    ForwardCoreModulusOrdered<<<dim3(4096, 1, batch_size),
-                                                dim3(8, 32), 512 * sizeof(Data),
-                                                cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        0, 6, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCoreModulusOrdered<<<dim3(64, 64, batch_size),
-                                                dim3(8, 32), 512 * sizeof(Data),
-                                                cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        6, 6, cfg.n_power, false, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCoreModulusOrdered<<<
-                        dim3(1, 4096, batch_size), dim3(256, 1),
-                        512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        12, 9, cfg.n_power, false, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 22:
-                    ForwardCoreModulusOrdered<<<dim3(8192, 1, batch_size),
-                                                dim3(8, 32), 512 * sizeof(Data),
-                                                cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        0, 6, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCoreModulusOrdered<<<dim3(128, 64, batch_size),
-                                                dim3(4, 64), 512 * sizeof(Data),
-                                                cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        6, 7, cfg.n_power, false, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCoreModulusOrdered<<<
-                        dim3(1, 8192, batch_size), dim3(256, 1),
-                        512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        13, 9, cfg.n_power, false, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-
-                    break;
-                case 23:
-                    ForwardCoreModulusOrdered<<<dim3(16384, 1, batch_size),
-                                                dim3(4, 64), 512 * sizeof(Data),
-                                                cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        0, 7, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCoreModulusOrdered<<<dim3(128, 128, batch_size),
-                                                dim3(4, 64), 512 * sizeof(Data),
-                                                cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        7, 7, cfg.n_power, false, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCoreModulusOrdered<<<
-                        dim3(1, 16384, batch_size), dim3(256, 1),
-                        512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        14, 9, cfg.n_power, false, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 24:
-                    ForwardCoreModulusOrdered<<<
-                        dim3(16384, 1, batch_size), dim3(8, 64),
-                        1024 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 9,
-                        0, 7, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCoreModulusOrdered<<<
-                        dim3(128, 128, batch_size), dim3(8, 64),
-                        1024 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        7, 7, cfg.n_power, false, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCoreModulusOrdered<<<
-                        dim3(1, 16384, batch_size), dim3(512, 1),
-                        1024 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        14, 10, cfg.n_power, false, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 25:
-                    ForwardCoreModulusOrdered<<<
-                        dim3(32768, 1, batch_size), dim3(8, 64),
-                        1024 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 9,
-                        0, 7, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCoreModulusOrdered<<<
-                        dim3(256, 128, batch_size), dim3(4, 128),
-                        1024 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        7, 8, cfg.n_power, false, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ///////////////////////////////////////////////////////////
-                    ForwardCoreModulusOrdered_<<<
-                        dim3(32768, 1, batch_size), dim3(512, 1),
-                        1024 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        15, 10, cfg.n_power, false, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 26:
-                    ForwardCoreModulusOrdered<<<
-                        dim3(65536, 1, batch_size), dim3(4, 128),
-                        1024 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 9,
-                        0, 8, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCoreModulusOrdered<<<
-                        dim3(256, 256, batch_size), dim3(4, 128),
-                        1024 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        8, 8, cfg.n_power, false, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ///////////////////////////////////////////////////////////
-                    ForwardCoreModulusOrdered_<<<
-                        dim3(65536, 1, batch_size), dim3(512, 1),
-                        1024 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        16, 10, cfg.n_power, false, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 27:
-#ifndef CC_89
-                    ForwardCoreModulusOrdered<<<
-                        dim3(262144, 1, batch_size), dim3(16, 16),
-                        512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        0, 5, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCoreModulusOrdered<<<dim3(8192, 32, batch_size),
-                                                dim3(8, 32), 512 * sizeof(Data),
-                                                cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        5, 6, cfg.n_power, false, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCoreModulusOrdered<<<dim3(128, 2048, batch_size),
-                                                dim3(4, 64), 512 * sizeof(Data),
-                                                cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        11, 7, cfg.n_power, false, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ///////////////////////////////////////////////////////////
-                    ForwardCoreModulusOrdered_<<<
-                        dim3(262144, 1, batch_size), dim3(256, 1),
-                        512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        18, 9, cfg.n_power, false, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-#else
-                    ForwardCoreModulusOrdered<<<
-                        dim3(131072, 1, batch_size), dim3(4, 128),
-                        1024 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 9,
-                        0, 8, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCoreModulusOrdered<<<
-                        dim3(512, 256, batch_size), dim3(2, 256),
-                        1024 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        8, 9, cfg.n_power, false, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ///////////////////////////////////////////////////////////
-                    ForwardCoreModulusOrdered_<<<
-                        dim3(131072, 1, batch_size), dim3(512, 1),
-                        1024 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        17, 10, cfg.n_power, false, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-#endif
-                    break;
-                case 28:
-#ifndef CC_89
-                    ForwardCoreModulusOrdered<<<dim3(524288, 1, batch_size),
-                                                dim3(8, 32), 512 * sizeof(Data),
-                                                cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        0, 6, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCoreModulusOrdered<<<dim3(8192, 64, batch_size),
-                                                dim3(8, 32), 512 * sizeof(Data),
-                                                cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        6, 6, cfg.n_power, false, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCoreModulusOrdered<<<dim3(128, 4096, batch_size),
-                                                dim3(4, 64), 512 * sizeof(Data),
-                                                cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        12, 7, cfg.n_power, false, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ///////////////////////////////////////////////////////////
-                    ForwardCoreModulusOrdered_<<<
-                        dim3(524288, 1, batch_size), dim3(256, 1),
-                        512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        19, 9, cfg.n_power, false, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-#else
-                    ForwardCoreModulusOrdered<<<
-                        dim3(262144, 1, batch_size), dim3(2, 256),
-                        1024 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 9,
-                        0, 9, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCoreModulusOrdered<<<
-                        dim3(512, 512, batch_size), dim3(2, 256),
-                        1024 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        9, 9, cfg.n_power, false, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ///////////////////////////////////////////////////////////
-                    ForwardCoreModulusOrdered_<<<
-                        dim3(262144, 1, batch_size), dim3(512, 1),
-                        1024 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        18, 10, cfg.n_power, false, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-#endif
-                    break;
-
-                default:
-                    break;
+                    device_in_ = device_out;
+                }
+                auto& current_kernel_params =
+                    kernel_parameters[cfg.n_power]
+                                     [kernel_parameters[cfg.n_power].size() -
+                                      1];
+                ForwardCoreModulusOrdered_<<<
+                    dim3(current_kernel_params.griddim_x,
+                         current_kernel_params.griddim_y, batch_size),
+                    dim3(current_kernel_params.blockdim_x,
+                         current_kernel_params.blockdim_y),
+                    current_kernel_params.shared_memory, cfg.stream>>>(
+                    device_in_, device_out, root_of_unity_table, modulus,
+                    current_kernel_params.shared_index,
+                    current_kernel_params.logm,
+                    current_kernel_params.outer_iteration_count, cfg.n_power,
+                    cfg.zero_padding, current_kernel_params.not_last_kernel,
+                    (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
+                    mod_count, order);
             }
             break;
         case INVERSE:
-            switch (cfg.n_power)
+            if (standart_kernel)
             {
-                case 12:
+                for (int i = 0; i < kernel_parameters[cfg.n_power].size(); i++)
+                {
+                    auto& current_kernel_params =
+                        kernel_parameters[cfg.n_power][i];
                     InverseCoreModulusOrdered<<<
-                        dim3(1, 8, batch_size), dim3(256, 1),
-                        512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        11, 3, 9, cfg.n_power, cfg.mod_inverse, false,
+                        dim3(current_kernel_params.griddim_x,
+                             current_kernel_params.griddim_y, batch_size),
+                        dim3(current_kernel_params.blockdim_x,
+                             current_kernel_params.blockdim_y),
+                        current_kernel_params.shared_memory, cfg.stream>>>(
+                        device_in_, device_out, root_of_unity_table, modulus,
+                        current_kernel_params.shared_index,
+                        current_kernel_params.logm, current_kernel_params.k,
+                        current_kernel_params.outer_iteration_count,
+                        cfg.n_power, cfg.mod_inverse,
+                        current_kernel_params.not_last_kernel,
                         (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
                         mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCoreModulusOrdered<<<dim3(8, 1, batch_size),
-                                                dim3(64, 4), 512 * sizeof(Data),
-                                                cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        2, 0, 3, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 13:
+                    device_in_ = device_out;
+                }
+            }
+            else
+            {
+                auto& current_kernel_params = kernel_parameters[cfg.n_power][0];
+                InverseCoreModulusOrdered_<<<
+                    dim3(current_kernel_params.griddim_x,
+                         current_kernel_params.griddim_y, batch_size),
+                    dim3(current_kernel_params.blockdim_x,
+                         current_kernel_params.blockdim_y),
+                    current_kernel_params.shared_memory, cfg.stream>>>(
+                    device_in_, device_out, root_of_unity_table, modulus,
+                    current_kernel_params.shared_index,
+                    current_kernel_params.logm, current_kernel_params.k,
+                    current_kernel_params.outer_iteration_count, cfg.n_power,
+                    cfg.mod_inverse, current_kernel_params.not_last_kernel,
+                    (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
+                    mod_count, order);
+                device_in_ = device_out;
+                for (int i = 1; i < kernel_parameters[cfg.n_power].size(); i++)
+                {
+                    auto& current_kernel_params =
+                        kernel_parameters[cfg.n_power][i];
                     InverseCoreModulusOrdered<<<
-                        dim3(1, 16, batch_size), dim3(256, 1),
-                        512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        12, 4, 9, cfg.n_power, cfg.mod_inverse, false,
+                        dim3(current_kernel_params.griddim_x,
+                             current_kernel_params.griddim_y, batch_size),
+                        dim3(current_kernel_params.blockdim_x,
+                             current_kernel_params.blockdim_y),
+                        current_kernel_params.shared_memory, cfg.stream>>>(
+                        device_in_, device_out, root_of_unity_table, modulus,
+                        current_kernel_params.shared_index,
+                        current_kernel_params.logm, current_kernel_params.k,
+                        current_kernel_params.outer_iteration_count,
+                        cfg.n_power, cfg.mod_inverse,
+                        current_kernel_params.not_last_kernel,
                         (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
                         mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCoreModulusOrdered<<<dim3(16, 1, batch_size),
-                                                dim3(32, 8), 512 * sizeof(Data),
-                                                cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        3, 0, 4, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 14:
-                    InverseCoreModulusOrdered<<<
-                        dim3(1, 32, batch_size), dim3(256, 1),
-                        512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        13, 5, 9, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCoreModulusOrdered<<<
-                        dim3(32, 1, batch_size), dim3(16, 16),
-                        512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        4, 0, 5, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 15:
-                    InverseCoreModulusOrdered<<<
-                        dim3(1, 64, batch_size), dim3(256, 1),
-                        512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        14, 6, 9, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCoreModulusOrdered<<<dim3(64, 1, batch_size),
-                                                dim3(8, 32), 512 * sizeof(Data),
-                                                cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        5, 0, 6, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 16:
-                    InverseCoreModulusOrdered<<<
-                        dim3(1, 128, batch_size), dim3(256, 1),
-                        512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        15, 7, 9, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCoreModulusOrdered<<<dim3(128, 1, batch_size),
-                                                dim3(4, 64), 512 * sizeof(Data),
-                                                cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        6, 0, 7, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 17:
-                    InverseCoreModulusOrdered<<<
-                        dim3(1, 256, batch_size), dim3(256, 1),
-                        512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        16, 8, 9, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCoreModulusOrdered<<<dim3(16, 16, batch_size),
-                                                dim3(32, 8), 512 * sizeof(Data),
-                                                cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        7, 4, 4, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCoreModulusOrdered<<<dim3(256, 1, batch_size),
-                                                dim3(32, 8), 512 * sizeof(Data),
-                                                cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        3, 0, 4, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 18:
-                    InverseCoreModulusOrdered<<<
-                        dim3(1, 512, batch_size), dim3(256, 1),
-                        512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        17, 9, 9, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCoreModulusOrdered<<<
-                        dim3(32, 16, batch_size), dim3(16, 16),
-                        512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        8, 4, 5, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCoreModulusOrdered<<<dim3(512, 1, batch_size),
-                                                dim3(32, 8), 512 * sizeof(Data),
-                                                cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        3, 0, 4, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 19:
-                    InverseCoreModulusOrdered<<<
-                        dim3(1, 1024, batch_size), dim3(256, 1),
-                        512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        18, 10, 9, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCoreModulusOrdered<<<
-                        dim3(32, 32, batch_size), dim3(16, 16),
-                        512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        9, 5, 5, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCoreModulusOrdered<<<
-                        dim3(1024, 1, batch_size), dim3(16, 16),
-                        512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        4, 0, 5, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 20:
-                    InverseCoreModulusOrdered<<<
-                        dim3(1, 2048, batch_size), dim3(256, 1),
-                        512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        19, 11, 9, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCoreModulusOrdered<<<dim3(64, 32, batch_size),
-                                                dim3(8, 32), 512 * sizeof(Data),
-                                                cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        10, 5, 6, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCoreModulusOrdered<<<
-                        dim3(2048, 1, batch_size), dim3(16, 16),
-                        512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        4, 0, 5, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 21: //
-                    InverseCoreModulusOrdered<<<
-                        dim3(1, 4096, batch_size), dim3(256, 1),
-                        512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        20, 12, 9, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCoreModulusOrdered<<<dim3(64, 64, batch_size),
-                                                dim3(8, 32), 512 * sizeof(Data),
-                                                cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        11, 6, 6, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCoreModulusOrdered<<<dim3(4096, 1, batch_size),
-                                                dim3(8, 32), 512 * sizeof(Data),
-                                                cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        5, 0, 6, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 22:
-                    InverseCoreModulusOrdered<<<
-                        dim3(1, 8192, batch_size), dim3(256, 1),
-                        512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        21, 13, 9, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCoreModulusOrdered<<<dim3(128, 64, batch_size),
-                                                dim3(4, 64), 512 * sizeof(Data),
-                                                cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        12, 6, 7, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCoreModulusOrdered<<<dim3(8192, 1, batch_size),
-                                                dim3(8, 32), 512 * sizeof(Data),
-                                                cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        5, 0, 6, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 23:
-                    InverseCoreModulusOrdered<<<
-                        dim3(1, 16384, batch_size), dim3(256, 1),
-                        512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        22, 14, 9, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCoreModulusOrdered<<<dim3(128, 128, batch_size),
-                                                dim3(4, 64), 512 * sizeof(Data),
-                                                cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        13, 7, 7, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCoreModulusOrdered<<<dim3(16384, 1, batch_size),
-                                                dim3(4, 64), 512 * sizeof(Data),
-                                                cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        6, 0, 7, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 24:
-                    InverseCoreModulusOrdered<<<
-                        dim3(1, 16384, batch_size), dim3(512, 1),
-                        1024 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 9,
-                        23, 14, 10, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCoreModulusOrdered<<<
-                        dim3(128, 128, batch_size), dim3(8, 64),
-                        1024 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        13, 7, 7, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCoreModulusOrdered<<<
-                        dim3(16384, 1, batch_size), dim3(8, 64),
-                        1024 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        6, 0, 7, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 25:
-                    InverseCoreModulusOrdered_<<<
-                        dim3(32768, 1, batch_size), dim3(512, 1),
-                        1024 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 9,
-                        24, 15, 10, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ///////////////////////////////////////////////////////////
-                    InverseCoreModulusOrdered<<<
-                        dim3(256, 128, batch_size), dim3(4, 128),
-                        1024 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        14, 7, 8, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCoreModulusOrdered<<<
-                        dim3(32768, 1, batch_size), dim3(8, 64),
-                        1024 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        6, 0, 7, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 26:
-                    InverseCoreModulusOrdered_<<<
-                        dim3(65536, 1, batch_size), dim3(512, 1),
-                        1024 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 9,
-                        25, 16, 10, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ///////////////////////////////////////////////////////////
-                    InverseCoreModulusOrdered<<<
-                        dim3(256, 256, batch_size), dim3(4, 128),
-                        1024 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        15, 8, 8, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCoreModulusOrdered<<<
-                        dim3(65536, 1, batch_size), dim3(4, 128),
-                        1024 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        7, 0, 8, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 27:
-#ifndef CC_89
-                    InverseCoreModulusOrdered_<<<
-                        dim3(262144, 1, batch_size), dim3(256, 1),
-                        512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        26, 18, 9, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ///////////////////////////////////////////////////////////
-                    InverseCoreModulusOrdered<<<dim3(128, 2048, batch_size),
-                                                dim3(4, 64), 512 * sizeof(Data),
-                                                cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        17, 11, 7, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCoreModulusOrdered<<<dim3(8192, 32, batch_size),
-                                                dim3(8, 32), 512 * sizeof(Data),
-                                                cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        10, 5, 6, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCoreModulusOrdered<<<
-                        dim3(262144, 1, batch_size), dim3(16, 16),
-                        512 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        4, 0, 5, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-#else
-                    InverseCoreModulusOrdered_<<<
-                        dim3(131072, 1, batch_size), dim3(512, 1),
-                        1024 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 9,
-                        26, 17, 10, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ///////////////////////////////////////////////////////////
-                    InverseCoreModulusOrdered<<<
-                        dim3(512, 256, batch_size), dim3(2, 256),
-                        1024 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        16, 8, 9, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCoreModulusOrdered<<<
-                        dim3(131072, 1, batch_size), dim3(4, 128),
-                        1024 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        7, 0, 8, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-#endif
-                    break;
-                case 28:
-#ifndef CC_89
-                    InverseCoreModulusOrdered_<<<
-                        dim3(524288, 1, batch_size), dim3(256, 1),
-                        512 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        27, 19, 9, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ///////////////////////////////////////////////////////////
-                    InverseCoreModulusOrdered<<<dim3(128, 4096, batch_size),
-                                                dim3(4, 64), 512 * sizeof(Data),
-                                                cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        18, 12, 7, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCoreModulusOrdered<<<dim3(8192, 64, batch_size),
-                                                dim3(8, 32), 512 * sizeof(Data),
-                                                cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        11, 6, 6, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCoreModulusOrdered<<<dim3(524288, 1, batch_size),
-                                                dim3(8, 32), 512 * sizeof(Data),
-                                                cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        5, 0, 6, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-#else
-                    InverseCoreModulusOrdered_<<<
-                        dim3(262144, 1, batch_size), dim3(512, 1),
-                        1024 * sizeof(Data), cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 9,
-                        27, 18, 10, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ///////////////////////////////////////////////////////////
-                    InverseCoreModulusOrdered<<<
-                        dim3(512, 512, batch_size), dim3(2, 256),
-                        1024 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        17, 9, 9, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCoreModulusOrdered<<<
-                        dim3(262144, 1, batch_size), dim3(2, 256),
-                        1024 * sizeof(Data), cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        8, 0, 9, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-#endif
-                    break;
-
-                default:
-                    break;
+                }
             }
             break;
-
         default:
+            throw std::invalid_argument("Invalid ntt_type!");
             break;
     }
 }
 
-__host__ void
-GPU_NTT_Modulus_Ordered_Inplace(Data* device_inout, Root* root_of_unity_table,
-                                Modulus* modulus, ntt_rns_configuration cfg,
-                                int batch_size, int mod_count, int* order)
+template <typename T>
+__host__ void GPU_NTT_Modulus_Ordered_Inplace(
+    T* device_inout, Root<T>* root_of_unity_table, Modulus<T>* modulus,
+    ntt_rns_configuration<T> cfg, int batch_size, int mod_count, int* order)
 {
     GPU_NTT_Modulus_Ordered(device_inout, device_inout, root_of_unity_table,
                             modulus, cfg, batch_size, mod_count, order);
 }
 
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////
 // Poly Ordered
+////////////////////////////////////
 
+template <typename T>
 __global__ void
-ForwardCorePolyOrdered(Data* polynomial_in, Data* polynomial_out,
-                       Root* root_of_unity_table, Modulus* modulus,
+ForwardCorePolyOrdered(T* polynomial_in, T* polynomial_out,
+                       Root<T>* root_of_unity_table, Modulus<T>* modulus,
                        int shared_index, int logm, int outer_iteration_count,
                        int N_power, bool zero_padding, bool not_last_kernel,
                        bool reduction_poly_check, int mod_count, int* order)
@@ -4068,7 +1917,9 @@ ForwardCorePolyOrdered(Data* polynomial_in, Data* polynomial_out,
     const int mod_index = block_z % mod_count;
     const int input_index = order[block_z];
 
-    extern __shared__ Data shared_memory[];
+    // extern __shared__ T shared_memory[];
+    extern __shared__ char shared_memory_typed[];
+    T* shared_memory = reinterpret_cast<T*>(shared_memory_typed);
 
     int t_2 = N_power - logm - 1;
     location_t offset = 1 << (N_power - logm - 1);
@@ -4089,7 +1940,7 @@ ForwardCorePolyOrdered(Data* polynomial_in, Data* polynomial_out,
 
     location_t shared_addresss = (idx_x + (idx_y * blockDim.x));
 
-    // Load data from global & store to shared
+    // Load Data64 from global & store to shared
     shared_memory[shared_addresss] = polynomial_in[global_addresss];
     shared_memory[shared_addresss + (blockDim.x * blockDim.y)] =
         polynomial_in[global_addresss + offset];
@@ -4196,9 +2047,10 @@ ForwardCorePolyOrdered(Data* polynomial_in, Data* polynomial_out,
         shared_memory[shared_addresss + (blockDim.x * blockDim.y)];
 }
 
+template <typename T>
 __global__ void
-ForwardCorePolyOrdered_(Data* polynomial_in, Data* polynomial_out,
-                        Root* root_of_unity_table, Modulus* modulus,
+ForwardCorePolyOrdered_(T* polynomial_in, T* polynomial_out,
+                        Root<T>* root_of_unity_table, Modulus<T>* modulus,
                         int shared_index, int logm, int outer_iteration_count,
                         int N_power, bool zero_padding, bool not_last_kernel,
                         bool reduction_poly_check, int mod_count, int* order)
@@ -4212,7 +2064,9 @@ ForwardCorePolyOrdered_(Data* polynomial_in, Data* polynomial_out,
     const int mod_index = block_z % mod_count;
     const int input_index = order[block_z];
 
-    extern __shared__ Data shared_memory[];
+    // extern __shared__ T shared_memory[];
+    extern __shared__ char shared_memory_typed[];
+    T* shared_memory = reinterpret_cast<T*>(shared_memory_typed);
 
     int t_2 = N_power - logm - 1;
     location_t offset = 1 << (N_power - logm - 1);
@@ -4231,7 +2085,7 @@ ForwardCorePolyOrdered_(Data* polynomial_in, Data* polynomial_out,
         (location_t) (blockDim.x * block_y) + (location_t) (block_x * offset);
     location_t shared_addresss = (idx_x + (idx_y * blockDim.x));
 
-    // Load data from global & store to shared
+    // Load Data64 from global & store to shared
     shared_memory[shared_addresss] = polynomial_in[global_addresss];
     shared_memory[shared_addresss + (blockDim.x * blockDim.y)] =
         polynomial_in[global_addresss + offset];
@@ -4337,13 +2191,12 @@ ForwardCorePolyOrdered_(Data* polynomial_in, Data* polynomial_out,
         shared_memory[shared_addresss + (blockDim.x * blockDim.y)];
 }
 
-__global__ void
-InverseCorePolyOrdered(Data* polynomial_in, Data* polynomial_out,
-                       Root* inverse_root_of_unity_table, Modulus* modulus,
-                       int shared_index, int logm, int k,
-                       int outer_iteration_count, int N_power,
-                       Ninverse* n_inverse, bool last_kernel,
-                       bool reduction_poly_check, int mod_count, int* order)
+template <typename T>
+__global__ void InverseCorePolyOrdered(
+    T* polynomial_in, T* polynomial_out, Root<T>* inverse_root_of_unity_table,
+    Modulus<T>* modulus, int shared_index, int logm, int k,
+    int outer_iteration_count, int N_power, Ninverse<T>* n_inverse,
+    bool last_kernel, bool reduction_poly_check, int mod_count, int* order)
 {
     const int idx_x = threadIdx.x;
     const int idx_y = threadIdx.y;
@@ -4354,7 +2207,9 @@ InverseCorePolyOrdered(Data* polynomial_in, Data* polynomial_out,
     const int mod_index = block_z % mod_count;
     const int input_index = order[block_z];
 
-    extern __shared__ Data shared_memory[];
+    // extern __shared__ T shared_memory[];
+    extern __shared__ char shared_memory_typed[];
+    T* shared_memory = reinterpret_cast<T*>(shared_memory_typed);
 
     int t_2 = N_power - logm - 1;
     location_t offset = 1 << (N_power - k - 1);
@@ -4415,9 +2270,9 @@ InverseCorePolyOrdered(Data* polynomial_in, Data* polynomial_out,
     if (last_kernel)
     {
         polynomial_out[global_addresss] =
-            VALUE_GPU::mult(shared_memory[shared_addresss],
-                            n_inverse[mod_index], modulus[mod_index]);
-        polynomial_out[global_addresss + offset] = VALUE_GPU::mult(
+            OPERATOR_GPU<T>::mult(shared_memory[shared_addresss],
+                                  n_inverse[mod_index], modulus[mod_index]);
+        polynomial_out[global_addresss + offset] = OPERATOR_GPU<T>::mult(
             shared_memory[shared_addresss + (blockDim.x * blockDim.y)],
             n_inverse[mod_index], modulus[mod_index]);
     }
@@ -4429,13 +2284,12 @@ InverseCorePolyOrdered(Data* polynomial_in, Data* polynomial_out,
     }
 }
 
-__global__ void
-InverseCorePolyOrdered_(Data* polynomial_in, Data* polynomial_out,
-                        Root* inverse_root_of_unity_table, Modulus* modulus,
-                        int shared_index, int logm, int k,
-                        int outer_iteration_count, int N_power,
-                        Ninverse* n_inverse, bool last_kernel,
-                        bool reduction_poly_check, int mod_count, int* order)
+template <typename T>
+__global__ void InverseCorePolyOrdered_(
+    T* polynomial_in, T* polynomial_out, Root<T>* inverse_root_of_unity_table,
+    Modulus<T>* modulus, int shared_index, int logm, int k,
+    int outer_iteration_count, int N_power, Ninverse<T>* n_inverse,
+    bool last_kernel, bool reduction_poly_check, int mod_count, int* order)
 {
     const int idx_x = threadIdx.x;
     const int idx_y = threadIdx.y;
@@ -4446,7 +2300,9 @@ InverseCorePolyOrdered_(Data* polynomial_in, Data* polynomial_out,
     const int mod_index = block_z % mod_count;
     const int input_index = order[block_z];
 
-    extern __shared__ Data shared_memory[];
+    // extern __shared__ T shared_memory[];
+    extern __shared__ char shared_memory_typed[];
+    T* shared_memory = reinterpret_cast<T*>(shared_memory_typed);
 
     int t_2 = N_power - logm - 1;
     location_t offset = 1 << (N_power - k - 1);
@@ -4507,9 +2363,9 @@ InverseCorePolyOrdered_(Data* polynomial_in, Data* polynomial_out,
     if (last_kernel)
     {
         polynomial_out[global_addresss] =
-            VALUE_GPU::mult(shared_memory[shared_addresss],
-                            n_inverse[mod_index], modulus[mod_index]);
-        polynomial_out[global_addresss + offset] = VALUE_GPU::mult(
+            OPERATOR_GPU<T>::mult(shared_memory[shared_addresss],
+                                  n_inverse[mod_index], modulus[mod_index]);
+        polynomial_out[global_addresss + offset] = OPERATOR_GPU<T>::mult(
             shared_memory[shared_addresss + (blockDim.x * blockDim.y)],
             n_inverse[mod_index], modulus[mod_index]);
     }
@@ -4521,995 +2377,537 @@ InverseCorePolyOrdered_(Data* polynomial_in, Data* polynomial_out,
     }
 }
 
-__host__ void GPU_NTT_Poly_Ordered(Data* device_in, Data* device_out,
-                                   Root* root_of_unity_table, Modulus* modulus,
-                                   ntt_rns_configuration cfg, int batch_size,
-                                   int mod_count, int* order)
+template <typename T>
+__host__ void
+GPU_NTT_Poly_Ordered(T* device_in, T* device_out, Root<T>* root_of_unity_table,
+                     Modulus<T>* modulus, ntt_rns_configuration<T> cfg,
+                     int batch_size, int mod_count, int* order)
 {
+    if ((cfg.n_power <= 11 || cfg.n_power >= 29))
+    {
+        throw std::invalid_argument("Invalid n_power range!");
+    }
+
+    auto kernel_parameters = (cfg.ntt_type == FORWARD)
+                                 ? CreateForwardNTTKernel<T>()
+                                 : CreateInverseNTTKernel<T>();
+    bool standart_kernel = (cfg.n_power < 25) ? true : false;
+    T* device_in_ = device_in;
+
     switch (cfg.ntt_type)
     {
         case FORWARD:
-            switch (cfg.n_power)
+            if (standart_kernel)
             {
-                case 12:
-                    ForwardCorePolyOrdered<<<dim3(8, 1, batch_size),
-                                             dim3(64, 4), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        0, 3, cfg.n_power, cfg.zero_padding, true,
+                for (int i = 0; i < kernel_parameters[cfg.n_power].size(); i++)
+                {
+                    auto& current_kernel_params =
+                        kernel_parameters[cfg.n_power][i];
+                    ForwardCorePolyOrdered<<<
+                        dim3(current_kernel_params.griddim_x,
+                             current_kernel_params.griddim_y, batch_size),
+                        dim3(current_kernel_params.blockdim_x,
+                             current_kernel_params.blockdim_y),
+                        current_kernel_params.shared_memory, cfg.stream>>>(
+                        device_in_, device_out, root_of_unity_table, modulus,
+                        current_kernel_params.shared_index,
+                        current_kernel_params.logm,
+                        current_kernel_params.outer_iteration_count,
+                        cfg.n_power, cfg.zero_padding,
+                        current_kernel_params.not_last_kernel,
                         (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
                         mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCorePolyOrdered<<<dim3(1, 8, batch_size),
-                                             dim3(256, 1), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        3, 9, cfg.n_power, false, false,
+                    device_in_ = device_out;
+                }
+            }
+            else
+            {
+                for (int i = 0; i < kernel_parameters[cfg.n_power].size() - 1;
+                     i++)
+                {
+                    auto& current_kernel_params =
+                        kernel_parameters[cfg.n_power][i];
+                    ForwardCorePolyOrdered<<<
+                        dim3(current_kernel_params.griddim_x,
+                             current_kernel_params.griddim_y, batch_size),
+                        dim3(current_kernel_params.blockdim_x,
+                             current_kernel_params.blockdim_y),
+                        current_kernel_params.shared_memory, cfg.stream>>>(
+                        device_in_, device_out, root_of_unity_table, modulus,
+                        current_kernel_params.shared_index,
+                        current_kernel_params.logm,
+                        current_kernel_params.outer_iteration_count,
+                        cfg.n_power, cfg.zero_padding,
+                        current_kernel_params.not_last_kernel,
                         (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
                         mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 13:
-                    ForwardCorePolyOrdered<<<dim3(16, 1, batch_size),
-                                             dim3(32, 8), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        0, 4, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCorePolyOrdered<<<dim3(1, 16, batch_size),
-                                             dim3(256, 1), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        4, 9, cfg.n_power, false, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 14:
-                    ForwardCorePolyOrdered<<<dim3(32, 1, batch_size),
-                                             dim3(16, 16), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        0, 5, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCorePolyOrdered<<<dim3(1, 32, batch_size),
-                                             dim3(256, 1), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        5, 9, cfg.n_power, false, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 15:
-                    ForwardCorePolyOrdered<<<dim3(64, 1, batch_size),
-                                             dim3(8, 32), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        0, 6, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCorePolyOrdered<<<dim3(1, 64, batch_size),
-                                             dim3(256, 1), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        6, 9, cfg.n_power, false, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 16:
-                    ForwardCorePolyOrdered<<<dim3(128, 1, batch_size),
-                                             dim3(4, 64), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        0, 7, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCorePolyOrdered<<<dim3(1, 128, batch_size),
-                                             dim3(256, 1), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        7, 9, cfg.n_power, false, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 17:
-                    ForwardCorePolyOrdered<<<dim3(256, 1, batch_size),
-                                             dim3(32, 8), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        0, 4, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCorePolyOrdered<<<dim3(16, 16, batch_size),
-                                             dim3(32, 8), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        4, 4, cfg.n_power, false, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCorePolyOrdered<<<dim3(1, 256, batch_size),
-                                             dim3(256, 1), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        8, 9, cfg.n_power, false, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 18:
-                    ForwardCorePolyOrdered<<<dim3(512, 1, batch_size),
-                                             dim3(32, 8), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        0, 4, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCorePolyOrdered<<<dim3(32, 16, batch_size),
-                                             dim3(16, 16), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        4, 5, cfg.n_power, false, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCorePolyOrdered<<<dim3(1, 512, batch_size),
-                                             dim3(256, 1), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        9, 9, cfg.n_power, false, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 19:
-                    ForwardCorePolyOrdered<<<dim3(1024, 1, batch_size),
-                                             dim3(16, 16), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        0, 5, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCorePolyOrdered<<<dim3(32, 32, batch_size),
-                                             dim3(16, 16), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        5, 5, cfg.n_power, false, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCorePolyOrdered<<<dim3(1, 1024, batch_size),
-                                             dim3(256, 1), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        10, 9, cfg.n_power, false, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 20:
-                    ForwardCorePolyOrdered<<<dim3(2048, 1, batch_size),
-                                             dim3(16, 16), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        0, 5, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCorePolyOrdered<<<dim3(64, 32, batch_size),
-                                             dim3(8, 32), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        5, 6, cfg.n_power, false, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCorePolyOrdered<<<dim3(1, 2048, batch_size),
-                                             dim3(256, 1), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        11, 9, cfg.n_power, false, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 21:
-                    ForwardCorePolyOrdered<<<dim3(4096, 1, batch_size),
-                                             dim3(8, 32), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        0, 6, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCorePolyOrdered<<<dim3(64, 64, batch_size),
-                                             dim3(8, 32), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        6, 6, cfg.n_power, false, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCorePolyOrdered<<<dim3(1, 4096, batch_size),
-                                             dim3(256, 1), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        12, 9, cfg.n_power, false, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 22:
-                    ForwardCorePolyOrdered<<<dim3(8192, 1, batch_size),
-                                             dim3(8, 32), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        0, 6, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCorePolyOrdered<<<dim3(128, 64, batch_size),
-                                             dim3(4, 64), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        6, 7, cfg.n_power, false, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCorePolyOrdered<<<dim3(1, 8192, batch_size),
-                                             dim3(256, 1), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        13, 9, cfg.n_power, false, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-
-                    break;
-                case 23:
-                    ForwardCorePolyOrdered<<<dim3(16384, 1, batch_size),
-                                             dim3(4, 64), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        0, 7, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCorePolyOrdered<<<dim3(128, 128, batch_size),
-                                             dim3(4, 64), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        7, 7, cfg.n_power, false, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCorePolyOrdered<<<dim3(1, 16384, batch_size),
-                                             dim3(256, 1), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        14, 9, cfg.n_power, false, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 24:
-                    ForwardCorePolyOrdered<<<dim3(16384, 1, batch_size),
-                                             dim3(8, 64), 1024 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 9,
-                        0, 7, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCorePolyOrdered<<<dim3(128, 128, batch_size),
-                                             dim3(8, 64), 1024 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        7, 7, cfg.n_power, false, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCorePolyOrdered<<<dim3(1, 16384, batch_size),
-                                             dim3(512, 1), 1024 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        14, 10, cfg.n_power, false, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 25:
-                    ForwardCorePolyOrdered<<<dim3(32768, 1, batch_size),
-                                             dim3(8, 64), 1024 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 9,
-                        0, 7, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCorePolyOrdered<<<dim3(256, 128, batch_size),
-                                             dim3(4, 128), 1024 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        7, 8, cfg.n_power, false, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ///////////////////////////////////////////////////////////
-                    ForwardCorePolyOrdered_<<<dim3(32768, 1, batch_size),
-                                              dim3(512, 1), 1024 * sizeof(Data),
-                                              cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        15, 10, cfg.n_power, false, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 26:
-                    ForwardCorePolyOrdered<<<dim3(65536, 1, batch_size),
-                                             dim3(4, 128), 1024 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 9,
-                        0, 8, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCorePolyOrdered<<<dim3(256, 256, batch_size),
-                                             dim3(4, 128), 1024 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        8, 8, cfg.n_power, false, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ///////////////////////////////////////////////////////////
-                    ForwardCorePolyOrdered_<<<dim3(65536, 1, batch_size),
-                                              dim3(512, 1), 1024 * sizeof(Data),
-                                              cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        16, 10, cfg.n_power, false, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 27:
-#ifndef CC_89
-                    ForwardCorePolyOrdered<<<dim3(262144, 1, batch_size),
-                                             dim3(16, 16), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        0, 5, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCorePolyOrdered<<<dim3(8192, 32, batch_size),
-                                             dim3(8, 32), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        5, 6, cfg.n_power, false, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCorePolyOrdered<<<dim3(128, 2048, batch_size),
-                                             dim3(4, 64), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        11, 7, cfg.n_power, false, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ///////////////////////////////////////////////////////////
-                    ForwardCorePolyOrdered_<<<dim3(262144, 1, batch_size),
-                                              dim3(256, 1), 512 * sizeof(Data),
-                                              cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        18, 9, cfg.n_power, false, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-#else
-                    ForwardCorePolyOrdered<<<dim3(131072, 1, batch_size),
-                                             dim3(4, 128), 1024 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 9,
-                        0, 8, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCorePolyOrdered<<<dim3(512, 256, batch_size),
-                                             dim3(2, 256), 1024 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        8, 9, cfg.n_power, false, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ///////////////////////////////////////////////////////////
-                    ForwardCorePolyOrdered_<<<dim3(131072, 1, batch_size),
-                                              dim3(512, 1), 1024 * sizeof(Data),
-                                              cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        17, 10, cfg.n_power, false, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-#endif
-                    break;
-                case 28:
-#ifndef CC_89
-                    ForwardCorePolyOrdered<<<dim3(524288, 1, batch_size),
-                                             dim3(8, 32), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        0, 6, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCorePolyOrdered<<<dim3(8192, 64, batch_size),
-                                             dim3(8, 32), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        6, 6, cfg.n_power, false, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCorePolyOrdered<<<dim3(128, 4096, batch_size),
-                                             dim3(4, 64), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        12, 7, cfg.n_power, false, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ///////////////////////////////////////////////////////////
-                    ForwardCorePolyOrdered_<<<dim3(524288, 1, batch_size),
-                                              dim3(256, 1), 512 * sizeof(Data),
-                                              cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        19, 9, cfg.n_power, false, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-#else
-                    ForwardCorePolyOrdered<<<dim3(262144, 1, batch_size),
-                                             dim3(2, 256), 1024 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 9,
-                        0, 9, cfg.n_power, cfg.zero_padding, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ForwardCorePolyOrdered<<<dim3(512, 512, batch_size),
-                                             dim3(2, 256), 1024 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        9, 9, cfg.n_power, false, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ///////////////////////////////////////////////////////////
-                    ForwardCorePolyOrdered_<<<dim3(262144, 1, batch_size),
-                                              dim3(512, 1), 1024 * sizeof(Data),
-                                              cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        18, 10, cfg.n_power, false, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-#endif
-                    break;
-
-                default:
-                    break;
+                    device_in_ = device_out;
+                }
+                auto& current_kernel_params =
+                    kernel_parameters[cfg.n_power]
+                                     [kernel_parameters[cfg.n_power].size() -
+                                      1];
+                ForwardCorePolyOrdered_<<<
+                    dim3(current_kernel_params.griddim_x,
+                         current_kernel_params.griddim_y, batch_size),
+                    dim3(current_kernel_params.blockdim_x,
+                         current_kernel_params.blockdim_y),
+                    current_kernel_params.shared_memory, cfg.stream>>>(
+                    device_in_, device_out, root_of_unity_table, modulus,
+                    current_kernel_params.shared_index,
+                    current_kernel_params.logm,
+                    current_kernel_params.outer_iteration_count, cfg.n_power,
+                    cfg.zero_padding, current_kernel_params.not_last_kernel,
+                    (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
+                    mod_count, order);
             }
             break;
         case INVERSE:
-            switch (cfg.n_power)
+            if (standart_kernel)
             {
-                case 12:
-                    InverseCorePolyOrdered<<<dim3(1, 8, batch_size),
-                                             dim3(256, 1), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        11, 3, 9, cfg.n_power, cfg.mod_inverse, false,
+                for (int i = 0; i < kernel_parameters[cfg.n_power].size(); i++)
+                {
+                    auto& current_kernel_params =
+                        kernel_parameters[cfg.n_power][i];
+                    InverseCorePolyOrdered<<<
+                        dim3(current_kernel_params.griddim_x,
+                             current_kernel_params.griddim_y, batch_size),
+                        dim3(current_kernel_params.blockdim_x,
+                             current_kernel_params.blockdim_y),
+                        current_kernel_params.shared_memory, cfg.stream>>>(
+                        device_in_, device_out, root_of_unity_table, modulus,
+                        current_kernel_params.shared_index,
+                        current_kernel_params.logm, current_kernel_params.k,
+                        current_kernel_params.outer_iteration_count,
+                        cfg.n_power, cfg.mod_inverse,
+                        current_kernel_params.not_last_kernel,
                         (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
                         mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCorePolyOrdered<<<dim3(8, 1, batch_size),
-                                             dim3(64, 4), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        2, 0, 3, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 13:
-                    InverseCorePolyOrdered<<<dim3(1, 16, batch_size),
-                                             dim3(256, 1), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        12, 4, 9, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCorePolyOrdered<<<dim3(16, 1, batch_size),
-                                             dim3(32, 8), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        3, 0, 4, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 14:
-                    InverseCorePolyOrdered<<<dim3(1, 32, batch_size),
-                                             dim3(256, 1), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        13, 5, 9, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCorePolyOrdered<<<dim3(32, 1, batch_size),
-                                             dim3(16, 16), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        4, 0, 5, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 15:
-                    InverseCorePolyOrdered<<<dim3(1, 64, batch_size),
-                                             dim3(256, 1), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        14, 6, 9, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCorePolyOrdered<<<dim3(64, 1, batch_size),
-                                             dim3(8, 32), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        5, 0, 6, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 16:
-                    InverseCorePolyOrdered<<<dim3(1, 128, batch_size),
-                                             dim3(256, 1), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        15, 7, 9, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCorePolyOrdered<<<dim3(128, 1, batch_size),
-                                             dim3(4, 64), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        6, 0, 7, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 17:
-                    InverseCorePolyOrdered<<<dim3(1, 256, batch_size),
-                                             dim3(256, 1), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        16, 8, 9, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCorePolyOrdered<<<dim3(16, 16, batch_size),
-                                             dim3(32, 8), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        7, 4, 4, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCorePolyOrdered<<<dim3(256, 1, batch_size),
-                                             dim3(32, 8), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        3, 0, 4, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 18:
-                    InverseCorePolyOrdered<<<dim3(1, 512, batch_size),
-                                             dim3(256, 1), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        17, 9, 9, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCorePolyOrdered<<<dim3(32, 16, batch_size),
-                                             dim3(16, 16), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        8, 4, 5, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCorePolyOrdered<<<dim3(512, 1, batch_size),
-                                             dim3(32, 8), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        3, 0, 4, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 19:
-                    InverseCorePolyOrdered<<<dim3(1, 1024, batch_size),
-                                             dim3(256, 1), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        18, 10, 9, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCorePolyOrdered<<<dim3(32, 32, batch_size),
-                                             dim3(16, 16), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        9, 5, 5, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCorePolyOrdered<<<dim3(1024, 1, batch_size),
-                                             dim3(16, 16), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        4, 0, 5, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 20:
-                    InverseCorePolyOrdered<<<dim3(1, 2048, batch_size),
-                                             dim3(256, 1), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        19, 11, 9, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCorePolyOrdered<<<dim3(64, 32, batch_size),
-                                             dim3(8, 32), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        10, 5, 6, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCorePolyOrdered<<<dim3(2048, 1, batch_size),
-                                             dim3(16, 16), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        4, 0, 5, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 21: //
-                    InverseCorePolyOrdered<<<dim3(1, 4096, batch_size),
-                                             dim3(256, 1), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        20, 12, 9, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCorePolyOrdered<<<dim3(64, 64, batch_size),
-                                             dim3(8, 32), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        11, 6, 6, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCorePolyOrdered<<<dim3(4096, 1, batch_size),
-                                             dim3(8, 32), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        5, 0, 6, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 22:
-                    InverseCorePolyOrdered<<<dim3(1, 8192, batch_size),
-                                             dim3(256, 1), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        21, 13, 9, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCorePolyOrdered<<<dim3(128, 64, batch_size),
-                                             dim3(4, 64), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        12, 6, 7, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCorePolyOrdered<<<dim3(8192, 1, batch_size),
-                                             dim3(8, 32), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        5, 0, 6, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 23:
-                    InverseCorePolyOrdered<<<dim3(1, 16384, batch_size),
-                                             dim3(256, 1), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        22, 14, 9, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCorePolyOrdered<<<dim3(128, 128, batch_size),
-                                             dim3(4, 64), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        13, 7, 7, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCorePolyOrdered<<<dim3(16384, 1, batch_size),
-                                             dim3(4, 64), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        6, 0, 7, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 24:
-                    InverseCorePolyOrdered<<<dim3(1, 16384, batch_size),
-                                             dim3(512, 1), 1024 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 9,
-                        23, 14, 10, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCorePolyOrdered<<<dim3(128, 128, batch_size),
-                                             dim3(8, 64), 1024 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        13, 7, 7, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCorePolyOrdered<<<dim3(16384, 1, batch_size),
-                                             dim3(8, 64), 1024 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        6, 0, 7, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 25:
-                    InverseCorePolyOrdered_<<<dim3(32768, 1, batch_size),
-                                              dim3(512, 1), 1024 * sizeof(Data),
-                                              cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 9,
-                        24, 15, 10, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ///////////////////////////////////////////////////////////
-                    InverseCorePolyOrdered<<<dim3(256, 128, batch_size),
-                                             dim3(4, 128), 1024 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        14, 7, 8, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCorePolyOrdered<<<dim3(32768, 1, batch_size),
-                                             dim3(8, 64), 1024 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        6, 0, 7, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 26:
-                    InverseCorePolyOrdered_<<<dim3(65536, 1, batch_size),
-                                              dim3(512, 1), 1024 * sizeof(Data),
-                                              cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 9,
-                        25, 16, 10, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ///////////////////////////////////////////////////////////
-                    InverseCorePolyOrdered<<<dim3(256, 256, batch_size),
-                                             dim3(4, 128), 1024 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        15, 8, 8, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCorePolyOrdered<<<dim3(65536, 1, batch_size),
-                                             dim3(4, 128), 1024 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        7, 0, 8, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    break;
-                case 27:
-#ifndef CC_89
-                    InverseCorePolyOrdered_<<<dim3(262144, 1, batch_size),
-                                              dim3(256, 1), 512 * sizeof(Data),
-                                              cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        26, 18, 9, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ///////////////////////////////////////////////////////////
-                    InverseCorePolyOrdered<<<dim3(128, 2048, batch_size),
-                                             dim3(4, 64), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        17, 11, 7, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCorePolyOrdered<<<dim3(8192, 32, batch_size),
-                                             dim3(8, 32), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        10, 5, 6, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCorePolyOrdered<<<dim3(262144, 1, batch_size),
-                                             dim3(16, 16), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        4, 0, 5, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-#else
-                    InverseCorePolyOrdered_<<<dim3(131072, 1, batch_size),
-                                              dim3(512, 1), 1024 * sizeof(Data),
-                                              cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 9,
-                        26, 17, 10, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ///////////////////////////////////////////////////////////
-                    InverseCorePolyOrdered<<<dim3(512, 256, batch_size),
-                                             dim3(2, 256), 1024 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        16, 8, 9, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCorePolyOrdered<<<dim3(131072, 1, batch_size),
-                                             dim3(4, 128), 1024 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        7, 0, 8, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-#endif
-                    break;
-                case 28:
-#ifndef CC_89
-                    InverseCorePolyOrdered_<<<dim3(524288, 1, batch_size),
-                                              dim3(256, 1), 512 * sizeof(Data),
-                                              cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 8,
-                        27, 19, 9, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ///////////////////////////////////////////////////////////
-                    InverseCorePolyOrdered<<<dim3(128, 4096, batch_size),
-                                             dim3(4, 64), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        18, 12, 7, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCorePolyOrdered<<<dim3(8192, 64, batch_size),
-                                             dim3(8, 32), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        11, 6, 6, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCorePolyOrdered<<<dim3(524288, 1, batch_size),
-                                             dim3(8, 32), 512 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 8,
-                        5, 0, 6, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-#else
-                    InverseCorePolyOrdered_<<<dim3(262144, 1, batch_size),
-                                              dim3(512, 1), 1024 * sizeof(Data),
-                                              cfg.stream>>>(
-                        device_in, device_out, root_of_unity_table, modulus, 9,
-                        27, 18, 10, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    ///////////////////////////////////////////////////////////
-                    InverseCorePolyOrdered<<<dim3(512, 512, batch_size),
-                                             dim3(2, 256), 1024 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        17, 9, 9, cfg.n_power, cfg.mod_inverse, false,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-                    InverseCorePolyOrdered<<<dim3(262144, 1, batch_size),
-                                             dim3(2, 256), 1024 * sizeof(Data),
-                                             cfg.stream>>>(
-                        device_out, device_out, root_of_unity_table, modulus, 9,
-                        8, 0, 9, cfg.n_power, cfg.mod_inverse, true,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    THROW_IF_CUDA_ERROR(cudaGetLastError());
-#endif
-                    break;
-
-                default:
-                    break;
+                    device_in_ = device_out;
+                }
             }
-            break;
+            else
+            {
+                auto& current_kernel_params = kernel_parameters[cfg.n_power][0];
+                InverseCorePolyOrdered_<<<
+                    dim3(current_kernel_params.griddim_x,
+                         current_kernel_params.griddim_y, batch_size),
+                    dim3(current_kernel_params.blockdim_x,
+                         current_kernel_params.blockdim_y),
+                    current_kernel_params.shared_memory, cfg.stream>>>(
+                    device_in_, device_out, root_of_unity_table, modulus,
+                    current_kernel_params.shared_index,
+                    current_kernel_params.logm, current_kernel_params.k,
+                    current_kernel_params.outer_iteration_count, cfg.n_power,
+                    cfg.mod_inverse, current_kernel_params.not_last_kernel,
+                    (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
+                    mod_count, order);
+                device_in_ = device_out;
+                for (int i = 1; i < kernel_parameters[cfg.n_power].size(); i++)
+                {
+                    auto& current_kernel_params =
+                        kernel_parameters[cfg.n_power][i];
+                    InverseCorePolyOrdered<<<
+                        dim3(current_kernel_params.griddim_x,
+                             current_kernel_params.griddim_y, batch_size),
+                        dim3(current_kernel_params.blockdim_x,
+                             current_kernel_params.blockdim_y),
+                        current_kernel_params.shared_memory, cfg.stream>>>(
+                        device_in, device_out, root_of_unity_table, modulus,
+                        current_kernel_params.shared_index,
+                        current_kernel_params.logm, current_kernel_params.k,
+                        current_kernel_params.outer_iteration_count,
+                        cfg.n_power, cfg.mod_inverse,
+                        current_kernel_params.not_last_kernel,
+                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
+                        mod_count, order);
+                }
+            }
 
+            break;
         default:
+            throw std::invalid_argument("Invalid ntt_type!");
             break;
     }
 }
 
+template <typename T>
 __host__ void
-GPU_NTT_Poly_Ordered_Inplace(Data* device_inout, Root* root_of_unity_table,
-                             Modulus* modulus, ntt_rns_configuration cfg,
+GPU_NTT_Poly_Ordered_Inplace(T* device_inout, Root<T>* root_of_unity_table,
+                             Modulus<T>* modulus, ntt_rns_configuration<T> cfg,
                              int batch_size, int mod_count, int* order)
 {
     GPU_NTT_Poly_Ordered(device_inout, device_inout, root_of_unity_table,
                          modulus, cfg, batch_size, mod_count, order);
 }
+
+////////////////////////////////////
+// Explicit Template Specializations
+////////////////////////////////////
+
+template <> struct ntt_configuration<Data32>
+{
+    int n_power;
+    type ntt_type;
+    ReductionPolynomial reduction_poly;
+    bool zero_padding;
+    Ninverse<Data32> mod_inverse;
+    cudaStream_t stream;
+};
+
+template <> struct ntt_configuration<Data64>
+{
+    int n_power;
+    type ntt_type;
+    ReductionPolynomial reduction_poly;
+    bool zero_padding;
+    Ninverse<Data64> mod_inverse;
+    cudaStream_t stream;
+};
+
+template <> struct ntt_rns_configuration<Data32>
+{
+    int n_power;
+    type ntt_type;
+    ReductionPolynomial reduction_poly;
+    bool zero_padding;
+    Ninverse<Data32>* mod_inverse;
+    cudaStream_t stream;
+};
+
+template <> struct ntt_rns_configuration<Data64>
+{
+    int n_power;
+    type ntt_type;
+    ReductionPolynomial reduction_poly;
+    bool zero_padding;
+    Ninverse<Data64>* mod_inverse;
+    cudaStream_t stream;
+};
+
+template __device__ void
+CooleyTukeyUnit<Data32>(Data32& U, Data32& V, const Root<Data32>& root,
+                        const Modulus<Data32>& modulus);
+template __device__ void
+CooleyTukeyUnit<Data64>(Data64& U, Data64& V, const Root<Data64>& root,
+                        const Modulus<Data64>& modulus);
+template __device__ void
+GentlemanSandeUnit<Data32>(Data32& U, Data32& V, const Root<Data32>& root,
+                           const Modulus<Data32>& modulus);
+template __device__ void
+GentlemanSandeUnit<Data64>(Data64& U, Data64& V, const Root<Data64>& root,
+                           const Modulus<Data64>& modulus);
+
+template __global__ void
+ForwardCore<Data32>(Data32* polynomial_in, Data32* polynomial_out,
+                    const Root<Data32>* __restrict__ root_of_unity_table,
+                    Modulus<Data32> modulus, int shared_index, int logm,
+                    int outer_iteration_count, int N_power, bool zero_padding,
+                    bool not_last_kernel, bool reduction_poly_check);
+
+template __global__ void
+ForwardCore<Data64>(Data64* polynomial_in, Data64* polynomial_out,
+                    const Root<Data64>* __restrict__ root_of_unity_table,
+                    Modulus<Data64> modulus, int shared_index, int logm,
+                    int outer_iteration_count, int N_power, bool zero_padding,
+                    bool not_last_kernel, bool reduction_poly_check);
+
+template __global__ void
+ForwardCore<Data32>(Data32* polynomial_in, Data32* polynomial_out,
+                    const Root<Data32>* __restrict__ root_of_unity_table,
+                    Modulus<Data32>* modulus, int shared_index, int logm,
+                    int outer_iteration_count, int N_power, bool zero_padding,
+                    bool not_last_kernel, bool reduction_poly_check,
+                    int mod_count);
+
+template __global__ void
+ForwardCore<Data64>(Data64* polynomial_in, Data64* polynomial_out,
+                    const Root<Data64>* __restrict__ root_of_unity_table,
+                    Modulus<Data64>* modulus, int shared_index, int logm,
+                    int outer_iteration_count, int N_power, bool zero_padding,
+                    bool not_last_kernel, bool reduction_poly_check,
+                    int mod_count);
+
+template __global__ void
+ForwardCore_<Data32>(Data32* polynomial_in, Data32* polynomial_out,
+                     const Root<Data32>* __restrict__ root_of_unity_table,
+                     Modulus<Data32> modulus, int shared_index, int logm,
+                     int outer_iteration_count, int N_power, bool zero_padding,
+                     bool not_last_kernel, bool reduction_poly_check);
+
+template __global__ void
+ForwardCore_<Data64>(Data64* polynomial_in, Data64* polynomial_out,
+                     const Root<Data64>* __restrict__ root_of_unity_table,
+                     Modulus<Data64> modulus, int shared_index, int logm,
+                     int outer_iteration_count, int N_power, bool zero_padding,
+                     bool not_last_kernel, bool reduction_poly_check);
+
+template __global__ void
+ForwardCore_<Data32>(Data32* polynomial_in, Data32* polynomial_out,
+                     const Root<Data32>* __restrict__ root_of_unity_table,
+                     Modulus<Data32>* modulus, int shared_index, int logm,
+                     int outer_iteration_count, int N_power, bool zero_padding,
+                     bool not_last_kernel, bool reduction_poly_check,
+                     int mod_count);
+
+template __global__ void
+ForwardCore_<Data64>(Data64* polynomial_in, Data64* polynomial_out,
+                     const Root<Data64>* __restrict__ root_of_unity_table,
+                     Modulus<Data64>* modulus, int shared_index, int logm,
+                     int outer_iteration_count, int N_power, bool zero_padding,
+                     bool not_last_kernel, bool reduction_poly_check,
+                     int mod_count);
+
+template __global__ void InverseCore<Data32>(
+    Data32* polynomial_in, Data32* polynomial_out,
+    const Root<Data32>* __restrict__ inverse_root_of_unity_table,
+    Modulus<Data32> modulus, int shared_index, int logm, int k,
+    int outer_iteration_count, int N_power, Ninverse<Data32> n_inverse,
+    bool last_kernel, bool reduction_poly_check);
+
+template __global__ void InverseCore<Data64>(
+    Data64* polynomial_in, Data64* polynomial_out,
+    const Root<Data64>* __restrict__ inverse_root_of_unity_table,
+    Modulus<Data64> modulus, int shared_index, int logm, int k,
+    int outer_iteration_count, int N_power, Ninverse<Data64> n_inverse,
+    bool last_kernel, bool reduction_poly_check);
+
+template __global__ void InverseCore<Data32>(
+    Data32* polynomial_in, Data32* polynomial_out,
+    const Root<Data32>* __restrict__ inverse_root_of_unity_table,
+    Modulus<Data32>* modulus, int shared_index, int logm, int k,
+    int outer_iteration_count, int N_power, Ninverse<Data32>* n_inverse,
+    bool last_kernel, bool reduction_poly_check, int mod_count);
+
+template __global__ void InverseCore<Data64>(
+    Data64* polynomial_in, Data64* polynomial_out,
+    const Root<Data64>* __restrict__ inverse_root_of_unity_table,
+    Modulus<Data64>* modulus, int shared_index, int logm, int k,
+    int outer_iteration_count, int N_power, Ninverse<Data64>* n_inverse,
+    bool last_kernel, bool reduction_poly_check, int mod_count);
+
+template __global__ void InverseCore_<Data32>(
+    Data32* polynomial_in, Data32* polynomial_out,
+    const Root<Data32>* __restrict__ inverse_root_of_unity_table,
+    Modulus<Data32> modulus, int shared_index, int logm, int k,
+    int outer_iteration_count, int N_power, Ninverse<Data32> n_inverse,
+    bool last_kernel, bool reduction_poly_check);
+
+template __global__ void InverseCore_<Data64>(
+    Data64* polynomial_in, Data64* polynomial_out,
+    const Root<Data64>* __restrict__ inverse_root_of_unity_table,
+    Modulus<Data64> modulus, int shared_index, int logm, int k,
+    int outer_iteration_count, int N_power, Ninverse<Data64> n_inverse,
+    bool last_kernel, bool reduction_poly_check);
+
+template __global__ void InverseCore_<Data32>(
+    Data32* polynomial_in, Data32* polynomial_out,
+    const Root<Data32>* __restrict__ inverse_root_of_unity_table,
+    Modulus<Data32>* modulus, int shared_index, int logm, int k,
+    int outer_iteration_count, int N_power, Ninverse<Data32>* n_inverse,
+    bool last_kernel, bool reduction_poly_check, int mod_count);
+
+template __global__ void InverseCore_<Data64>(
+    Data64* polynomial_in, Data64* polynomial_out,
+    const Root<Data64>* __restrict__ inverse_root_of_unity_table,
+    Modulus<Data64>* modulus, int shared_index, int logm, int k,
+    int outer_iteration_count, int N_power, Ninverse<Data64>* n_inverse,
+    bool last_kernel, bool reduction_poly_check, int mod_count);
+
+template __host__ void GPU_NTT<Data32>(Data32* device_in, Data32* device_out,
+                                       Root<Data32>* root_of_unity_table,
+                                       Modulus<Data32> modulus,
+                                       ntt_configuration<Data32> cfg,
+                                       int batch_size);
+
+template __host__ void
+GPU_NTT_Inplace<Data32>(Data32* device_inout, Root<Data32>* root_of_unity_table,
+                        Modulus<Data32> modulus, ntt_configuration<Data32> cfg,
+                        int batch_size);
+
+template __host__ void GPU_NTT<Data64>(Data64* device_in, Data64* device_out,
+                                       Root<Data64>* root_of_unity_table,
+                                       Modulus<Data64> modulus,
+                                       ntt_configuration<Data64> cfg,
+                                       int batch_size);
+
+template __host__ void
+GPU_NTT_Inplace<Data64>(Data64* device_inout, Root<Data64>* root_of_unity_table,
+                        Modulus<Data64> modulus, ntt_configuration<Data64> cfg,
+                        int batch_size);
+
+template __host__ void GPU_NTT<Data32>(Data32* device_in, Data32* device_out,
+                                       Root<Data32>* root_of_unity_table,
+                                       Modulus<Data32>* modulus,
+                                       ntt_rns_configuration<Data32> cfg,
+                                       int batch_size, int mod_count);
+
+template __host__ void
+GPU_NTT_Inplace<Data32>(Data32* device_inout, Root<Data32>* root_of_unity_table,
+                        Modulus<Data32>* modulus,
+                        ntt_rns_configuration<Data32> cfg, int batch_size,
+                        int mod_count);
+
+template __host__ void GPU_NTT<Data64>(Data64* device_in, Data64* device_out,
+                                       Root<Data64>* root_of_unity_table,
+                                       Modulus<Data64>* modulus,
+                                       ntt_rns_configuration<Data64> cfg,
+                                       int batch_size, int mod_count);
+
+template __host__ void
+GPU_NTT_Inplace<Data64>(Data64* device_inout, Root<Data64>* root_of_unity_table,
+                        Modulus<Data64>* modulus,
+                        ntt_rns_configuration<Data64> cfg, int batch_size,
+                        int mod_count);
+
+template __global__ void ForwardCoreModulusOrdered<Data32>(
+    Data32* polynomial_in, Data32* polynomial_out,
+    Root<Data32>* root_of_unity_table, Modulus<Data32>* modulus,
+    int shared_index, int logm, int outer_iteration_count, int N_power,
+    bool zero_padding, bool not_last_kernel, bool reduction_poly_check,
+    int mod_count, int* order);
+
+template __global__ void ForwardCoreModulusOrdered_<Data32>(
+    Data32* polynomial_in, Data32* polynomial_out,
+    Root<Data32>* root_of_unity_table, Modulus<Data32>* modulus,
+    int shared_index, int logm, int outer_iteration_count, int N_power,
+    bool zero_padding, bool not_last_kernel, bool reduction_poly_check,
+    int mod_count, int* order);
+
+template __global__ void ForwardCoreModulusOrdered<Data64>(
+    Data64* polynomial_in, Data64* polynomial_out,
+    Root<Data64>* root_of_unity_table, Modulus<Data64>* modulus,
+    int shared_index, int logm, int outer_iteration_count, int N_power,
+    bool zero_padding, bool not_last_kernel, bool reduction_poly_check,
+    int mod_count, int* order);
+
+template __global__ void ForwardCoreModulusOrdered_<Data64>(
+    Data64* polynomial_in, Data64* polynomial_out,
+    Root<Data64>* root_of_unity_table, Modulus<Data64>* modulus,
+    int shared_index, int logm, int outer_iteration_count, int N_power,
+    bool zero_padding, bool not_last_kernel, bool reduction_poly_check,
+    int mod_count, int* order);
+
+template __global__ void InverseCoreModulusOrdered<Data32>(
+    Data32* polynomial_in, Data32* polynomial_out,
+    Root<Data32>* inverse_root_of_unity_table, Modulus<Data32>* modulus,
+    int shared_index, int logm, int k, int outer_iteration_count, int N_power,
+    Ninverse<Data32>* n_inverse, bool last_kernel, bool reduction_poly_check,
+    int mod_count, int* order);
+
+template __global__ void InverseCoreModulusOrdered_<Data32>(
+    Data32* polynomial_in, Data32* polynomial_out,
+    Root<Data32>* inverse_root_of_unity_table, Modulus<Data32>* modulus,
+    int shared_index, int logm, int k, int outer_iteration_count, int N_power,
+    Ninverse<Data32>* n_inverse, bool last_kernel, bool reduction_poly_check,
+    int mod_count, int* order);
+
+template __global__ void InverseCoreModulusOrdered<Data64>(
+    Data64* polynomial_in, Data64* polynomial_out,
+    Root<Data64>* inverse_root_of_unity_table, Modulus<Data64>* modulus,
+    int shared_index, int logm, int k, int outer_iteration_count, int N_power,
+    Ninverse<Data64>* n_inverse, bool last_kernel, bool reduction_poly_check,
+    int mod_count, int* order);
+
+template __global__ void InverseCoreModulusOrdered_<Data64>(
+    Data64* polynomial_in, Data64* polynomial_out,
+    Root<Data64>* inverse_root_of_unity_table, Modulus<Data64>* modulus,
+    int shared_index, int logm, int k, int outer_iteration_count, int N_power,
+    Ninverse<Data64>* n_inverse, bool last_kernel, bool reduction_poly_check,
+    int mod_count, int* order);
+
+template __host__ void GPU_NTT_Modulus_Ordered<Data32>(
+    Data32* device_in, Data32* device_out, Root<Data32>* root_of_unity_table,
+    Modulus<Data32>* modulus, ntt_rns_configuration<Data32> cfg, int batch_size,
+    int mod_count, int* order);
+
+template __host__ void GPU_NTT_Modulus_Ordered_Inplace<Data32>(
+    Data32* device_inout, Root<Data32>* root_of_unity_table,
+    Modulus<Data32>* modulus, ntt_rns_configuration<Data32> cfg, int batch_size,
+    int mod_count, int* order);
+
+template __host__ void GPU_NTT_Modulus_Ordered<Data64>(
+    Data64* device_in, Data64* device_out, Root<Data64>* root_of_unity_table,
+    Modulus<Data64>* modulus, ntt_rns_configuration<Data64> cfg, int batch_size,
+    int mod_count, int* order);
+
+template __host__ void GPU_NTT_Modulus_Ordered_Inplace<Data64>(
+    Data64* device_inout, Root<Data64>* root_of_unity_table,
+    Modulus<Data64>* modulus, ntt_rns_configuration<Data64> cfg, int batch_size,
+    int mod_count, int* order);
+
+template __global__ void ForwardCorePolyOrdered<Data32>(
+    Data32* polynomial_in, Data32* polynomial_out,
+    Root<Data32>* root_of_unity_table, Modulus<Data32>* modulus,
+    int shared_index, int logm, int outer_iteration_count, int N_power,
+    bool zero_padding, bool not_last_kernel, bool reduction_poly_check,
+    int mod_count, int* order);
+
+template __global__ void ForwardCorePolyOrdered_<Data32>(
+    Data32* polynomial_in, Data32* polynomial_out,
+    Root<Data32>* root_of_unity_table, Modulus<Data32>* modulus,
+    int shared_index, int logm, int outer_iteration_count, int N_power,
+    bool zero_padding, bool not_last_kernel, bool reduction_poly_check,
+    int mod_count, int* order);
+
+template __global__ void ForwardCorePolyOrdered<Data64>(
+    Data64* polynomial_in, Data64* polynomial_out,
+    Root<Data64>* root_of_unity_table, Modulus<Data64>* modulus,
+    int shared_index, int logm, int outer_iteration_count, int N_power,
+    bool zero_padding, bool not_last_kernel, bool reduction_poly_check,
+    int mod_count, int* order);
+
+template __global__ void ForwardCorePolyOrdered_<Data64>(
+    Data64* polynomial_in, Data64* polynomial_out,
+    Root<Data64>* root_of_unity_table, Modulus<Data64>* modulus,
+    int shared_index, int logm, int outer_iteration_count, int N_power,
+    bool zero_padding, bool not_last_kernel, bool reduction_poly_check,
+    int mod_count, int* order);
+
+template __global__ void InverseCorePolyOrdered<Data32>(
+    Data32* polynomial_in, Data32* polynomial_out,
+    Root<Data32>* inverse_root_of_unity_table, Modulus<Data32>* modulus,
+    int shared_index, int logm, int k, int outer_iteration_count, int N_power,
+    Ninverse<Data32>* n_inverse, bool last_kernel, bool reduction_poly_check,
+    int mod_count, int* order);
+
+template __global__ void InverseCorePolyOrdered_<Data32>(
+    Data32* polynomial_in, Data32* polynomial_out,
+    Root<Data32>* inverse_root_of_unity_table, Modulus<Data32>* modulus,
+    int shared_index, int logm, int k, int outer_iteration_count, int N_power,
+    Ninverse<Data32>* n_inverse, bool last_kernel, bool reduction_poly_check,
+    int mod_count, int* order);
+
+template __global__ void InverseCorePolyOrdered<Data64>(
+    Data64* polynomial_in, Data64* polynomial_out,
+    Root<Data64>* inverse_root_of_unity_table, Modulus<Data64>* modulus,
+    int shared_index, int logm, int k, int outer_iteration_count, int N_power,
+    Ninverse<Data64>* n_inverse, bool last_kernel, bool reduction_poly_check,
+    int mod_count, int* order);
+
+template __global__ void InverseCorePolyOrdered_<Data64>(
+    Data64* polynomial_in, Data64* polynomial_out,
+    Root<Data64>* inverse_root_of_unity_table, Modulus<Data64>* modulus,
+    int shared_index, int logm, int k, int outer_iteration_count, int N_power,
+    Ninverse<Data64>* n_inverse, bool last_kernel, bool reduction_poly_check,
+    int mod_count, int* order);
+
+template __host__ void GPU_NTT_Poly_Ordered<Data32>(
+    Data32* device_in, Data32* device_out, Root<Data32>* root_of_unity_table,
+    Modulus<Data32>* modulus, ntt_rns_configuration<Data32> cfg, int batch_size,
+    int mod_count, int* order);
+
+template __host__ void GPU_NTT_Poly_Ordered_Inplace<Data32>(
+    Data32* device_inout, Root<Data32>* root_of_unity_table,
+    Modulus<Data32>* modulus, ntt_rns_configuration<Data32> cfg, int batch_size,
+    int mod_count, int* order);
+
+template __host__ void GPU_NTT_Poly_Ordered<Data64>(
+    Data64* device_in, Data64* device_out, Root<Data64>* root_of_unity_table,
+    Modulus<Data64>* modulus, ntt_rns_configuration<Data64> cfg, int batch_size,
+    int mod_count, int* order);
+
+template __host__ void GPU_NTT_Poly_Ordered_Inplace<Data64>(
+    Data64* device_inout, Root<Data64>* root_of_unity_table,
+    Modulus<Data64>* modulus, ntt_rns_configuration<Data64> cfg, int batch_size,
+    int mod_count, int* order);

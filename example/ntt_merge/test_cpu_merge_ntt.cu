@@ -32,21 +32,11 @@ int main(int argc, char* argv[])
         BATCH = atoi(argv[2]);
     }
 
-#ifdef BARRETT_64
     ModularReductionType modular_reduction_type = ModularReductionType::BARRET;
-#elif defined(GOLDILOCKS_64)
-    ModularReductionType modular_reduction_type =
-        ModularReductionType::GOLDILOCK;
-#elif defined(PLANTARD_64)
-    ModularReductionType modular_reduction_type =
-        ModularReductionType::PLANTARD;
-#else
-#error "Please define reduction type."
-#endif
 
 #ifdef DEFAULT_MODULUS
-    NTTParameters parameters(LOGN, modular_reduction_type,
-                             ReductionPolynomial::X_N_minus);
+    NTTParameters<Data64> parameters(LOGN, modular_reduction_type,
+                                     ReductionPolynomial::X_N_minus);
 #else
     NTTFactors factor((Modulus) 576460752303415297, 288482366111684746,
                       238394956950829);
@@ -54,17 +44,17 @@ int main(int argc, char* argv[])
 #endif
 
     // NTT generator with certain modulus and root of unity
-    NTT_CPU generator(parameters);
+    NTTCPU<Data64> generator(parameters);
 
     std::random_device rd;
     std::mt19937 gen(rd());
-    unsigned long long minNumber = 0;
-    unsigned long long maxNumber = parameters.modulus.value - 1;
-    std::uniform_int_distribution<unsigned long long> dis(minNumber, maxNumber);
+    Data64 minNumber = 0;
+    Data64 maxNumber = parameters.modulus.value - 1;
+    std::uniform_int_distribution<Data64> dis(minNumber, maxNumber);
 
     // Random data generation for polynomials
-    vector<vector<Data>> input1(BATCH);
-    vector<vector<Data>> input2(BATCH);
+    vector<vector<Data64>> input1(BATCH);
+    vector<vector<Data64>> input2(BATCH);
     for (int j = 0; j < BATCH; j++)
     {
         for (int i = 0; i < parameters.n; i++)
@@ -75,12 +65,12 @@ int main(int argc, char* argv[])
     }
 
     // Performing CPU NTT
-    vector<vector<Data>> ntt_mult_result(BATCH);
+    vector<vector<Data64>> ntt_mult_result(BATCH);
     for (int i = 0; i < BATCH; i++)
     {
-        vector<Data> ntt_input1 = generator.ntt(input1[i]);
-        vector<Data> ntt_input2 = generator.ntt(input2[i]);
-        vector<Data> output = generator.mult(ntt_input1, ntt_input2);
+        vector<Data64> ntt_input1 = generator.ntt(input1[i]);
+        vector<Data64> ntt_input2 = generator.ntt(input2[i]);
+        vector<Data64> output = generator.mult(ntt_input1, ntt_input2);
         ntt_mult_result[i] = generator.intt(output);
     }
 
@@ -89,9 +79,10 @@ int main(int argc, char* argv[])
     bool check = true;
     for (int i = 0; i < BATCH; i++)
     {
-        std::vector<Data> schoolbook_result = schoolbook_poly_multiplication(
-            input1[i], input2[i], parameters.modulus,
-            ReductionPolynomial::X_N_minus);
+        std::vector<Data64> schoolbook_result =
+            schoolbook_poly_multiplication<Data64>(
+                input1[i], input2[i], parameters.modulus,
+                ReductionPolynomial::X_N_minus);
 
         check = check_result(ntt_mult_result[i].data(),
                              schoolbook_result.data(), parameters.n);

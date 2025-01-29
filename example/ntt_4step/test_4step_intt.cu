@@ -33,25 +33,15 @@ int main(int argc, char* argv[])
         BATCH = atoi(argv[2]);
     }
 
-#ifdef BARRETT_64
     ModularReductionType modular_reduction_type = ModularReductionType::BARRET;
-#elif defined(GOLDILOCKS_64)
-    ModularReductionType modular_reduction_type =
-        ModularReductionType::GOLDILOCK;
-#elif defined(PLANTARD_64)
-    ModularReductionType modular_reduction_type =
-        ModularReductionType::PLANTARD;
-#else
-#error "Please define reduction type."
-#endif
 
     // Current 4step NTT implementation only works for
     // ReductionPolynomial::X_N_minus!
-    NTTParameters4Step parameters(LOGN, modular_reduction_type,
-                                  ReductionPolynomial::X_N_minus);
+    NTTParameters4Step<Data64> parameters(LOGN, modular_reduction_type,
+                                          ReductionPolynomial::X_N_minus);
 
     // NTT generator with certain modulus and root of unity
-    NTT_4STEP_CPU generator(parameters);
+    NTT_4STEP_CPU<Data64> generator(parameters);
 
     std::random_device rd;
     std::mt19937 gen(rd());
@@ -60,7 +50,7 @@ int main(int argc, char* argv[])
     std::uniform_int_distribution<unsigned long long> dis(minNumber, maxNumber);
 
     // Random data generation for polynomials
-    vector<vector<Data>> input1(BATCH);
+    vector<vector<Data64>> input1(BATCH);
     for (int j = 0; j < BATCH; j++)
     {
         for (int i = 0; i < parameters.n; i++)
@@ -70,81 +60,81 @@ int main(int argc, char* argv[])
     }
 
     // Performing CPU NTT
-    vector<vector<Data>> ntt_result(BATCH);
+    vector<vector<Data64>> ntt_result(BATCH);
     for (int i = 0; i < BATCH; i++)
     {
         ntt_result[i] = generator.intt(input1[i]);
     }
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-    Data* Input_Datas;
+    Data64* Input_Datas;
 
     THROW_IF_CUDA_ERROR(
-        cudaMalloc(&Input_Datas, BATCH * parameters.n * sizeof(Data)));
+        cudaMalloc(&Input_Datas, BATCH * parameters.n * sizeof(Data64)));
 
-    Data* Output_Datas;
+    Data64* Output_Datas;
     THROW_IF_CUDA_ERROR(
-        cudaMalloc(&Output_Datas, BATCH * parameters.n * sizeof(Data)));
+        cudaMalloc(&Output_Datas, BATCH * parameters.n * sizeof(Data64)));
 
     for (int j = 0; j < BATCH; j++)
     {
-        vector<Data> cpu_intt_transposed_input =
+        vector<Data64> cpu_intt_transposed_input =
             generator.intt_first_transpose(input1[j]); // INTT TRANSPOSE IN CPU
 
         THROW_IF_CUDA_ERROR(cudaMemcpy(
             Input_Datas + (parameters.n * j), cpu_intt_transposed_input.data(),
-            parameters.n * sizeof(Data), cudaMemcpyHostToDevice));
+            parameters.n * sizeof(Data64), cudaMemcpyHostToDevice));
     }
 
     //////////////////////////////////////////////////////////////////////////
 
-    vector<Root_> psitable1 = parameters.gpu_root_of_unity_table_generator(
+    vector<Root64> psitable1 = parameters.gpu_root_of_unity_table_generator(
         parameters.n1_based_inverse_root_of_unity_table);
-    Root* psitable_device1;
+    Root64* psitable_device1;
     THROW_IF_CUDA_ERROR(
-        cudaMalloc(&psitable_device1, (parameters.n1 >> 1) * sizeof(Root)));
+        cudaMalloc(&psitable_device1, (parameters.n1 >> 1) * sizeof(Root64)));
     THROW_IF_CUDA_ERROR(cudaMemcpy(psitable_device1, psitable1.data(),
-                                   (parameters.n1 >> 1) * sizeof(Root),
+                                   (parameters.n1 >> 1) * sizeof(Root64),
                                    cudaMemcpyHostToDevice));
 
-    vector<Root_> psitable2 = parameters.gpu_root_of_unity_table_generator(
+    vector<Root64> psitable2 = parameters.gpu_root_of_unity_table_generator(
         parameters.n2_based_inverse_root_of_unity_table);
-    Root* psitable_device2;
+    Root64* psitable_device2;
     THROW_IF_CUDA_ERROR(
-        cudaMalloc(&psitable_device2, (parameters.n2 >> 1) * sizeof(Root)));
+        cudaMalloc(&psitable_device2, (parameters.n2 >> 1) * sizeof(Root64)));
     THROW_IF_CUDA_ERROR(cudaMemcpy(psitable_device2, psitable2.data(),
-                                   (parameters.n2 >> 1) * sizeof(Root),
+                                   (parameters.n2 >> 1) * sizeof(Root64),
                                    cudaMemcpyHostToDevice));
 
-    Root* W_Table_device;
+    Root64* W_Table_device;
     THROW_IF_CUDA_ERROR(
-        cudaMalloc(&W_Table_device, parameters.n * sizeof(Root)));
+        cudaMalloc(&W_Table_device, parameters.n * sizeof(Root64)));
     THROW_IF_CUDA_ERROR(cudaMemcpy(
         W_Table_device, parameters.W_inverse_root_of_unity_table.data(),
-        parameters.n * sizeof(Root), cudaMemcpyHostToDevice));
+        parameters.n * sizeof(Root64), cudaMemcpyHostToDevice));
 
     //////////////////////////////////////////////////////////////////////////
 
-    Modulus* test_modulus;
-    THROW_IF_CUDA_ERROR(cudaMalloc(&test_modulus, sizeof(Modulus)));
+    Modulus64* test_modulus;
+    THROW_IF_CUDA_ERROR(cudaMalloc(&test_modulus, sizeof(Modulus64)));
 
-    Modulus test_modulus_[1] = {parameters.modulus};
+    Modulus64 test_modulus_[1] = {parameters.modulus};
 
-    THROW_IF_CUDA_ERROR(cudaMemcpy(test_modulus, test_modulus_, sizeof(Modulus),
-                                   cudaMemcpyHostToDevice));
+    THROW_IF_CUDA_ERROR(cudaMemcpy(test_modulus, test_modulus_,
+                                   sizeof(Modulus64), cudaMemcpyHostToDevice));
 
-    Ninverse* test_ninverse;
-    THROW_IF_CUDA_ERROR(cudaMalloc(&test_ninverse, sizeof(Ninverse)));
+    Ninverse64* test_ninverse;
+    THROW_IF_CUDA_ERROR(cudaMalloc(&test_ninverse, sizeof(Ninverse64)));
 
-    Ninverse test_ninverse_[1] = {parameters.n_inv};
+    Ninverse64 test_ninverse_[1] = {parameters.n_inv};
 
     THROW_IF_CUDA_ERROR(cudaMemcpy(test_ninverse, test_ninverse_,
-                                   sizeof(Ninverse), cudaMemcpyHostToDevice));
+                                   sizeof(Ninverse64), cudaMemcpyHostToDevice));
 
-    ntt4step_rns_configuration cfg_intt = {.n_power = LOGN,
-                                           .ntt_type = INVERSE,
-                                           .mod_inverse = test_ninverse,
-                                           .stream = 0};
+    ntt4step_rns_configuration<Data64> cfg_intt = {.n_power = LOGN,
+                                                   .ntt_type = INVERSE,
+                                                   .mod_inverse = test_ninverse,
+                                                   .stream = 0};
 
     //////////////////////////////////////////////////////////////////////////
 
@@ -154,9 +144,9 @@ int main(int argc, char* argv[])
     GPU_Transpose(Output_Datas, Input_Datas, parameters.n1, parameters.n2,
                   parameters.logn, BATCH);
 
-    vector<Data> Output_Host(parameters.n * BATCH);
+    vector<Data64> Output_Host(parameters.n * BATCH);
     cudaMemcpy(Output_Host.data(), Input_Datas,
-               parameters.n * BATCH * sizeof(Data), cudaMemcpyDeviceToHost);
+               parameters.n * BATCH * sizeof(Data64), cudaMemcpyDeviceToHost);
 
     // Comparing GPU NTT results and CPU NTT results
     bool check = true;
