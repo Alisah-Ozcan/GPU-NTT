@@ -978,6 +978,7 @@ __host__ void GPU_NTT(T* device_in, T* device_out, Root<T>* root_of_unity_table,
                         cfg.n_power, cfg.zero_padding,
                         current_kernel_params.not_last_kernel,
                         (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
+                    THROW_IF_CUDA_ERROR(cudaGetLastError());
                     device_in_ = device_out;
                 }
             }
@@ -1001,6 +1002,7 @@ __host__ void GPU_NTT(T* device_in, T* device_out, Root<T>* root_of_unity_table,
                         cfg.n_power, cfg.zero_padding,
                         current_kernel_params.not_last_kernel,
                         (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
+                    THROW_IF_CUDA_ERROR(cudaGetLastError());
                     device_in_ = device_out;
                 }
                 auto& current_kernel_params =
@@ -1019,6 +1021,7 @@ __host__ void GPU_NTT(T* device_in, T* device_out, Root<T>* root_of_unity_table,
                     current_kernel_params.outer_iteration_count, cfg.n_power,
                     cfg.zero_padding, current_kernel_params.not_last_kernel,
                     (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
+                THROW_IF_CUDA_ERROR(cudaGetLastError());
             }
             break;
         case INVERSE:
@@ -1041,6 +1044,7 @@ __host__ void GPU_NTT(T* device_in, T* device_out, Root<T>* root_of_unity_table,
                         cfg.n_power, cfg.mod_inverse,
                         current_kernel_params.not_last_kernel,
                         (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
+                    THROW_IF_CUDA_ERROR(cudaGetLastError());
                     device_in_ = device_out;
                 }
             }
@@ -1059,6 +1063,7 @@ __host__ void GPU_NTT(T* device_in, T* device_out, Root<T>* root_of_unity_table,
                     current_kernel_params.outer_iteration_count, cfg.n_power,
                     cfg.mod_inverse, current_kernel_params.not_last_kernel,
                     (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
+                THROW_IF_CUDA_ERROR(cudaGetLastError());
                 device_in_ = device_out;
                 for (int i = 1; i < kernel_parameters[cfg.n_power].size(); i++)
                 {
@@ -1077,6 +1082,7 @@ __host__ void GPU_NTT(T* device_in, T* device_out, Root<T>* root_of_unity_table,
                         cfg.n_power, cfg.mod_inverse,
                         current_kernel_params.not_last_kernel,
                         (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
+                    THROW_IF_CUDA_ERROR(cudaGetLastError());
                 }
             }
 
@@ -1126,6 +1132,7 @@ __host__ void GPU_NTT(T* device_in, T* device_out, Root<T>* root_of_unity_table,
                         current_kernel_params.not_last_kernel,
                         (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
                         mod_count);
+                    THROW_IF_CUDA_ERROR(cudaGetLastError());
                     device_in_ = device_out;
                 }
             }
@@ -1150,6 +1157,7 @@ __host__ void GPU_NTT(T* device_in, T* device_out, Root<T>* root_of_unity_table,
                         current_kernel_params.not_last_kernel,
                         (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
                         mod_count);
+                    THROW_IF_CUDA_ERROR(cudaGetLastError());
                     device_in_ = device_out;
                 }
                 auto& current_kernel_params =
@@ -1169,6 +1177,7 @@ __host__ void GPU_NTT(T* device_in, T* device_out, Root<T>* root_of_unity_table,
                     cfg.zero_padding, current_kernel_params.not_last_kernel,
                     (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
                     mod_count);
+                THROW_IF_CUDA_ERROR(cudaGetLastError());
             }
             break;
         case INVERSE:
@@ -1192,6 +1201,7 @@ __host__ void GPU_NTT(T* device_in, T* device_out, Root<T>* root_of_unity_table,
                         current_kernel_params.not_last_kernel,
                         (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
                         mod_count);
+                    THROW_IF_CUDA_ERROR(cudaGetLastError());
                     device_in_ = device_out;
                 }
             }
@@ -1211,6 +1221,7 @@ __host__ void GPU_NTT(T* device_in, T* device_out, Root<T>* root_of_unity_table,
                     cfg.mod_inverse, current_kernel_params.not_last_kernel,
                     (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
                     mod_count);
+                THROW_IF_CUDA_ERROR(cudaGetLastError());
                 device_in_ = device_out;
                 for (int i = 1; i < kernel_parameters[cfg.n_power].size(); i++)
                 {
@@ -1230,6 +1241,7 @@ __host__ void GPU_NTT(T* device_in, T* device_out, Root<T>* root_of_unity_table,
                         current_kernel_params.not_last_kernel,
                         (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
                         mod_count);
+                    THROW_IF_CUDA_ERROR(cudaGetLastError());
                 }
             }
             break;
@@ -1774,6 +1786,7 @@ __host__ void GPU_NTT_Modulus_Ordered(T* device_in, T* device_out,
                         current_kernel_params.not_last_kernel,
                         (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
                         mod_count, order);
+                    THROW_IF_CUDA_ERROR(cudaGetLastError());
                     device_in_ = device_out;
                 }
             }
@@ -1798,6 +1811,7 @@ __host__ void GPU_NTT_Modulus_Ordered(T* device_in, T* device_out,
                         current_kernel_params.not_last_kernel,
                         (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
                         mod_count, order);
+                    THROW_IF_CUDA_ERROR(cudaGetLastError());
                     device_in_ = device_out;
                 }
                 auto& current_kernel_params =
@@ -1817,6 +1831,7 @@ __host__ void GPU_NTT_Modulus_Ordered(T* device_in, T* device_out,
                     cfg.zero_padding, current_kernel_params.not_last_kernel,
                     (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
                     mod_count, order);
+                THROW_IF_CUDA_ERROR(cudaGetLastError());
             }
             break;
         case INVERSE:
@@ -1840,6 +1855,7 @@ __host__ void GPU_NTT_Modulus_Ordered(T* device_in, T* device_out,
                         current_kernel_params.not_last_kernel,
                         (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
                         mod_count, order);
+                    THROW_IF_CUDA_ERROR(cudaGetLastError());
                     device_in_ = device_out;
                 }
             }
@@ -1859,6 +1875,7 @@ __host__ void GPU_NTT_Modulus_Ordered(T* device_in, T* device_out,
                     cfg.mod_inverse, current_kernel_params.not_last_kernel,
                     (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
                     mod_count, order);
+                THROW_IF_CUDA_ERROR(cudaGetLastError());
                 device_in_ = device_out;
                 for (int i = 1; i < kernel_parameters[cfg.n_power].size(); i++)
                 {
@@ -1878,6 +1895,7 @@ __host__ void GPU_NTT_Modulus_Ordered(T* device_in, T* device_out,
                         current_kernel_params.not_last_kernel,
                         (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
                         mod_count, order);
+                    THROW_IF_CUDA_ERROR(cudaGetLastError());
                 }
             }
             break;
@@ -2417,6 +2435,7 @@ GPU_NTT_Poly_Ordered(T* device_in, T* device_out, Root<T>* root_of_unity_table,
                         current_kernel_params.not_last_kernel,
                         (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
                         mod_count, order);
+                    THROW_IF_CUDA_ERROR(cudaGetLastError());
                     device_in_ = device_out;
                 }
             }
@@ -2441,6 +2460,7 @@ GPU_NTT_Poly_Ordered(T* device_in, T* device_out, Root<T>* root_of_unity_table,
                         current_kernel_params.not_last_kernel,
                         (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
                         mod_count, order);
+                    THROW_IF_CUDA_ERROR(cudaGetLastError());
                     device_in_ = device_out;
                 }
                 auto& current_kernel_params =
@@ -2460,6 +2480,7 @@ GPU_NTT_Poly_Ordered(T* device_in, T* device_out, Root<T>* root_of_unity_table,
                     cfg.zero_padding, current_kernel_params.not_last_kernel,
                     (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
                     mod_count, order);
+                THROW_IF_CUDA_ERROR(cudaGetLastError());
             }
             break;
         case INVERSE:
@@ -2483,6 +2504,7 @@ GPU_NTT_Poly_Ordered(T* device_in, T* device_out, Root<T>* root_of_unity_table,
                         current_kernel_params.not_last_kernel,
                         (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
                         mod_count, order);
+                    THROW_IF_CUDA_ERROR(cudaGetLastError());
                     device_in_ = device_out;
                 }
             }
@@ -2502,6 +2524,7 @@ GPU_NTT_Poly_Ordered(T* device_in, T* device_out, Root<T>* root_of_unity_table,
                     cfg.mod_inverse, current_kernel_params.not_last_kernel,
                     (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
                     mod_count, order);
+                THROW_IF_CUDA_ERROR(cudaGetLastError());
                 device_in_ = device_out;
                 for (int i = 1; i < kernel_parameters[cfg.n_power].size(); i++)
                 {
@@ -2521,6 +2544,7 @@ GPU_NTT_Poly_Ordered(T* device_in, T* device_out, Root<T>* root_of_unity_table,
                         current_kernel_params.not_last_kernel,
                         (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
                         mod_count, order);
+                    THROW_IF_CUDA_ERROR(cudaGetLastError());
                 }
             }
 
