@@ -11,6 +11,7 @@
 #define DEFAULT_MODULUS
 
 using namespace std;
+using namespace gpuntt;
 
 int LOGN;
 int BATCH;
@@ -81,12 +82,12 @@ int main(int argc, char* argv[])
 
     Data64* InOut_Datas;
 
-    THROW_IF_CUDA_ERROR(
+    GPUNTT_CUDA_CHECK(
         cudaMalloc(&InOut_Datas, BATCH * parameters.n * sizeof(Data64)));
 
     for (int j = 0; j < BATCH; j++)
     {
-        THROW_IF_CUDA_ERROR(
+        GPUNTT_CUDA_CHECK(
             cudaMemcpy(InOut_Datas + (parameters.n * j), input1[j].data(),
                        parameters.n * sizeof(Data64), cudaMemcpyHostToDevice));
     }
@@ -95,35 +96,35 @@ int main(int argc, char* argv[])
 
     Root64* Inverse_Omega_Table_Device;
 
-    THROW_IF_CUDA_ERROR(
+    GPUNTT_CUDA_CHECK(
         cudaMalloc(&Inverse_Omega_Table_Device,
                    parameters.root_of_unity_size * sizeof(Root64)));
 
     vector<Root64> inverse_omega_table =
         parameters.gpu_root_of_unity_table_generator(
             parameters.inverse_root_of_unity_table);
-    THROW_IF_CUDA_ERROR(
-        cudaMemcpy(Inverse_Omega_Table_Device, inverse_omega_table.data(),
-                   parameters.root_of_unity_size * sizeof(Root64),
-                   cudaMemcpyHostToDevice));
+    GPUNTT_CUDA_CHECK(cudaMemcpy(Inverse_Omega_Table_Device,
+                                 inverse_omega_table.data(),
+                                 parameters.root_of_unity_size * sizeof(Root64),
+                                 cudaMemcpyHostToDevice));
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
     Modulus64* test_modulus;
-    THROW_IF_CUDA_ERROR(cudaMalloc(&test_modulus, sizeof(Modulus64)));
+    GPUNTT_CUDA_CHECK(cudaMalloc(&test_modulus, sizeof(Modulus64)));
 
     Modulus64 test_modulus_[1] = {parameters.modulus};
 
-    THROW_IF_CUDA_ERROR(cudaMemcpy(test_modulus, test_modulus_,
-                                   sizeof(Modulus64), cudaMemcpyHostToDevice));
+    GPUNTT_CUDA_CHECK(cudaMemcpy(test_modulus, test_modulus_, sizeof(Modulus64),
+                                 cudaMemcpyHostToDevice));
 
     Ninverse64* test_ninverse;
-    THROW_IF_CUDA_ERROR(cudaMalloc(&test_ninverse, sizeof(Ninverse64)));
+    GPUNTT_CUDA_CHECK(cudaMalloc(&test_ninverse, sizeof(Ninverse64)));
 
     Ninverse64 test_ninverse_[1] = {parameters.n_inv};
 
-    THROW_IF_CUDA_ERROR(cudaMemcpy(test_ninverse, test_ninverse_,
-                                   sizeof(Ninverse64), cudaMemcpyHostToDevice));
+    GPUNTT_CUDA_CHECK(cudaMemcpy(test_ninverse, test_ninverse_,
+                                 sizeof(Ninverse64), cudaMemcpyHostToDevice));
 
     ntt_rns_configuration<Data64> cfg_intt = {
         .n_power = LOGN,
@@ -136,12 +137,12 @@ int main(int argc, char* argv[])
     ////////////////
     Data64* Out_Datas;
 
-    THROW_IF_CUDA_ERROR(
+    GPUNTT_CUDA_CHECK(
         cudaMalloc(&Out_Datas, BATCH * parameters.n * sizeof(Data64)));
 
     for (int j = 0; j < BATCH; j++)
     {
-        THROW_IF_CUDA_ERROR(
+        GPUNTT_CUDA_CHECK(
             cudaMemcpy(Out_Datas + (parameters.n * j), input1[j].data(),
                        parameters.n * sizeof(Data64), cudaMemcpyHostToDevice));
     }
@@ -153,9 +154,9 @@ int main(int argc, char* argv[])
     Data64* Output_Host;
 
     Output_Host = (Data64*) malloc(BATCH * parameters.n * sizeof(Data64));
-    THROW_IF_CUDA_ERROR(cudaMemcpy(Output_Host, Out_Datas,
-                                   BATCH * parameters.n * sizeof(Data64),
-                                   cudaMemcpyDeviceToHost));
+    GPUNTT_CUDA_CHECK(cudaMemcpy(Output_Host, Out_Datas,
+                                 BATCH * parameters.n * sizeof(Data64),
+                                 cudaMemcpyDeviceToHost));
 
     // Comparing GPU NTT results and CPU NTT results
     bool check = true;
@@ -178,8 +179,8 @@ int main(int argc, char* argv[])
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-    THROW_IF_CUDA_ERROR(cudaFree(InOut_Datas));
-    THROW_IF_CUDA_ERROR(cudaFree(Inverse_Omega_Table_Device));
+    GPUNTT_CUDA_CHECK(cudaFree(InOut_Datas));
+    GPUNTT_CUDA_CHECK(cudaFree(Inverse_Omega_Table_Device));
     free(Output_Host);
 
     return EXIT_SUCCESS;

@@ -13,6 +13,7 @@
 #define DEFAULT_MODULUS
 
 using namespace std;
+using namespace gpuntt;
 
 int LOGN;
 int BATCH;

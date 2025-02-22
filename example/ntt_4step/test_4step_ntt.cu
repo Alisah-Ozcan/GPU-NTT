@@ -13,6 +13,7 @@
 #define DEFAULT_MODULUS
 
 using namespace std;
+using namespace gpuntt;
 
 int LOGN;
 int BATCH;
@@ -69,16 +70,16 @@ int main(int argc, char* argv[])
 
     Data64* Input_Datas;
 
-    THROW_IF_CUDA_ERROR(
+    GPUNTT_CUDA_CHECK(
         cudaMalloc(&Input_Datas, BATCH * parameters.n * sizeof(Data64)));
 
     Data64* Output_Datas;
-    THROW_IF_CUDA_ERROR(
+    GPUNTT_CUDA_CHECK(
         cudaMalloc(&Output_Datas, BATCH * parameters.n * sizeof(Data64)));
 
     for (int j = 0; j < BATCH; j++)
     {
-        THROW_IF_CUDA_ERROR(
+        GPUNTT_CUDA_CHECK(
             cudaMemcpy(Input_Datas + (parameters.n * j), input1[j].data(),
                        parameters.n * sizeof(Data64), cudaMemcpyHostToDevice));
     }
@@ -88,45 +89,45 @@ int main(int argc, char* argv[])
     vector<Root64> psitable1 = parameters.gpu_root_of_unity_table_generator(
         parameters.n1_based_root_of_unity_table);
     Root64* psitable_device1;
-    THROW_IF_CUDA_ERROR(
+    GPUNTT_CUDA_CHECK(
         cudaMalloc(&psitable_device1, (parameters.n1 >> 1) * sizeof(Root64)));
-    THROW_IF_CUDA_ERROR(cudaMemcpy(psitable_device1, psitable1.data(),
-                                   (parameters.n1 >> 1) * sizeof(Root64),
-                                   cudaMemcpyHostToDevice));
+    GPUNTT_CUDA_CHECK(cudaMemcpy(psitable_device1, psitable1.data(),
+                                 (parameters.n1 >> 1) * sizeof(Root64),
+                                 cudaMemcpyHostToDevice));
 
     vector<Root64> psitable2 = parameters.gpu_root_of_unity_table_generator(
         parameters.n2_based_root_of_unity_table);
     Root64* psitable_device2;
-    THROW_IF_CUDA_ERROR(
+    GPUNTT_CUDA_CHECK(
         cudaMalloc(&psitable_device2, (parameters.n2 >> 1) * sizeof(Root64)));
-    THROW_IF_CUDA_ERROR(cudaMemcpy(psitable_device2, psitable2.data(),
-                                   (parameters.n2 >> 1) * sizeof(Root64),
-                                   cudaMemcpyHostToDevice));
+    GPUNTT_CUDA_CHECK(cudaMemcpy(psitable_device2, psitable2.data(),
+                                 (parameters.n2 >> 1) * sizeof(Root64),
+                                 cudaMemcpyHostToDevice));
 
     Root64* W_Table_device;
-    THROW_IF_CUDA_ERROR(
+    GPUNTT_CUDA_CHECK(
         cudaMalloc(&W_Table_device, parameters.n * sizeof(Root64)));
-    THROW_IF_CUDA_ERROR(
+    GPUNTT_CUDA_CHECK(
         cudaMemcpy(W_Table_device, parameters.W_root_of_unity_table.data(),
                    parameters.n * sizeof(Root64), cudaMemcpyHostToDevice));
 
     //////////////////////////////////////////////////////////////////////////
 
     Modulus64* test_modulus;
-    THROW_IF_CUDA_ERROR(cudaMalloc(&test_modulus, sizeof(Modulus64)));
+    GPUNTT_CUDA_CHECK(cudaMalloc(&test_modulus, sizeof(Modulus64)));
 
     Modulus64 test_modulus_[1] = {parameters.modulus};
 
-    THROW_IF_CUDA_ERROR(cudaMemcpy(test_modulus, test_modulus_,
-                                   sizeof(Modulus64), cudaMemcpyHostToDevice));
+    GPUNTT_CUDA_CHECK(cudaMemcpy(test_modulus, test_modulus_, sizeof(Modulus64),
+                                 cudaMemcpyHostToDevice));
 
     Ninverse64* test_ninverse;
-    THROW_IF_CUDA_ERROR(cudaMalloc(&test_ninverse, sizeof(Ninverse64)));
+    GPUNTT_CUDA_CHECK(cudaMalloc(&test_ninverse, sizeof(Ninverse64)));
 
     Ninverse64 test_ninverse_[1] = {parameters.n_inv};
 
-    THROW_IF_CUDA_ERROR(cudaMemcpy(test_ninverse, test_ninverse_,
-                                   sizeof(Ninverse64), cudaMemcpyHostToDevice));
+    GPUNTT_CUDA_CHECK(cudaMemcpy(test_ninverse, test_ninverse_,
+                                 sizeof(Ninverse64), cudaMemcpyHostToDevice));
 
     ntt4step_rns_configuration<Data64> cfg_intt = {.n_power = LOGN,
                                                    .ntt_type = FORWARD,

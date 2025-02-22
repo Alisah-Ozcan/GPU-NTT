@@ -11,6 +11,7 @@
 #define DEFAULT_MODULUS
 
 using namespace std;
+using namespace gpuntt;
 
 int LOGN;
 int BATCH;
@@ -81,12 +82,12 @@ int main(int argc, char* argv[])
 
     Data64* InOut_Datas;
 
-    THROW_IF_CUDA_ERROR(
+    GPUNTT_CUDA_CHECK(
         cudaMalloc(&InOut_Datas, BATCH * parameters.n * sizeof(Data64)));
 
     for (int j = 0; j < BATCH; j++)
     {
-        THROW_IF_CUDA_ERROR(
+        GPUNTT_CUDA_CHECK(
             cudaMemcpy(InOut_Datas + (parameters.n * j), input1[j].data(),
                        parameters.n * sizeof(Data64), cudaMemcpyHostToDevice));
     }
@@ -95,7 +96,7 @@ int main(int argc, char* argv[])
 
     Root64* Forward_Omega_Table_Device;
 
-    THROW_IF_CUDA_ERROR(
+    GPUNTT_CUDA_CHECK(
         cudaMalloc(&Forward_Omega_Table_Device,
                    parameters.root_of_unity_size * sizeof(Root64)));
 
@@ -103,20 +104,20 @@ int main(int argc, char* argv[])
         parameters.gpu_root_of_unity_table_generator(
             parameters.forward_root_of_unity_table);
 
-    THROW_IF_CUDA_ERROR(
-        cudaMemcpy(Forward_Omega_Table_Device, forward_omega_table.data(),
-                   parameters.root_of_unity_size * sizeof(Root64),
-                   cudaMemcpyHostToDevice));
+    GPUNTT_CUDA_CHECK(cudaMemcpy(Forward_Omega_Table_Device,
+                                 forward_omega_table.data(),
+                                 parameters.root_of_unity_size * sizeof(Root64),
+                                 cudaMemcpyHostToDevice));
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
     Modulus64* test_modulus;
-    THROW_IF_CUDA_ERROR(cudaMalloc(&test_modulus, sizeof(Modulus64)));
+    GPUNTT_CUDA_CHECK(cudaMalloc(&test_modulus, sizeof(Modulus64)));
 
     Modulus64 test_modulus_[1] = {parameters.modulus};
 
-    THROW_IF_CUDA_ERROR(cudaMemcpy(test_modulus, test_modulus_,
-                                   sizeof(Modulus64), cudaMemcpyHostToDevice));
+    GPUNTT_CUDA_CHECK(cudaMemcpy(test_modulus, test_modulus_, sizeof(Modulus64),
+                                 cudaMemcpyHostToDevice));
 
     ntt_rns_configuration<Data64> cfg_ntt = {.n_power = LOGN,
                                              .ntt_type = FORWARD,
@@ -133,9 +134,9 @@ int main(int argc, char* argv[])
 
     Output_Host = (Data64*) malloc(BATCH * parameters.n * sizeof(Data64));
 
-    THROW_IF_CUDA_ERROR(cudaMemcpy(Output_Host, InOut_Datas,
-                                   BATCH * parameters.n * sizeof(Data64),
-                                   cudaMemcpyDeviceToHost));
+    GPUNTT_CUDA_CHECK(cudaMemcpy(Output_Host, InOut_Datas,
+                                 BATCH * parameters.n * sizeof(Data64),
+                                 cudaMemcpyDeviceToHost));
 
     // Comparing GPU NTT results and CPU NTT results
     bool check = true;
@@ -158,8 +159,8 @@ int main(int argc, char* argv[])
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-    THROW_IF_CUDA_ERROR(cudaFree(InOut_Datas));
-    THROW_IF_CUDA_ERROR(cudaFree(Forward_Omega_Table_Device));
+    GPUNTT_CUDA_CHECK(cudaFree(InOut_Datas));
+    GPUNTT_CUDA_CHECK(cudaFree(Forward_Omega_Table_Device));
     free(Output_Host);
 
     return EXIT_SUCCESS;

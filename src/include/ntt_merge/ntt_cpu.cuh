@@ -8,25 +8,28 @@
 
 #include "nttparameters.cuh"
 
-template <typename T>
-std::vector<T>
-schoolbook_poly_multiplication(std::vector<T> a, std::vector<T> b,
-                               Modulus<T> modulus,
-                               ReductionPolynomial reduction_poly);
-
-template <typename T> class NTTCPU
+namespace gpuntt
 {
-  public:
-    NTTParameters<T> parameters;
+    template <typename T>
+    std::vector<T>
+    schoolbook_poly_multiplication(std::vector<T> a, std::vector<T> b,
+                                   Modulus<T> modulus,
+                                   ReductionPolynomial reduction_poly);
 
-    NTTCPU(NTTParameters<T> parameters_);
+    template <typename T> class NTTCPU
+    {
+      public:
+        NTTParameters<T> parameters;
 
-  public:
-    std::vector<T> mult(std::vector<T>& input1, std::vector<T>& input2);
+        NTTCPU(NTTParameters<T> parameters_);
 
-    std::vector<T> ntt(std::vector<T>& input);
+      public:
+        std::vector<T> mult(std::vector<T>& input1, std::vector<T>& input2);
 
-    std::vector<T> intt(std::vector<T>& input);
-};
+        std::vector<T> ntt(std::vector<T>& input);
 
+        std::vector<T> intt(std::vector<T>& input);
+    };
+
+} // namespace gpuntt
 #endif // NTT_CPU_H
