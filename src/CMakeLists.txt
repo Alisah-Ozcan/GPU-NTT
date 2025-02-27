@@ -22,10 +22,6 @@ set_target_properties(ntt PROPERTIES
   OUTPUT_NAME "ntt-${PROJECT_VERSION}"
 )
 
-if(NOT DEFINED MODULAR_REDUCTION_TYPE)
-    set(MODULAR_REDUCTION_TYPE 0)
-endif()
-
 target_include_directories(
     ntt
     PUBLIC

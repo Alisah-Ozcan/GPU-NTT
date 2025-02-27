@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.2)
+cmake_minimum_required(VERSION 3.26)
 project(GPUNTT VERSION 1.0 LANGUAGES C CXX CUDA ASM)
 
 set(BINARY_LOCATION ${CMAKE_CURRENT_BINARY_DIR}/bin)

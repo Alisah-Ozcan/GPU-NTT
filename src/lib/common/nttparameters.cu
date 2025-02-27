@@ -21,14 +21,12 @@ namespace gpuntt
 
     template <typename T>
     NTTParameters<T>::NTTParameters(int LOGN,
-                                    ModularReductionType modular_reduction_type,
                                     ReductionPolynomial poly_reduce_type)
     {
         logn = LOGN;
         n = 1 << logn;
 
         poly_reduction = poly_reduce_type;
-        modular_reduction = modular_reduction_type;
 
         modulus = modulus_pool();
 
@@ -209,14 +207,12 @@ namespace gpuntt
 
     template <typename T>
     NTTParameters4Step<T>::NTTParameters4Step(
-        int LOGN, ModularReductionType modular_reduction_type,
-        ReductionPolynomial poly_reduce_type)
+        int LOGN, ReductionPolynomial poly_reduce_type)
     {
         logn = LOGN;
         n = 1 << logn;
 
         poly_reduction = poly_reduce_type;
-        modular_reduction = modular_reduction_type;
 
         modulus = modulus_pool();
 

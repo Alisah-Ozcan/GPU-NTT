@@ -3,169 +3,131 @@
 // SPDX-License-Identifier: Apache-2.0
 // Developer: Alişah Özcan
 
-#include <cstdlib>
-#include <random>
-
-#include "ntt.cuh"
-
-#define DEFAULT_MODULUS
+#include "bench_util.cuh"
 
 using namespace std;
 using namespace gpuntt;
 
-int LOGN;
-int BATCH;
+//typedef Data32 BenchmarkDataType; // Use for 32-bit benchmark
+typedef Data64 BenchmarkDataType; // Use for 64-bit benchmark
 
-int main(int argc, char* argv[])
+void GPU_NTT_Forward_Benchmark(nvbench::state& state)
 {
-    CudaDevice();
+    const auto ring_size_logN = state.get_int64("Ring Size LogN");
+    const auto batch_count = state.get_int64("Batch Count");
+    const auto ring_size = 1 << ring_size_logN;
 
-    if (argc < 3)
-    {
-        LOGN = 12;
-        BATCH = 1;
-    }
-    else
-    {
-        LOGN = atoi(argv[1]);
-        BATCH = atoi(argv[2]);
+    thrust::device_vector<BenchmarkDataType> inout_data(ring_size * batch_count);
+    thrust::transform(thrust::counting_iterator<int>(0),
+                      thrust::counting_iterator<int>(ring_size * batch_count),
+                      inout_data.begin(), random_functor<BenchmarkDataType>(1234));
 
-        if ((LOGN < 12) || (28 < LOGN))
+    thrust::device_vector<Root<BenchmarkDataType>> root_table_data(ring_size >> 1);
+    thrust::transform(thrust::counting_iterator<int>(0),
+                      thrust::counting_iterator<int>((ring_size >> 1)),
+                      root_table_data.begin(),
+                      random_functor<Root<BenchmarkDataType>>(1234));
+
+    state.add_global_memory_reads<BenchmarkDataType>((ring_size * batch_count) +
+                                              ((ring_size >> 1) * batch_count),
+                                          "Read Memory Size");
+    state.add_global_memory_writes<BenchmarkDataType>(ring_size * batch_count,
+                                           "Write Memory Size");
+    state.collect_l1_hit_rates();
+    state.collect_l2_hit_rates();
+    // state.collect_loads_efficiency();
+    // state.collect_stores_efficiency();
+    // state.collect_dram_throughput();
+
+    cudaStream_t stream;
+    cudaStreamCreate(&stream);
+    state.set_cuda_stream(nvbench::make_cuda_stream_view(stream));
+
+    ntt_configuration<BenchmarkDataType> cfg_ntt = {
+        .n_power = static_cast<int>(ring_size_logN),
+        .ntt_type = FORWARD,
+        .reduction_poly = ReductionPolynomial::X_N_minus,
+        .zero_padding = false,
+        .stream = stream};
+
+    Modulus<BenchmarkDataType> mod_data(10000ULL);
+
+    state.exec(
+        [&](nvbench::launch& launch)
         {
-            throw std::runtime_error("LOGN should be in range 12 to 28.");
-        }
-    }
+            GPU_NTT_Inplace(thrust::raw_pointer_cast(inout_data.data()),
+                            thrust::raw_pointer_cast(root_table_data.data()),
+                            mod_data, cfg_ntt, static_cast<int>(batch_count));
+        });
 
-    // NTT generator with certain modulus and root of unity
-
-    int N = 1 << LOGN;
-    int ROOT_SIZE = N >> 1;
-
-    const int test_count = 100;
-    const int bestof = 25;
-    float time_measurements[test_count];
-    for (int loop = 0; loop < test_count; loop++)
-    {
-        std::random_device rd;
-        std::mt19937 gen(rd());
-        unsigned long long minNumber = (unsigned long long) 1 << 40;
-        unsigned long long maxNumber = ((unsigned long long) 1 << 40) - 1;
-        std::uniform_int_distribution<unsigned long long> dis(minNumber,
-                                                              maxNumber);
-        unsigned long long number = dis(gen);
-
-        std::uniform_int_distribution<unsigned long long> dis2(0, number);
-
-        Modulus64 modulus(number);
-
-        // Random data generation for polynomials
-        vector<vector<Data64>> input1(BATCH);
-        for (int j = 0; j < BATCH; j++)
-        {
-            for (int i = 0; i < N; i++)
-            {
-                input1[j].push_back(dis2(gen));
-            }
-        }
-
-        vector<Root64> forward_root_table;
-        vector<Root64> inverse_root_table;
-
-        for (int i = 0; i < ROOT_SIZE; i++)
-        {
-            forward_root_table.push_back(dis2(gen));
-            inverse_root_table.push_back(dis2(gen));
-        }
-        Ninverse64 n_inv = dis2(gen);
-
-        ////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-        Data64* InOut_Datas;
-
-        GPUNTT_CUDA_CHECK(cudaMalloc(&InOut_Datas, BATCH * N * sizeof(Data64)));
-
-        for (int j = 0; j < BATCH; j++)
-        {
-            GPUNTT_CUDA_CHECK(cudaMemcpy(InOut_Datas + (N * j),
-                                         input1[j].data(), N * sizeof(Data64),
-                                         cudaMemcpyHostToDevice));
-        }
-
-        ////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-        Root64* Forward_Omega_Table_Device;
-
-        GPUNTT_CUDA_CHECK(cudaMalloc(&Forward_Omega_Table_Device,
-                                     ROOT_SIZE * sizeof(Root64)));
-
-        GPUNTT_CUDA_CHECK(
-            cudaMemcpy(Forward_Omega_Table_Device, forward_root_table.data(),
-                       ROOT_SIZE * sizeof(Root64), cudaMemcpyHostToDevice));
-
-        ////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-        unsigned long long* activity_output;
-        GPUNTT_CUDA_CHECK(cudaMalloc(&activity_output,
-                                     64 * 512 * sizeof(unsigned long long)));
-        GPU_ACTIVITY_HOST(activity_output, 111111);
-        GPUNTT_CUDA_CHECK(cudaFree(activity_output));
-
-        ////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-        Modulus64* modulus_device;
-        GPUNTT_CUDA_CHECK(cudaMalloc(&modulus_device, sizeof(Modulus64)));
-
-        Modulus64 test_modulus_[1] = {modulus};
-
-        GPUNTT_CUDA_CHECK(cudaMemcpy(modulus_device, test_modulus_,
-                                     sizeof(Modulus64),
-                                     cudaMemcpyHostToDevice));
-
-        Ninverse64* ninverse_device;
-        GPUNTT_CUDA_CHECK(cudaMalloc(&ninverse_device, sizeof(Ninverse64)));
-
-        Ninverse64 test_ninverse_[1] = {n_inv};
-
-        GPUNTT_CUDA_CHECK(cudaMemcpy(ninverse_device, test_ninverse_,
-                                     sizeof(Ninverse64),
-                                     cudaMemcpyHostToDevice));
-
-        ntt_rns_configuration<Data64> cfg_ntt = {
-            .n_power = LOGN,
-            .ntt_type = FORWARD,
-            .reduction_poly = ReductionPolynomial::X_N_minus,
-            .zero_padding = false,
-            .stream = 0};
-
-        float time = 0;
-        cudaEvent_t startx, stopx;
-        cudaEventCreate(&startx);
-        cudaEventCreate(&stopx);
-
-        cudaEventRecord(startx);
-        GPU_NTT_Inplace(InOut_Datas, Forward_Omega_Table_Device, modulus_device,
-                        cfg_ntt, BATCH, 1);
-
-        cudaEventRecord(stopx);
-        cudaEventSynchronize(stopx);
-        cudaEventElapsedTime(&time, startx, stopx);
-        time_measurements[loop] = time;
-
-        ////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-        GPUNTT_CUDA_CHECK(cudaFree(InOut_Datas));
-        GPUNTT_CUDA_CHECK(cudaFree(Forward_Omega_Table_Device));
-    }
-
-    cout << endl
-         << endl
-         << "Average: " << calculate_mean(time_measurements, test_count)
-         << endl;
-    cout << "Best Average: "
-         << find_min_average(time_measurements, test_count, bestof) << endl;
-
-    cout << "Standart Deviation: "
-         << calculate_standard_deviation(time_measurements, test_count) << endl;
-
-    return EXIT_SUCCESS;
+    cudaStreamSynchronize(stream);
+    cudaStreamDestroy(stream);
 }
+
+NVBENCH_BENCH(GPU_NTT_Forward_Benchmark)
+    .add_int64_axis("Ring Size LogN",
+                    {12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24})
+    .add_int64_axis("Batch Count", {1})
+    .set_timeout(1);
+
+void GPU_NTT_Inverse_Benchmark(nvbench::state& state)
+{
+    const auto ring_size_logN = state.get_int64("Ring Size LogN");
+    const auto batch_count = state.get_int64("Batch Count");
+    const auto ring_size = 1 << ring_size_logN;
+
+    thrust::device_vector<BenchmarkDataType> inout_data(ring_size * batch_count);
+    thrust::transform(thrust::counting_iterator<int>(0),
+                      thrust::counting_iterator<int>(ring_size * batch_count),
+                      inout_data.begin(), random_functor<BenchmarkDataType>(1234));
+
+    thrust::device_vector<Root<BenchmarkDataType>> root_table_data(ring_size >> 1);
+    thrust::transform(thrust::counting_iterator<int>(0),
+                      thrust::counting_iterator<int>((ring_size >> 1)),
+                      root_table_data.begin(),
+                      random_functor<Root<BenchmarkDataType>>(1234));
+
+    state.add_global_memory_reads<BenchmarkDataType>((ring_size * batch_count) +
+                                              ((ring_size >> 1) * batch_count),
+                                          "Read Memory Size");
+    state.add_global_memory_writes<BenchmarkDataType>(ring_size * batch_count,
+                                           "Write Memory Size");
+    state.collect_l1_hit_rates();
+    state.collect_l2_hit_rates();
+    // state.collect_loads_efficiency();
+    // state.collect_stores_efficiency();
+    // state.collect_dram_throughput();
+
+    cudaStream_t stream;
+    cudaStreamCreate(&stream);
+    state.set_cuda_stream(nvbench::make_cuda_stream_view(stream));
+
+    Ninverse<BenchmarkDataType> inv_mod_data(20000ULL);
+
+    ntt_configuration<BenchmarkDataType> cfg_intt = {
+        .n_power = static_cast<int>(ring_size_logN),
+        .ntt_type = INVERSE,
+        .reduction_poly = ReductionPolynomial::X_N_minus,
+        .zero_padding = false,
+        .mod_inverse = inv_mod_data,
+        .stream = stream};
+
+    Modulus<BenchmarkDataType> mod_data(10000ULL);
+
+    state.exec(
+        [&](nvbench::launch& launch)
+        {
+            GPU_NTT_Inplace(thrust::raw_pointer_cast(inout_data.data()),
+                            thrust::raw_pointer_cast(root_table_data.data()),
+                            mod_data, cfg_intt, static_cast<int>(batch_count));
+        });
+
+    cudaStreamSynchronize(stream);
+    cudaStreamDestroy(stream);
+}
+
+NVBENCH_BENCH(GPU_NTT_Inverse_Benchmark)
+    .add_int64_axis("Ring Size LogN",
+                    {12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24})
+    .add_int64_axis("Batch Count", {1})
+    .set_timeout(1);

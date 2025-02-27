@@ -1,8 +1,20 @@
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${BINARY_LOCATION}/benchmark)
 
-if(NOT DEFINED MODULAR_REDUCTION_TYPE)
-    set(MODULAR_REDUCTION_TYPE 0)
-endif()
+include(FetchContent)
+FetchContent_Declare(
+    nvbench
+    GIT_REPOSITORY https://github.com/NVIDIA/nvbench.git
+    GIT_TAG main
+)
+FetchContent_MakeAvailable(nvbench)
+
+include(FetchContent)
+FetchContent_Declare(
+  thrust
+  GIT_REPOSITORY https://github.com/NVIDIA/thrust.git
+  GIT_TAG master 
+)
+FetchContent_MakeAvailable(thrust)
 
 set(EXECUTABLES
     benchmark_merge_ntt bench_merge_ntt.cu
@@ -11,7 +23,7 @@ set(EXECUTABLES
 
 function(add_benchmark exe source)
     add_executable(${exe} ${source})
-    target_link_libraries(${exe} PRIVATE ntt CUDA::cudart)
+    target_link_libraries(${exe} PRIVATE ntt CUDA::cudart nvbench::main)
     set_target_properties(${exe} PROPERTIES
         CUDA_SEPARABLE_COMPILATION OFF
         POSITION_INDEPENDENT_CODE ON

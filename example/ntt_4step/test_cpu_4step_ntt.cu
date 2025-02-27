@@ -19,6 +19,9 @@ int LOGN;
 int BATCH;
 int N;
 
+//typedef Data32 TestDataType; // Use for 32-bit Test
+typedef Data64 TestDataType; // Use for 64-bit Test
+
 int main(int argc, char* argv[])
 {
     CudaDevice();
@@ -34,13 +37,10 @@ int main(int argc, char* argv[])
         BATCH = atoi(argv[2]);
     }
 
-    ModularReductionType modular_reduction_type = ModularReductionType::BARRET;
-
-    NTTParameters4Step<Data64> parameters(LOGN, modular_reduction_type,
-                                          ReductionPolynomial::X_N_minus);
+    NTTParameters4Step<TestDataType> parameters(LOGN, ReductionPolynomial::X_N_minus);
 
     // NTT generator with certain modulus and root of unity
-    NTT_4STEP_CPU<Data64> generator(parameters);
+    NTT_4STEP_CPU<TestDataType> generator(parameters);
 
     std::random_device rd;
     std::mt19937 gen(rd());
@@ -49,8 +49,8 @@ int main(int argc, char* argv[])
     std::uniform_int_distribution<unsigned long long> dis(minNumber, maxNumber);
 
     // Random data generation for polynomials
-    vector<Data64> input1;
-    vector<Data64> input2;
+    vector<TestDataType> input1;
+    vector<TestDataType> input2;
     for (int j = 0; j < BATCH; j++)
     {
         for (int i = 0; i < parameters.n; i++)
@@ -61,15 +61,15 @@ int main(int argc, char* argv[])
     }
 
     // Performing CPU NTT
-    vector<Data64> ntt_input1 = generator.ntt(input1);
-    vector<Data64> ntt_input2 = generator.ntt(input2);
-    vector<Data64> output = generator.mult(ntt_input1, ntt_input2);
-    vector<Data64> ntt_mult_result = generator.intt(output);
+    vector<TestDataType> ntt_input1 = generator.ntt(input1);
+    vector<TestDataType> ntt_input2 = generator.ntt(input2);
+    vector<TestDataType> output = generator.mult(ntt_input1, ntt_input2);
+    vector<TestDataType> ntt_mult_result = generator.intt(output);
 
     // Comparing CPU NTT multiplication results and schoolbook multiplication
     // results
     bool check = true;
-    std::vector<Data64> schoolbook_result = schoolbook_poly_multiplication(
+    std::vector<TestDataType> schoolbook_result = schoolbook_poly_multiplication(
         input1, input2, parameters.modulus, ReductionPolynomial::X_N_minus);
 
     check = check_result(ntt_mult_result.data(), schoolbook_result.data(),

@@ -1,9 +1,5 @@
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${BINARY_LOCATION}/example)
 
-if(NOT DEFINED MODULAR_REDUCTION_TYPE)
-    set(MODULAR_REDUCTION_TYPE 0)
-endif()
-
 set(EXECUTABLES
     gpu_merge_ntt_examples ntt_merge/test_merge_ntt.cu
     gpu_merge_intt_examples ntt_merge/test_merge_intt.cu

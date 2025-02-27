@@ -52,27 +52,7 @@ namespace gpuntt
 
     void CudaDevice();
 
-    float calculate_mean(const float array[], int size);
-
-    float calculate_standard_deviation(const float array[], int size);
-
-    float find_best_average(const float array[], int array_size,
-                            int num_elements);
-
-    float find_min_average(const float array[], int array_size,
-                           int num_elements);
-
     template <typename T> bool check_result(T* input1, T* input2, int size);
-
-    __global__ void GPU_ACTIVITY(unsigned long long* output,
-                                 unsigned long long fix_num);
-    __host__ void GPU_ACTIVITY_HOST(unsigned long long* output,
-                                    unsigned long long fix_num);
-
-    __global__ void GPU_ACTIVITY2(unsigned long long* input1,
-                                  unsigned long long* input2);
-    __host__ void GPU_ACTIVITY2_HOST(unsigned long long* input1,
-                                     unsigned long long* input2, unsigned size);
 
 } // namespace gpuntt
 #endif // COMMON_NTT_H

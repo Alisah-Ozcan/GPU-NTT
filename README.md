@@ -38,33 +38,45 @@ $ sudo cmake --install build
 
 #### Testing CPU Merge & 4-Step NTT vs Schoolbook Polynomial Multiplication
 
+Choose one of data type which is upper line of the example files:
+- typedef Data32 TestDataType;
+- typedef Data64 TestDataType;
+
 To run examples:
 
 ```bash
 $ cmake -D CMAKE_CUDA_ARCHITECTURES=86 -D GPUNTT_BUILD_EXAMPLES=ON -B./build
 $ cmake --build ./build/ --parallel
 
-$ ./build/bin/cpu_4step_ntt <RING_SIZE_IN_LOG2> <BATCH_SIZE>
-$ ./build/bin/cpu_merge_ntt <RING_SIZE_IN_LOG2> <BATCH_SIZE>
-$ Example: ./build/bin/cpu_merge_ntt 15 1
+$ ./build/bin/example/cpu_4step_ntt_examples <RING_SIZE_IN_LOG2> <BATCH_SIZE>
+$ ./build/bin/example/cpu_merge_ntt_examples <RING_SIZE_IN_LOG2> <BATCH_SIZE>
+$ Example: ./build/bin/example/cpu_merge_ntt_examples 15 1
 ```
 
 #### Testing GPU NTTs vs CPU NTTs
 
+Choose one of data type which is upper line of the example files:
+- typedef Data32 TestDataType;
+- typedef Data64 TestDataType;
+
 To run examples:
 
 ```bash
 $ cmake -D CMAKE_CUDA_ARCHITECTURES=86 -D GPUNTT_BUILD_EXAMPLES=ON -B./build
 $ cmake --build ./build/ --parallel
 
-$ ./build/bin/gpu_4step_ntt_examples <RING_SIZE_IN_LOG2> <BATCH_SIZE>
-$ ./build/bin/gpu_4step_intt_examples <RING_SIZE_IN_LOG2> <BATCH_SIZE>
-$ ./build/bin/gpu_merge_ntt_examples <RING_SIZE_IN_LOG2> <BATCH_SIZE>
-$ ./build/bin/gpu_merge_intt_examples <RING_SIZE_IN_LOG2> <BATCH_SIZE>
-$ Example: ./build/bin/gpu_merge_ntt_examples 12 1
+$ ./build/bin/example/gpu_4step_ntt_examples <RING_SIZE_IN_LOG2> <BATCH_SIZE>
+$ ./build/bin/example/gpu_4step_intt_examples <RING_SIZE_IN_LOG2> <BATCH_SIZE>
+$ ./build/bin/example/gpu_merge_ntt_examples <RING_SIZE_IN_LOG2> <BATCH_SIZE>
+$ ./build/bin/example/gpu_merge_intt_examples <RING_SIZE_IN_LOG2> <BATCH_SIZE>
+$ Example: ./build/bin/example/gpu_merge_ntt_examples 12 1
 ```
 
 #### Benchmarking GPU NTT
+
+Choose one of data type which is upper line of the benchmark files:
+- typedef Data32 BenchmarkDataType;
+- typedef Data64 BenchmarkDataType;
 
 To run benchmarks:
 
@@ -72,9 +84,8 @@ To run benchmarks:
 $ cmake -D CMAKE_CUDA_ARCHITECTURES=86 -D GPUNTT_BUILD_BENCHMARKS=ON -B./build
 $ cmake --build ./build/ --parallel
 
-$ ./build/bin/benchmark_4step_ntt <RING_SIZE_IN_LOG2> <BATCH_SIZE>
-$ ./build/bin/benchmark_merge_ntt <RING_SIZE_IN_LOG2> <BATCH_SIZE>
-$ Example: ./build/bin/benchmark_merge_ntt 12 1
+$ ./build/bin/benchmark/benchmark_4step_ntt --disable-blocking-kernel
+$ ./build/bin/benchmark/benchmark_merge_ntt --disable-blocking-kernel
 ```
 
 ## Using GPU-NTT in a downstream CMake project

@@ -28,11 +28,6 @@ namespace gpuntt
         X_N_minus
     }; // X_N_minus: X^n - 1, X_N_plus: X^n + 1
 
-    enum ModularReductionType
-    {
-        BARRET,
-    };
-
     template <typename T> struct NTTFactors
     {
         Modulus<T> modulus;
@@ -58,7 +53,6 @@ namespace gpuntt
         T n;
 
         ReductionPolynomial poly_reduction;
-        ModularReductionType modular_reduction;
 
         Modulus<T> modulus;
 
@@ -76,8 +70,7 @@ namespace gpuntt
         std::vector<T> inverse_root_of_unity_table;
 
         // For testing all cases with barretti goldilock and plantard reduction
-        NTTParameters(int LOGN, ModularReductionType modular_reduction_type,
-                      ReductionPolynomial poly_reduce_type);
+        NTTParameters(int LOGN, ReductionPolynomial poly_reduce_type);
 
         // For any prime(64-bit)
         NTTParameters(int LOGN, NTTFactors<T> ntt_factors,
@@ -110,7 +103,6 @@ namespace gpuntt
         T n;
 
         ReductionPolynomial poly_reduction;
-        ModularReductionType modular_reduction;
 
         Modulus<T> modulus;
 
@@ -137,7 +129,6 @@ namespace gpuntt
 
         // For testing all cases with barretti goldilock and plantard reduction
         NTTParameters4Step(int LOGN,
-                           ModularReductionType modular_reduction_type,
                            ReductionPolynomial poly_reduce_type);
 
         // For any prime(64-bit)
