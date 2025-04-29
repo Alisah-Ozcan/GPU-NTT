@@ -45,7 +45,8 @@ int main(int argc, char* argv[])
     }
 
 #ifdef DEFAULT_MODULUS
-    NTTParameters<TestDataType> parameters(LOGN, ReductionPolynomial::X_N_minus);
+    NTTParameters<TestDataType> parameters(LOGN,
+                                           ReductionPolynomial::X_N_minus);
 #else
     NTTFactors factor((Modulus) 576460752303415297, 288482366111684746,
                       238394956950829);
@@ -87,9 +88,9 @@ int main(int argc, char* argv[])
 
     for (int j = 0; j < BATCH; j++)
     {
-        GPUNTT_CUDA_CHECK(
-            cudaMemcpy(InOut_Datas + (parameters.n * j), input1[j].data(),
-                       parameters.n * sizeof(TestDataType), cudaMemcpyHostToDevice));
+        GPUNTT_CUDA_CHECK(cudaMemcpy(
+            InOut_Datas + (parameters.n * j), input1[j].data(),
+            parameters.n * sizeof(TestDataType), cudaMemcpyHostToDevice));
     }
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -103,10 +104,10 @@ int main(int argc, char* argv[])
     vector<Root<TestDataType>> inverse_omega_table =
         parameters.gpu_root_of_unity_table_generator(
             parameters.inverse_root_of_unity_table);
-    GPUNTT_CUDA_CHECK(cudaMemcpy(Inverse_Omega_Table_Device,
-                                 inverse_omega_table.data(),
-                                 parameters.root_of_unity_size * sizeof(Root<TestDataType>),
-                                 cudaMemcpyHostToDevice));
+    GPUNTT_CUDA_CHECK(
+        cudaMemcpy(Inverse_Omega_Table_Device, inverse_omega_table.data(),
+                   parameters.root_of_unity_size * sizeof(Root<TestDataType>),
+                   cudaMemcpyHostToDevice));
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -115,16 +116,19 @@ int main(int argc, char* argv[])
 
     Modulus<TestDataType> test_modulus_[1] = {parameters.modulus};
 
-    GPUNTT_CUDA_CHECK(cudaMemcpy(test_modulus, test_modulus_, sizeof(Modulus<TestDataType>),
+    GPUNTT_CUDA_CHECK(cudaMemcpy(test_modulus, test_modulus_,
+                                 sizeof(Modulus<TestDataType>),
                                  cudaMemcpyHostToDevice));
 
     Ninverse<TestDataType>* test_ninverse;
-    GPUNTT_CUDA_CHECK(cudaMalloc(&test_ninverse, sizeof(Ninverse<TestDataType>)));
+    GPUNTT_CUDA_CHECK(
+        cudaMalloc(&test_ninverse, sizeof(Ninverse<TestDataType>)));
 
     Ninverse<TestDataType> test_ninverse_[1] = {parameters.n_inv};
 
     GPUNTT_CUDA_CHECK(cudaMemcpy(test_ninverse, test_ninverse_,
-                                 sizeof(Ninverse<TestDataType>), cudaMemcpyHostToDevice));
+                                 sizeof(Ninverse<TestDataType>),
+                                 cudaMemcpyHostToDevice));
 
     ntt_rns_configuration<TestDataType> cfg_intt = {
         .n_power = LOGN,
@@ -142,9 +146,9 @@ int main(int argc, char* argv[])
 
     for (int j = 0; j < BATCH; j++)
     {
-        GPUNTT_CUDA_CHECK(
-            cudaMemcpy(Out_Datas + (parameters.n * j), input1[j].data(),
-                       parameters.n * sizeof(TestDataType), cudaMemcpyHostToDevice));
+        GPUNTT_CUDA_CHECK(cudaMemcpy(
+            Out_Datas + (parameters.n * j), input1[j].data(),
+            parameters.n * sizeof(TestDataType), cudaMemcpyHostToDevice));
     }
     GPU_NTT(InOut_Datas, Out_Datas, Inverse_Omega_Table_Device, test_modulus,
             cfg_intt, BATCH, 1);
@@ -153,7 +157,8 @@ int main(int argc, char* argv[])
 
     TestDataType* Output_Host;
 
-    Output_Host = (TestDataType*) malloc(BATCH * parameters.n * sizeof(TestDataType));
+    Output_Host =
+        (TestDataType*) malloc(BATCH * parameters.n * sizeof(TestDataType));
     GPUNTT_CUDA_CHECK(cudaMemcpy(Output_Host, Out_Datas,
                                  BATCH * parameters.n * sizeof(TestDataType),
                                  cudaMemcpyDeviceToHost));

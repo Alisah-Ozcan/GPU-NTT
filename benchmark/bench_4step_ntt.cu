@@ -10,7 +10,7 @@
 using namespace std;
 using namespace gpuntt;
 
-//typedef Data32 BenchmarkDataType; // Use for 32-bit benchmark
+// typedef Data32 BenchmarkDataType; // Use for 32-bit benchmark
 typedef Data64 BenchmarkDataType; // Use for 64-bit benchmark
 
 void GPU_4STEP_NTT_Forward_Benchmark(nvbench::state& state)
@@ -20,17 +20,22 @@ void GPU_4STEP_NTT_Forward_Benchmark(nvbench::state& state)
     const auto ring_size = 1 << ring_size_logN;
     std::vector<int> matrix_shape = bench_matrix_dimention(ring_size_logN);
 
-    thrust::device_vector<BenchmarkDataType> input_data(ring_size * batch_count);
+    thrust::device_vector<BenchmarkDataType> input_data(ring_size *
+                                                        batch_count);
     thrust::transform(thrust::counting_iterator<int>(0),
                       thrust::counting_iterator<int>(ring_size * batch_count),
-                      input_data.begin(), random_functor<BenchmarkDataType>(1234));
+                      input_data.begin(),
+                      random_functor<BenchmarkDataType>(1234));
 
-    thrust::device_vector<BenchmarkDataType> output_data(ring_size * batch_count);
+    thrust::device_vector<BenchmarkDataType> output_data(ring_size *
+                                                         batch_count);
     thrust::transform(thrust::counting_iterator<int>(0),
                       thrust::counting_iterator<int>(ring_size * batch_count),
-                      output_data.begin(), random_functor<BenchmarkDataType>(1234));
+                      output_data.begin(),
+                      random_functor<BenchmarkDataType>(1234));
 
-    thrust::device_vector<Root<BenchmarkDataType>> W_root_of_unity_table(ring_size);
+    thrust::device_vector<Root<BenchmarkDataType>> W_root_of_unity_table(
+        ring_size);
     thrust::transform(thrust::counting_iterator<int>(0),
                       thrust::counting_iterator<int>((ring_size)),
                       W_root_of_unity_table.begin(),
@@ -50,11 +55,11 @@ void GPU_4STEP_NTT_Forward_Benchmark(nvbench::state& state)
                       n2_root_of_unity_table.begin(),
                       random_functor<Root<BenchmarkDataType>>(1234));
 
-    state.add_global_memory_reads<BenchmarkDataType>((ring_size * batch_count) +
-                                              ((ring_size >> 1) * batch_count),
-                                          "Read Memory Size");
+    state.add_global_memory_reads<BenchmarkDataType>(
+        (ring_size * batch_count) + ((ring_size >> 1) * batch_count),
+        "Read Memory Size");
     state.add_global_memory_writes<BenchmarkDataType>(ring_size * batch_count,
-                                           "Write Memory Size");
+                                                      "Write Memory Size");
     state.collect_l1_hit_rates();
     state.collect_l2_hit_rates();
     // state.collect_loads_efficiency();
@@ -101,17 +106,22 @@ void GPU_4STEP_NTT_Inverse_Benchmark(nvbench::state& state)
     const auto ring_size = 1 << ring_size_logN;
     std::vector<int> matrix_shape = bench_matrix_dimention(ring_size_logN);
 
-    thrust::device_vector<BenchmarkDataType> input_data(ring_size * batch_count);
+    thrust::device_vector<BenchmarkDataType> input_data(ring_size *
+                                                        batch_count);
     thrust::transform(thrust::counting_iterator<int>(0),
                       thrust::counting_iterator<int>(ring_size * batch_count),
-                      input_data.begin(), random_functor<BenchmarkDataType>(1234));
+                      input_data.begin(),
+                      random_functor<BenchmarkDataType>(1234));
 
-    thrust::device_vector<BenchmarkDataType> output_data(ring_size * batch_count);
+    thrust::device_vector<BenchmarkDataType> output_data(ring_size *
+                                                         batch_count);
     thrust::transform(thrust::counting_iterator<int>(0),
                       thrust::counting_iterator<int>(ring_size * batch_count),
-                      output_data.begin(), random_functor<BenchmarkDataType>(1234));
+                      output_data.begin(),
+                      random_functor<BenchmarkDataType>(1234));
 
-    thrust::device_vector<Root<BenchmarkDataType>> W_root_of_unity_table(ring_size);
+    thrust::device_vector<Root<BenchmarkDataType>> W_root_of_unity_table(
+        ring_size);
     thrust::transform(thrust::counting_iterator<int>(0),
                       thrust::counting_iterator<int>((ring_size)),
                       W_root_of_unity_table.begin(),
@@ -131,11 +141,11 @@ void GPU_4STEP_NTT_Inverse_Benchmark(nvbench::state& state)
                       n2_root_of_unity_table.begin(),
                       random_functor<Root<BenchmarkDataType>>(1234));
 
-    state.add_global_memory_reads<BenchmarkDataType>((ring_size * batch_count) +
-                                              ((ring_size >> 1) * batch_count),
-                                          "Read Memory Size");
+    state.add_global_memory_reads<BenchmarkDataType>(
+        (ring_size * batch_count) + ((ring_size >> 1) * batch_count),
+        "Read Memory Size");
     state.add_global_memory_writes<BenchmarkDataType>(ring_size * batch_count,
-                                           "Write Memory Size");
+                                                      "Write Memory Size");
     state.collect_l1_hit_rates();
     state.collect_l2_hit_rates();
     // state.collect_loads_efficiency();

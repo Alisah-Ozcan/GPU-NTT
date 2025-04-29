@@ -2,9 +2,10 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${BINARY_LOCATION}/benchmark)
 
 include(FetchContent)
 FetchContent_Declare(
-    nvbench
-    GIT_REPOSITORY https://github.com/NVIDIA/nvbench.git
-    GIT_TAG main
+  nvbench
+  GIT_REPOSITORY https://github.com/NVIDIA/nvbench.git
+  GIT_TAG        2d9eafc7654c1d00ab7a14d5e5bd659f6fea0c69
+  GIT_SHALLOW    OFF          
 )
 FetchContent_MakeAvailable(nvbench)
 

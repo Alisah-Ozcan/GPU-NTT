@@ -18,7 +18,7 @@ int LOGN;
 int BATCH;
 int N;
 
-//typedef Data32 TestDataType; // Use for 32-bit Test
+// typedef Data32 TestDataType; // Use for 32-bit Test
 typedef Data64 TestDataType; // Use for 64-bit Test
 
 int main(int argc, char* argv[])
@@ -37,7 +37,8 @@ int main(int argc, char* argv[])
     }
 
 #ifdef DEFAULT_MODULUS
-    NTTParameters<TestDataType> parameters(LOGN, ReductionPolynomial::X_N_minus);
+    NTTParameters<TestDataType> parameters(LOGN,
+                                           ReductionPolynomial::X_N_minus);
 #else
     NTTFactors factor((Modulus) 576460752303415297, 288482366111684746,
                       238394956950829);

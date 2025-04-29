@@ -6,9 +6,7 @@ namespace gpuntt
     {
         if (!condition)
         {
-            std::cerr << "Custom assertion failed: " << errorMessage
-                      << std::endl;
-            assert(condition);
+            throw std::invalid_argument("Invalid argument!");
         }
     }
 

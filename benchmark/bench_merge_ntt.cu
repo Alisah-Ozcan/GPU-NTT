@@ -8,7 +8,7 @@
 using namespace std;
 using namespace gpuntt;
 
-//typedef Data32 BenchmarkDataType; // Use for 32-bit benchmark
+// typedef Data32 BenchmarkDataType; // Use for 32-bit benchmark
 typedef Data64 BenchmarkDataType; // Use for 64-bit benchmark
 
 void GPU_NTT_Forward_Benchmark(nvbench::state& state)
@@ -17,22 +17,25 @@ void GPU_NTT_Forward_Benchmark(nvbench::state& state)
     const auto batch_count = state.get_int64("Batch Count");
     const auto ring_size = 1 << ring_size_logN;
 
-    thrust::device_vector<BenchmarkDataType> inout_data(ring_size * batch_count);
+    thrust::device_vector<BenchmarkDataType> inout_data(ring_size *
+                                                        batch_count);
     thrust::transform(thrust::counting_iterator<int>(0),
                       thrust::counting_iterator<int>(ring_size * batch_count),
-                      inout_data.begin(), random_functor<BenchmarkDataType>(1234));
+                      inout_data.begin(),
+                      random_functor<BenchmarkDataType>(1234));
 
-    thrust::device_vector<Root<BenchmarkDataType>> root_table_data(ring_size >> 1);
+    thrust::device_vector<Root<BenchmarkDataType>> root_table_data(ring_size >>
+                                                                   1);
     thrust::transform(thrust::counting_iterator<int>(0),
                       thrust::counting_iterator<int>((ring_size >> 1)),
                       root_table_data.begin(),
                       random_functor<Root<BenchmarkDataType>>(1234));
 
-    state.add_global_memory_reads<BenchmarkDataType>((ring_size * batch_count) +
-                                              ((ring_size >> 1) * batch_count),
-                                          "Read Memory Size");
+    state.add_global_memory_reads<BenchmarkDataType>(
+        (ring_size * batch_count) + ((ring_size >> 1) * batch_count),
+        "Read Memory Size");
     state.add_global_memory_writes<BenchmarkDataType>(ring_size * batch_count,
-                                           "Write Memory Size");
+                                                      "Write Memory Size");
     state.collect_l1_hit_rates();
     state.collect_l2_hit_rates();
     // state.collect_loads_efficiency();
@@ -76,22 +79,25 @@ void GPU_NTT_Inverse_Benchmark(nvbench::state& state)
     const auto batch_count = state.get_int64("Batch Count");
     const auto ring_size = 1 << ring_size_logN;
 
-    thrust::device_vector<BenchmarkDataType> inout_data(ring_size * batch_count);
+    thrust::device_vector<BenchmarkDataType> inout_data(ring_size *
+                                                        batch_count);
     thrust::transform(thrust::counting_iterator<int>(0),
                       thrust::counting_iterator<int>(ring_size * batch_count),
-                      inout_data.begin(), random_functor<BenchmarkDataType>(1234));
+                      inout_data.begin(),
+                      random_functor<BenchmarkDataType>(1234));
 
-    thrust::device_vector<Root<BenchmarkDataType>> root_table_data(ring_size >> 1);
+    thrust::device_vector<Root<BenchmarkDataType>> root_table_data(ring_size >>
+                                                                   1);
     thrust::transform(thrust::counting_iterator<int>(0),
                       thrust::counting_iterator<int>((ring_size >> 1)),
                       root_table_data.begin(),
                       random_functor<Root<BenchmarkDataType>>(1234));
 
-    state.add_global_memory_reads<BenchmarkDataType>((ring_size * batch_count) +
-                                              ((ring_size >> 1) * batch_count),
-                                          "Read Memory Size");
+    state.add_global_memory_reads<BenchmarkDataType>(
+        (ring_size * batch_count) + ((ring_size >> 1) * batch_count),
+        "Read Memory Size");
     state.add_global_memory_writes<BenchmarkDataType>(ring_size * batch_count,
-                                           "Write Memory Size");
+                                                      "Write Memory Size");
     state.collect_l1_hit_rates();
     state.collect_l2_hit_rates();
     // state.collect_loads_efficiency();
@@ -127,7 +133,7 @@ void GPU_NTT_Inverse_Benchmark(nvbench::state& state)
 }
 
 NVBENCH_BENCH(GPU_NTT_Inverse_Benchmark)
-    .add_int64_axis("Ring Size LogN",
-                    {12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24})
+    .add_int64_axis("Ring Size LogN", {10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
+                                       20, 21, 22, 23, 24})
     .add_int64_axis("Batch Count", {1})
     .set_timeout(1);

@@ -999,7 +999,7 @@ namespace gpuntt
                           Root<T>* root_of_unity_table, Modulus<T> modulus,
                           ntt_configuration<T> cfg, int batch_size)
     {
-        if ((cfg.n_power <= 11 || cfg.n_power >= 29))
+        if ((cfg.n_power <= 9 || cfg.n_power >= 29))
         {
             throw std::invalid_argument("Invalid n_power range!");
         }
@@ -1162,7 +1162,7 @@ namespace gpuntt
                           ntt_rns_configuration<T> cfg, int batch_size,
                           int mod_count)
     {
-        if ((cfg.n_power <= 11 || cfg.n_power >= 29))
+        if ((cfg.n_power <= 9 || cfg.n_power >= 29))
         {
             throw std::invalid_argument("Invalid n_power range!");
         }
@@ -1851,7 +1851,7 @@ namespace gpuntt
                             ntt_rns_configuration<T> cfg, int batch_size,
                             int mod_count, int* order)
     {
-        if ((cfg.n_power <= 11 || cfg.n_power >= 29))
+        if ((cfg.n_power <= 9 || cfg.n_power >= 29))
         {
             throw std::invalid_argument("Invalid n_power range!");
         }
@@ -2532,7 +2532,7 @@ namespace gpuntt
                          ntt_rns_configuration<T> cfg, int batch_size,
                          int mod_count, int* order)
     {
-        if ((cfg.n_power <= 11 || cfg.n_power >= 29))
+        if ((cfg.n_power <= 9 || cfg.n_power >= 29))
         {
             throw std::invalid_argument("Invalid n_power range!");
         }

@@ -19,7 +19,7 @@ int LOGN;
 int BATCH;
 int N;
 
-//typedef Data32 TestDataType; // Use for 32-bit Test
+// typedef Data32 TestDataType; // Use for 32-bit Test
 typedef Data64 TestDataType; // Use for 64-bit Test
 
 int main(int argc, char* argv[])
@@ -39,7 +39,8 @@ int main(int argc, char* argv[])
 
     // Current 4step NTT implementation only works for
     // ReductionPolynomial::X_N_minus!
-    NTTParameters4Step<TestDataType> parameters(LOGN, ReductionPolynomial::X_N_minus);
+    NTTParameters4Step<TestDataType> parameters(LOGN,
+                                                ReductionPolynomial::X_N_minus);
 
     // NTT generator with certain modulus and root of unity
     NTT_4STEP_CPU<TestDataType> generator(parameters);
@@ -89,23 +90,27 @@ int main(int argc, char* argv[])
 
     //////////////////////////////////////////////////////////////////////////
 
-    vector<Root<TestDataType>> psitable1 = parameters.gpu_root_of_unity_table_generator(
-        parameters.n1_based_inverse_root_of_unity_table);
+    vector<Root<TestDataType>> psitable1 =
+        parameters.gpu_root_of_unity_table_generator(
+            parameters.n1_based_inverse_root_of_unity_table);
     Root<TestDataType>* psitable_device1;
+    GPUNTT_CUDA_CHECK(cudaMalloc(
+        &psitable_device1, (parameters.n1 >> 1) * sizeof(Root<TestDataType>)));
     GPUNTT_CUDA_CHECK(
-        cudaMalloc(&psitable_device1, (parameters.n1 >> 1) * sizeof(Root<TestDataType>)));
-    GPUNTT_CUDA_CHECK(cudaMemcpy(psitable_device1, psitable1.data(),
-                                 (parameters.n1 >> 1) * sizeof(Root<TestDataType>),
-                                 cudaMemcpyHostToDevice));
+        cudaMemcpy(psitable_device1, psitable1.data(),
+                   (parameters.n1 >> 1) * sizeof(Root<TestDataType>),
+                   cudaMemcpyHostToDevice));
 
-    vector<Root<TestDataType>> psitable2 = parameters.gpu_root_of_unity_table_generator(
-        parameters.n2_based_inverse_root_of_unity_table);
+    vector<Root<TestDataType>> psitable2 =
+        parameters.gpu_root_of_unity_table_generator(
+            parameters.n2_based_inverse_root_of_unity_table);
     Root<TestDataType>* psitable_device2;
+    GPUNTT_CUDA_CHECK(cudaMalloc(
+        &psitable_device2, (parameters.n2 >> 1) * sizeof(Root<TestDataType>)));
     GPUNTT_CUDA_CHECK(
-        cudaMalloc(&psitable_device2, (parameters.n2 >> 1) * sizeof(Root<TestDataType>)));
-    GPUNTT_CUDA_CHECK(cudaMemcpy(psitable_device2, psitable2.data(),
-                                 (parameters.n2 >> 1) * sizeof(Root<TestDataType>),
-                                 cudaMemcpyHostToDevice));
+        cudaMemcpy(psitable_device2, psitable2.data(),
+                   (parameters.n2 >> 1) * sizeof(Root<TestDataType>),
+                   cudaMemcpyHostToDevice));
 
     Root<TestDataType>* W_Table_device;
     GPUNTT_CUDA_CHECK(
@@ -121,21 +126,25 @@ int main(int argc, char* argv[])
 
     Modulus<TestDataType> test_modulus_[1] = {parameters.modulus};
 
-    GPUNTT_CUDA_CHECK(cudaMemcpy(test_modulus, test_modulus_, sizeof(Modulus<TestDataType>),
+    GPUNTT_CUDA_CHECK(cudaMemcpy(test_modulus, test_modulus_,
+                                 sizeof(Modulus<TestDataType>),
                                  cudaMemcpyHostToDevice));
 
     Ninverse<TestDataType>* test_ninverse;
-    GPUNTT_CUDA_CHECK(cudaMalloc(&test_ninverse, sizeof(Ninverse<TestDataType>)));
+    GPUNTT_CUDA_CHECK(
+        cudaMalloc(&test_ninverse, sizeof(Ninverse<TestDataType>)));
 
     Ninverse<TestDataType> test_ninverse_[1] = {parameters.n_inv};
 
     GPUNTT_CUDA_CHECK(cudaMemcpy(test_ninverse, test_ninverse_,
-                                 sizeof(Ninverse<TestDataType>), cudaMemcpyHostToDevice));
+                                 sizeof(Ninverse<TestDataType>),
+                                 cudaMemcpyHostToDevice));
 
     ntt4step_rns_configuration<TestDataType> cfg_intt = {.n_power = LOGN,
-                                                   .ntt_type = INVERSE,
-                                                   .mod_inverse = test_ninverse,
-                                                   .stream = 0};
+                                                         .ntt_type = INVERSE,
+                                                         .mod_inverse =
+                                                             test_ninverse,
+                                                         .stream = 0};
 
     //////////////////////////////////////////////////////////////////////////
 
@@ -147,7 +156,8 @@ int main(int argc, char* argv[])
 
     vector<TestDataType> Output_Host(parameters.n * BATCH);
     cudaMemcpy(Output_Host.data(), Input_Datas,
-               parameters.n * BATCH * sizeof(TestDataType), cudaMemcpyDeviceToHost);
+               parameters.n * BATCH * sizeof(TestDataType),
+               cudaMemcpyDeviceToHost);
 
     // Comparing GPU NTT results and CPU NTT results
     bool check = true;

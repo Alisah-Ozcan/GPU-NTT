@@ -386,6 +386,10 @@ namespace gpuntt
     template <typename T> auto CreateForwardNTTKernel()
     {
         return std::unordered_map<int, std::vector<KernelConfig>>{
+            {10, {{1, 1, 512, 1, 1024 * sizeof(T), 9, 0, 0, 10, false}}},
+            {11,
+             {{4, 1, 128, 2, 512 * sizeof(T), 8, 0, 0, 2, true},
+              {1, 4, 256, 1, 512 * sizeof(T), 8, 2, 0, 9, false}}},
             {12,
              {{8, 1, 64, 4, 512 * sizeof(T), 8, 0, 0, 3, true},
               {1, 8, 256, 1, 512 * sizeof(T), 8, 3, 0, 9, false}}},
@@ -472,6 +476,10 @@ namespace gpuntt
     template <typename T> auto CreateInverseNTTKernel()
     {
         return std::unordered_map<int, std::vector<KernelConfig>>{
+            {10, {{1, 1, 512, 1, 1024 * sizeof(T), 9, 9, 0, 10, true}}},
+            {11,
+             {{1, 4, 256, 1, 512 * sizeof(T), 8, 10, 2, 9, false},
+              {4, 1, 128, 2, 512 * sizeof(T), 8, 1, 0, 2, true}}},
             {12,
              {{1, 8, 256, 1, 512 * sizeof(T), 8, 11, 3, 9, false},
               {8, 1, 64, 4, 512 * sizeof(T), 8, 2, 0, 3, true}}},

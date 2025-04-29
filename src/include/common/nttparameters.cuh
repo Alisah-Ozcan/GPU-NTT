@@ -128,8 +128,7 @@ namespace gpuntt
         std::vector<T> W_inverse_root_of_unity_table;
 
         // For testing all cases with barretti goldilock and plantard reduction
-        NTTParameters4Step(int LOGN,
-                           ReductionPolynomial poly_reduce_type);
+        NTTParameters4Step(int LOGN, ReductionPolynomial poly_reduce_type);
 
         // For any prime(64-bit)
         // NTTParameters4Step(int LOGN, NTTFactors ntt_factors,
