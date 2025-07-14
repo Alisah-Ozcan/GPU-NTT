@@ -6,7 +6,7 @@ namespace gpuntt
     {
         if (!condition)
         {
-            throw std::invalid_argument("Invalid argument!");
+            throw std::invalid_argument(errorMessage);
         }
     }
 

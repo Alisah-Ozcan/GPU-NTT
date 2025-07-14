@@ -74,6 +74,24 @@ namespace gpuntt
 
     // It provides multiple NTT operation with using single prime.
     template <typename T>
+    __global__ void
+    ForwardCoreLowRing(T* polynomial_in, T* polynomial_out,
+                       const Root<T>* __restrict__ root_of_unity_table,
+                       Modulus<T> modulus, int shared_index, int N_power,
+                       bool zero_padding, bool reduction_poly_check,
+                       int total_batch);
+
+    // It provides multiple NTT operation with using single prime.
+    template <typename T>
+    __global__ void
+    ForwardCoreLowRing(T* polynomial_in, T* polynomial_out,
+                       const Root<T>* __restrict__ root_of_unity_table,
+                       Modulus<T>* modulus, int shared_index, int N_power,
+                       bool zero_padding, bool reduction_poly_check,
+                       int total_batch, int mod_count);
+
+    // It provides multiple NTT operation with using single prime.
+    template <typename T>
     __global__ void ForwardCore(T* polynomial_in, T* polynomial_out,
                                 const Root<T>* __restrict__ root_of_unity_table,
                                 Modulus<T> modulus, int shared_index, int logm,
@@ -110,6 +128,24 @@ namespace gpuntt
                  int outer_iteration_count, int N_power, bool zero_padding,
                  bool not_last_kernel, bool reduction_poly_check,
                  int mod_count);
+
+    // It provides multiple NTT operation with using single prime.
+    template <typename T>
+    __global__ void
+    InverseCoreLowRing(T* polynomial_in, T* polynomial_out,
+                       const Root<T>* __restrict__ inverse_root_of_unity_table,
+                       Modulus<T> modulus, int shared_index, int N_power,
+                       Ninverse<T> n_inverse, bool reduction_poly_check,
+                       int total_batch);
+
+    // It provides multiple NTT operation with using single prime.
+    template <typename T>
+    __global__ void
+    InverseCoreLowRing(T* polynomial_in, T* polynomial_out,
+                       const Root<T>* __restrict__ inverse_root_of_unity_table,
+                       Modulus<T>* modulus, int shared_index, int N_power,
+                       Ninverse<T>* n_inverse, bool reduction_poly_check,
+                       int total_batch, int mod_count);
 
     // It provides multiple NTT operation with using single prime.
     template <typename T>
@@ -386,6 +422,15 @@ namespace gpuntt
     template <typename T> auto CreateForwardNTTKernel()
     {
         return std::unordered_map<int, std::vector<KernelConfig>>{
+            {1, {{1, 1, 1, 256, 512 * sizeof(T), 0, 0, 0, 1, false}}},
+            {2, {{1, 1, 2, 128, 512 * sizeof(T), 1, 0, 0, 2, false}}},
+            {3, {{1, 1, 4, 64, 512 * sizeof(T), 2, 0, 0, 3, false}}},
+            {4, {{1, 1, 8, 32, 512 * sizeof(T), 3, 0, 0, 4, false}}},
+            {5, {{1, 1, 16, 16, 512 * sizeof(T), 4, 0, 0, 5, false}}},
+            {6, {{1, 1, 32, 8, 512 * sizeof(T), 5, 0, 0, 6, false}}},
+            {7, {{1, 1, 64, 4, 512 * sizeof(T), 6, 0, 0, 7, false}}},
+            {8, {{1, 1, 128, 2, 512 * sizeof(T), 7, 0, 0, 8, false}}},
+            {9, {{1, 1, 256, 1, 512 * sizeof(T), 8, 0, 0, 9, false}}},
             {10, {{1, 1, 512, 1, 1024 * sizeof(T), 9, 0, 0, 10, false}}},
             {11,
              {{4, 1, 128, 2, 512 * sizeof(T), 8, 0, 0, 2, true},
@@ -438,12 +483,9 @@ namespace gpuntt
               {128, 128, 8, 64, 1024 * sizeof(T), 9, 7, 0, 7, true},
               {1, 16384, 512, 1, 1024 * sizeof(T), 9, 14, 0, 10, false}}},
             {25,
-             {
-                 {32768, 1, 8, 64, 1024 * sizeof(T), 9, 0, 0, 7, true},
-                 {256, 128, 4, 128, 1024 * sizeof(T), 9, 7, 0, 8, true},
-                 {32768, 1, 512, 1, 1024 * sizeof(T), 9, 15, 0, 10, false}
-                 //{1, 32768, 512, 1, 1024 * sizeof(T), 9, 15, 0, 10, false}
-             }},
+             {{32768, 1, 8, 64, 1024 * sizeof(T), 9, 0, 0, 7, true},
+              {256, 128, 4, 128, 1024 * sizeof(T), 9, 7, 0, 8, true},
+              {32768, 1, 512, 1, 1024 * sizeof(T), 9, 15, 0, 10, false}}},
             {26,
              {{65536, 1, 4, 128, 1024 * sizeof(T), 9, 0, 0, 8, true},
               {256, 256, 4, 128, 1024 * sizeof(T), 9, 8, 0, 8, true},
@@ -476,6 +518,15 @@ namespace gpuntt
     template <typename T> auto CreateInverseNTTKernel()
     {
         return std::unordered_map<int, std::vector<KernelConfig>>{
+            {1, {{1, 1, 1, 256, 512 * sizeof(T), 0, 0, 0, 1, true}}},
+            {2, {{1, 1, 2, 128, 512 * sizeof(T), 1, 1, 0, 2, true}}},
+            {3, {{1, 1, 4, 64, 512 * sizeof(T), 2, 2, 0, 3, true}}},
+            {4, {{1, 1, 8, 32, 512 * sizeof(T), 3, 3, 0, 4, true}}},
+            {5, {{1, 1, 16, 16, 512 * sizeof(T), 4, 4, 0, 5, true}}},
+            {6, {{1, 1, 32, 8, 512 * sizeof(T), 5, 5, 0, 6, true}}},
+            {7, {{1, 1, 64, 4, 512 * sizeof(T), 6, 6, 0, 7, true}}},
+            {8, {{1, 1, 128, 2, 512 * sizeof(T), 7, 7, 0, 8, true}}},
+            {9, {{1, 1, 256, 1, 512 * sizeof(T), 8, 8, 0, 9, true}}},
             {10, {{1, 1, 512, 1, 1024 * sizeof(T), 9, 9, 0, 10, true}}},
             {11,
              {{1, 4, 256, 1, 512 * sizeof(T), 8, 10, 2, 9, false},

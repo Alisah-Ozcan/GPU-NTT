@@ -34,6 +34,361 @@ namespace gpuntt
     }
 
     template <typename T>
+    __global__ void
+    ForwardCoreLowRing(T* polynomial_in, T* polynomial_out,
+                       const Root<T>* __restrict__ root_of_unity_table,
+                       Modulus<T> modulus, int shared_index, int N_power,
+                       bool zero_padding, bool reduction_poly_check,
+                       int total_batch)
+    {
+        const int idx_x = threadIdx.x;
+        const int idx_y = threadIdx.y;
+        const int block_x = blockIdx.x;
+        const int block_thread = idx_x + (idx_y * blockDim.x);
+        const int batch_index = (block_x * blockDim.y) + idx_y;
+
+        if (batch_index >= total_batch)
+            return;
+
+        int batch_offset = ((block_x + 1) * blockDim.y);
+        int batch_offset_size =
+            (batch_offset > total_batch)
+                ? (blockDim.y - (batch_offset - total_batch))
+                : blockDim.y;
+        int block_size = blockDim.x * batch_offset_size;
+
+        // extern __shared__ T shared_memory[];
+        extern __shared__ char shared_memory_typed[];
+        T* shared_memory = reinterpret_cast<T*>(shared_memory_typed);
+
+        int t_2 = N_power - 1;
+        int offset = idx_y << N_power;
+        int t_ = shared_index;
+        int m = 1;
+
+        location_t global_addresss =
+            block_thread + (location_t) ((blockDim.y * block_x) << N_power);
+
+        location_t omega_addresss = idx_x;
+
+        // Load T from global & store to shared
+        shared_memory[block_thread] = polynomial_in[global_addresss];
+        shared_memory[block_thread + block_size] =
+            polynomial_in[global_addresss + block_size];
+
+        int shared_addresss = idx_x;
+
+        int t = 1 << t_;
+        int in_shared_address =
+            ((shared_addresss >> t_) << t_) + shared_addresss;
+        location_t current_root_index;
+        __syncthreads();
+
+#pragma unroll
+        for (int lp = 0; lp < (shared_index + 1); lp++)
+        {
+            int group_in_shared_address = in_shared_address + offset;
+            if (reduction_poly_check)
+            { // X_N_minus
+                current_root_index = (omega_addresss >> t_2);
+            }
+            else
+            { // X_N_plus
+                current_root_index = m + (omega_addresss >> t_2);
+            }
+
+            CooleyTukeyUnit(shared_memory[group_in_shared_address],
+                            shared_memory[group_in_shared_address + t],
+                            root_of_unity_table[current_root_index], modulus);
+
+            t = t >> 1;
+            t_2 -= 1;
+            t_ -= 1;
+            m <<= 1;
+
+            in_shared_address =
+                ((shared_addresss >> t_) << t_) + shared_addresss;
+            __syncthreads();
+        }
+
+        __syncthreads();
+
+        polynomial_out[global_addresss] = shared_memory[block_thread];
+        polynomial_out[global_addresss + block_size] =
+            shared_memory[block_thread + block_size];
+    }
+
+    template <typename T>
+    __global__ void
+    ForwardCoreLowRing(T* polynomial_in, T* polynomial_out,
+                       const Root<T>* __restrict__ root_of_unity_table,
+                       Modulus<T>* modulus, int shared_index, int N_power,
+                       bool zero_padding, bool reduction_poly_check,
+                       int total_batch, int mod_count)
+    {
+        const int idx_x = threadIdx.x;
+        const int idx_y = threadIdx.y;
+        const int block_x = blockIdx.x;
+        const int block_thread = idx_x + (idx_y * blockDim.x);
+        const int batch_index = (block_x * blockDim.y) + idx_y;
+
+        if (batch_index >= total_batch)
+            return;
+
+        int mod_index = batch_index % mod_count;
+        int batch_offset = ((block_x + 1) * blockDim.y);
+        int batch_offset_size =
+            (batch_offset > total_batch)
+                ? (blockDim.y - (batch_offset - total_batch))
+                : blockDim.y;
+        int block_size = blockDim.x * batch_offset_size;
+
+        // extern __shared__ T shared_memory[];
+        extern __shared__ char shared_memory_typed[];
+        T* shared_memory = reinterpret_cast<T*>(shared_memory_typed);
+
+        int t_2 = N_power - 1;
+        int offset = idx_y << N_power;
+        int t_ = shared_index;
+        int m = 1;
+
+        location_t global_addresss =
+            block_thread + (location_t) ((blockDim.y * block_x) << N_power);
+
+        location_t omega_addresss = idx_x;
+
+        // Load T from global & store to shared
+        shared_memory[block_thread] = polynomial_in[global_addresss];
+        shared_memory[block_thread + block_size] =
+            polynomial_in[global_addresss + block_size];
+
+        int shared_addresss = idx_x;
+
+        int t = 1 << t_;
+        int in_shared_address =
+            ((shared_addresss >> t_) << t_) + shared_addresss;
+        location_t current_root_index;
+        __syncthreads();
+
+        const Modulus<T> modulus_reg = modulus[mod_index];
+
+#pragma unroll
+        for (int lp = 0; lp < (shared_index + 1); lp++)
+        {
+            int group_in_shared_address = in_shared_address + offset;
+            if (reduction_poly_check)
+            { // X_N_minus
+                current_root_index = (omega_addresss >> t_2) +
+                                     (location_t) (mod_index << N_power);
+            }
+            else
+            { // X_N_plus
+                current_root_index = m + (omega_addresss >> t_2) +
+                                     (location_t) (mod_index << N_power);
+            }
+
+            CooleyTukeyUnit(shared_memory[group_in_shared_address],
+                            shared_memory[group_in_shared_address + t],
+                            root_of_unity_table[current_root_index],
+                            modulus_reg);
+
+            t = t >> 1;
+            t_2 -= 1;
+            t_ -= 1;
+            m <<= 1;
+
+            in_shared_address =
+                ((shared_addresss >> t_) << t_) + shared_addresss;
+            __syncthreads();
+        }
+
+        __syncthreads();
+
+        polynomial_out[global_addresss] = shared_memory[block_thread];
+        polynomial_out[global_addresss + block_size] =
+            shared_memory[block_thread + block_size];
+    }
+
+    template <typename T>
+    __global__ void
+    InverseCoreLowRing(T* polynomial_in, T* polynomial_out,
+                       const Root<T>* __restrict__ inverse_root_of_unity_table,
+                       Modulus<T> modulus, int shared_index, int N_power,
+                       Ninverse<T> n_inverse, bool reduction_poly_check,
+                       int total_batch)
+    {
+        const int idx_x = threadIdx.x;
+        const int idx_y = threadIdx.y;
+        const int block_x = blockIdx.x;
+        const int block_thread = idx_x + (idx_y * blockDim.x);
+        const int batch_index = (block_x * blockDim.y) + idx_y;
+
+        if (batch_index >= total_batch)
+            return;
+
+        int batch_offset = ((block_x + 1) * blockDim.y);
+        int batch_offset_size =
+            (batch_offset > total_batch)
+                ? (blockDim.y - (batch_offset - total_batch))
+                : blockDim.y;
+        int block_size = blockDim.x * batch_offset_size;
+
+        // extern __shared__ T shared_memory[];
+        extern __shared__ char shared_memory_typed[];
+        T* shared_memory = reinterpret_cast<T*>(shared_memory_typed);
+
+        int t_2 = 0;
+        int t_ = 0;
+        int offset = idx_y << N_power;
+        int loops = N_power;
+        int m = (int) 1 << (N_power - 1);
+
+        location_t global_addresss =
+            block_thread + (location_t) ((blockDim.y * block_x) << N_power);
+
+        location_t omega_addresss = idx_x;
+
+        // Load T from global & store to shared
+        shared_memory[block_thread] = polynomial_in[global_addresss];
+        shared_memory[block_thread + block_size] =
+            polynomial_in[global_addresss + block_size];
+
+        int shared_addresss = idx_x;
+
+        int t = 1 << t_;
+        int in_shared_address =
+            ((shared_addresss >> t_) << t_) + shared_addresss;
+        location_t current_root_index;
+        __syncthreads();
+
+#pragma unroll
+        for (int lp = 0; lp < loops; lp++)
+        {
+            int group_in_shared_address = in_shared_address + offset;
+            if (reduction_poly_check)
+            { // X_N_minus
+                current_root_index = (omega_addresss >> t_2);
+            }
+            else
+            { // X_N_plus
+                current_root_index = m + (omega_addresss >> t_2);
+            }
+
+            GentlemanSandeUnit(shared_memory[group_in_shared_address],
+                               shared_memory[group_in_shared_address + t],
+                               inverse_root_of_unity_table[current_root_index],
+                               modulus);
+
+            t = t << 1;
+            t_2 += 1;
+            t_ += 1;
+            m >>= 1;
+
+            in_shared_address =
+                ((shared_addresss >> t_) << t_) + shared_addresss;
+            __syncthreads();
+        }
+        __syncthreads();
+
+        polynomial_out[global_addresss] = OPERATOR_GPU<T>::mult(
+            shared_memory[block_thread], n_inverse, modulus);
+        polynomial_out[global_addresss + block_size] = OPERATOR_GPU<T>::mult(
+            shared_memory[block_thread + block_size], n_inverse, modulus);
+    }
+
+    template <typename T>
+    __global__ void
+    InverseCoreLowRing(T* polynomial_in, T* polynomial_out,
+                       const Root<T>* __restrict__ inverse_root_of_unity_table,
+                       Modulus<T>* modulus, int shared_index, int N_power,
+                       Ninverse<T>* n_inverse, bool reduction_poly_check,
+                       int total_batch, int mod_count)
+    {
+        const int idx_x = threadIdx.x;
+        const int idx_y = threadIdx.y;
+        const int block_x = blockIdx.x;
+        const int block_thread = idx_x + (idx_y * blockDim.x);
+        const int batch_index = (block_x * blockDim.y) + idx_y;
+
+        if (batch_index >= total_batch)
+            return;
+
+        int mod_index = batch_index % mod_count;
+        int batch_offset = ((block_x + 1) * blockDim.y);
+        int batch_offset_size =
+            (batch_offset > total_batch)
+                ? (blockDim.y - (batch_offset - total_batch))
+                : blockDim.y;
+        int block_size = blockDim.x * batch_offset_size;
+
+        // extern __shared__ T shared_memory[];
+        extern __shared__ char shared_memory_typed[];
+        T* shared_memory = reinterpret_cast<T*>(shared_memory_typed);
+
+        int t_2 = 0;
+        int t_ = 0;
+        int offset = idx_y << N_power;
+        int loops = N_power;
+        int m = (int) 1 << (N_power - 1);
+
+        location_t global_addresss =
+            block_thread + (location_t) ((blockDim.y * block_x) << N_power);
+
+        location_t omega_addresss = idx_x;
+
+        // Load T from global & store to shared
+        shared_memory[block_thread] = polynomial_in[global_addresss];
+        shared_memory[block_thread + block_size] =
+            polynomial_in[global_addresss + block_size];
+
+        int shared_addresss = idx_x;
+
+        int t = 1 << t_;
+        int in_shared_address =
+            ((shared_addresss >> t_) << t_) + shared_addresss;
+        location_t current_root_index;
+        __syncthreads();
+
+        const Modulus<T> modulus_reg = modulus[mod_index];
+        const Ninverse<T> n_inverse_reg = n_inverse[mod_index];
+
+#pragma unroll
+        for (int lp = 0; lp < loops; lp++)
+        {
+            int group_in_shared_address = in_shared_address + offset;
+            if (reduction_poly_check)
+            { // X_N_minus
+                current_root_index = (omega_addresss >> t_2);
+            }
+            else
+            { // X_N_plus
+                current_root_index = m + (omega_addresss >> t_2);
+            }
+
+            GentlemanSandeUnit(shared_memory[group_in_shared_address],
+                               shared_memory[group_in_shared_address + t],
+                               inverse_root_of_unity_table[current_root_index],
+                               modulus_reg);
+
+            t = t << 1;
+            t_2 += 1;
+            t_ += 1;
+            m >>= 1;
+
+            in_shared_address =
+                ((shared_addresss >> t_) << t_) + shared_addresss;
+            __syncthreads();
+        }
+        __syncthreads();
+
+        polynomial_out[global_addresss] = OPERATOR_GPU<T>::mult(
+            shared_memory[block_thread], n_inverse_reg, modulus_reg);
+        polynomial_out[global_addresss + block_size] =
+            OPERATOR_GPU<T>::mult(shared_memory[block_thread + block_size],
+                                  n_inverse_reg, modulus_reg);
+    }
+
+    template <typename T>
     __global__ void ForwardCore(T* polynomial_in, T* polynomial_out,
                                 const Root<T>* __restrict__ root_of_unity_table,
                                 Modulus<T> modulus, int shared_index, int logm,
@@ -999,7 +1354,7 @@ namespace gpuntt
                           Root<T>* root_of_unity_table, Modulus<T> modulus,
                           ntt_configuration<T> cfg, int batch_size)
     {
-        if ((cfg.n_power <= 9 || cfg.n_power >= 29))
+        if ((cfg.n_power <= 0 || cfg.n_power >= 29))
         {
             throw std::invalid_argument("Invalid n_power range!");
         }
@@ -1007,131 +1362,163 @@ namespace gpuntt
         auto kernel_parameters = (cfg.ntt_type == FORWARD)
                                      ? CreateForwardNTTKernel<T>()
                                      : CreateInverseNTTKernel<T>();
+        bool low_ring_size = (cfg.n_power < 10) ? true : false;
         bool standart_kernel = (cfg.n_power < 25) ? true : false;
         T* device_in_ = device_in;
 
         switch (cfg.ntt_type)
         {
             case FORWARD:
-                if (standart_kernel)
-                {
-                    for (int i = 0; i < kernel_parameters[cfg.n_power].size();
-                         i++)
-                    {
-                        auto& current_kernel_params =
-                            kernel_parameters[cfg.n_power][i];
-                        ForwardCore<<<
-                            dim3(current_kernel_params.griddim_x,
-                                 current_kernel_params.griddim_y, batch_size),
-                            dim3(current_kernel_params.blockdim_x,
-                                 current_kernel_params.blockdim_y),
-                            current_kernel_params.shared_memory, cfg.stream>>>(
-                            device_in_, device_out, root_of_unity_table,
-                            modulus, current_kernel_params.shared_index,
-                            current_kernel_params.logm,
-                            current_kernel_params.outer_iteration_count,
-                            cfg.n_power, cfg.zero_padding,
-                            current_kernel_params.not_last_kernel,
-                            (cfg.reduction_poly ==
-                             ReductionPolynomial::X_N_minus));
-                        GPUNTT_CUDA_CHECK(cudaGetLastError());
-                        device_in_ = device_out;
-                    }
-                }
-                else
-                {
-                    for (int i = 0;
-                         i < kernel_parameters[cfg.n_power].size() - 1; i++)
-                    {
-                        auto& current_kernel_params =
-                            kernel_parameters[cfg.n_power][i];
-                        ForwardCore<<<
-                            dim3(current_kernel_params.griddim_x,
-                                 current_kernel_params.griddim_y, batch_size),
-                            dim3(current_kernel_params.blockdim_x,
-                                 current_kernel_params.blockdim_y),
-                            current_kernel_params.shared_memory, cfg.stream>>>(
-                            device_in_, device_out, root_of_unity_table,
-                            modulus, current_kernel_params.shared_index,
-                            current_kernel_params.logm,
-                            current_kernel_params.outer_iteration_count,
-                            cfg.n_power, cfg.zero_padding,
-                            current_kernel_params.not_last_kernel,
-                            (cfg.reduction_poly ==
-                             ReductionPolynomial::X_N_minus));
-                        GPUNTT_CUDA_CHECK(cudaGetLastError());
-                        device_in_ = device_out;
-                    }
-                    auto& current_kernel_params = kernel_parameters
-                        [cfg.n_power]
-                        [kernel_parameters[cfg.n_power].size() - 1];
-                    ForwardCore_<<<
-                        dim3(current_kernel_params.griddim_x,
-                             current_kernel_params.griddim_y, batch_size),
-                        dim3(current_kernel_params.blockdim_x,
-                             current_kernel_params.blockdim_y),
-                        current_kernel_params.shared_memory, cfg.stream>>>(
-                        device_in_, device_out, root_of_unity_table, modulus,
-                        current_kernel_params.shared_index,
-                        current_kernel_params.logm,
-                        current_kernel_params.outer_iteration_count,
-                        cfg.n_power, cfg.zero_padding,
-                        current_kernel_params.not_last_kernel,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
-                    GPUNTT_CUDA_CHECK(cudaGetLastError());
-                }
-                break;
-            case INVERSE:
-                if (standart_kernel)
-                {
-                    for (int i = 0; i < kernel_parameters[cfg.n_power].size();
-                         i++)
-                    {
-                        auto& current_kernel_params =
-                            kernel_parameters[cfg.n_power][i];
-                        InverseCore<<<
-                            dim3(current_kernel_params.griddim_x,
-                                 current_kernel_params.griddim_y, batch_size),
-                            dim3(current_kernel_params.blockdim_x,
-                                 current_kernel_params.blockdim_y),
-                            current_kernel_params.shared_memory, cfg.stream>>>(
-                            device_in_, device_out, root_of_unity_table,
-                            modulus, current_kernel_params.shared_index,
-                            current_kernel_params.logm, current_kernel_params.k,
-                            current_kernel_params.outer_iteration_count,
-                            cfg.n_power, cfg.mod_inverse,
-                            current_kernel_params.not_last_kernel,
-                            (cfg.reduction_poly ==
-                             ReductionPolynomial::X_N_minus));
-                        GPUNTT_CUDA_CHECK(cudaGetLastError());
-                        device_in_ = device_out;
-                    }
-                }
-                else
+                if (low_ring_size)
                 {
                     auto& current_kernel_params =
                         kernel_parameters[cfg.n_power][0];
-                    InverseCore_<<<
-                        dim3(current_kernel_params.griddim_x,
-                             current_kernel_params.griddim_y, batch_size),
+                    ForwardCoreLowRing<<<
+                        dim3((batch_size +
+                              (current_kernel_params.blockdim_y - 1)) /
+                                 current_kernel_params.blockdim_y,
+                             1, 1),
                         dim3(current_kernel_params.blockdim_x,
                              current_kernel_params.blockdim_y),
                         current_kernel_params.shared_memory, cfg.stream>>>(
                         device_in_, device_out, root_of_unity_table, modulus,
-                        current_kernel_params.shared_index,
-                        current_kernel_params.logm, current_kernel_params.k,
-                        current_kernel_params.outer_iteration_count,
-                        cfg.n_power, cfg.mod_inverse,
-                        current_kernel_params.not_last_kernel,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus));
+                        current_kernel_params.shared_index, cfg.n_power,
+                        cfg.zero_padding,
+                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
+                        batch_size);
                     GPUNTT_CUDA_CHECK(cudaGetLastError());
-                    device_in_ = device_out;
-                    for (int i = 1; i < kernel_parameters[cfg.n_power].size();
-                         i++)
+                }
+                else
+                {
+                    if (standart_kernel)
+                    {
+                        for (int i = 0;
+                             i < kernel_parameters[cfg.n_power].size(); i++)
+                        {
+                            auto& current_kernel_params =
+                                kernel_parameters[cfg.n_power][i];
+                            ForwardCore<<<dim3(current_kernel_params.griddim_x,
+                                               current_kernel_params.griddim_y,
+                                               batch_size),
+                                          dim3(
+                                              current_kernel_params.blockdim_x,
+                                              current_kernel_params.blockdim_y),
+                                          current_kernel_params.shared_memory,
+                                          cfg.stream>>>(
+                                device_in_, device_out, root_of_unity_table,
+                                modulus, current_kernel_params.shared_index,
+                                current_kernel_params.logm,
+                                current_kernel_params.outer_iteration_count,
+                                cfg.n_power, cfg.zero_padding,
+                                current_kernel_params.not_last_kernel,
+                                (cfg.reduction_poly ==
+                                 ReductionPolynomial::X_N_minus));
+                            GPUNTT_CUDA_CHECK(cudaGetLastError());
+                            device_in_ = device_out;
+                        }
+                    }
+                    else
+                    {
+                        for (int i = 0;
+                             i < kernel_parameters[cfg.n_power].size() - 1; i++)
+                        {
+                            auto& current_kernel_params =
+                                kernel_parameters[cfg.n_power][i];
+                            ForwardCore<<<dim3(current_kernel_params.griddim_x,
+                                               current_kernel_params.griddim_y,
+                                               batch_size),
+                                          dim3(
+                                              current_kernel_params.blockdim_x,
+                                              current_kernel_params.blockdim_y),
+                                          current_kernel_params.shared_memory,
+                                          cfg.stream>>>(
+                                device_in_, device_out, root_of_unity_table,
+                                modulus, current_kernel_params.shared_index,
+                                current_kernel_params.logm,
+                                current_kernel_params.outer_iteration_count,
+                                cfg.n_power, cfg.zero_padding,
+                                current_kernel_params.not_last_kernel,
+                                (cfg.reduction_poly ==
+                                 ReductionPolynomial::X_N_minus));
+                            GPUNTT_CUDA_CHECK(cudaGetLastError());
+                            device_in_ = device_out;
+                        }
+                        auto& current_kernel_params = kernel_parameters
+                            [cfg.n_power]
+                            [kernel_parameters[cfg.n_power].size() - 1];
+                        ForwardCore_<<<
+                            dim3(current_kernel_params.griddim_x,
+                                 current_kernel_params.griddim_y, batch_size),
+                            dim3(current_kernel_params.blockdim_x,
+                                 current_kernel_params.blockdim_y),
+                            current_kernel_params.shared_memory, cfg.stream>>>(
+                            device_in_, device_out, root_of_unity_table,
+                            modulus, current_kernel_params.shared_index,
+                            current_kernel_params.logm,
+                            current_kernel_params.outer_iteration_count,
+                            cfg.n_power, cfg.zero_padding,
+                            current_kernel_params.not_last_kernel,
+                            (cfg.reduction_poly ==
+                             ReductionPolynomial::X_N_minus));
+                        GPUNTT_CUDA_CHECK(cudaGetLastError());
+                    }
+                }
+                break;
+            case INVERSE:
+                if (low_ring_size)
+                {
+                    auto& current_kernel_params =
+                        kernel_parameters[cfg.n_power][0];
+                    InverseCoreLowRing<<<
+                        dim3((batch_size +
+                              (current_kernel_params.blockdim_y - 1)) /
+                                 current_kernel_params.blockdim_y,
+                             1, 1),
+                        dim3(current_kernel_params.blockdim_x,
+                             current_kernel_params.blockdim_y),
+                        current_kernel_params.shared_memory, cfg.stream>>>(
+                        device_in_, device_out, root_of_unity_table, modulus,
+                        current_kernel_params.shared_index, cfg.n_power,
+                        cfg.mod_inverse,
+                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
+                        batch_size);
+                    GPUNTT_CUDA_CHECK(cudaGetLastError());
+                }
+                else
+                {
+                    if (standart_kernel)
+                    {
+                        for (int i = 0;
+                             i < kernel_parameters[cfg.n_power].size(); i++)
+                        {
+                            auto& current_kernel_params =
+                                kernel_parameters[cfg.n_power][i];
+                            InverseCore<<<dim3(current_kernel_params.griddim_x,
+                                               current_kernel_params.griddim_y,
+                                               batch_size),
+                                          dim3(
+                                              current_kernel_params.blockdim_x,
+                                              current_kernel_params.blockdim_y),
+                                          current_kernel_params.shared_memory,
+                                          cfg.stream>>>(
+                                device_in_, device_out, root_of_unity_table,
+                                modulus, current_kernel_params.shared_index,
+                                current_kernel_params.logm,
+                                current_kernel_params.k,
+                                current_kernel_params.outer_iteration_count,
+                                cfg.n_power, cfg.mod_inverse,
+                                current_kernel_params.not_last_kernel,
+                                (cfg.reduction_poly ==
+                                 ReductionPolynomial::X_N_minus));
+                            GPUNTT_CUDA_CHECK(cudaGetLastError());
+                            device_in_ = device_out;
+                        }
+                    }
+                    else
                     {
                         auto& current_kernel_params =
-                            kernel_parameters[cfg.n_power][i];
-                        InverseCore<<<
+                            kernel_parameters[cfg.n_power][0];
+                        InverseCore_<<<
                             dim3(current_kernel_params.griddim_x,
                                  current_kernel_params.griddim_y, batch_size),
                             dim3(current_kernel_params.blockdim_x,
@@ -1146,9 +1533,33 @@ namespace gpuntt
                             (cfg.reduction_poly ==
                              ReductionPolynomial::X_N_minus));
                         GPUNTT_CUDA_CHECK(cudaGetLastError());
+                        device_in_ = device_out;
+                        for (int i = 1;
+                             i < kernel_parameters[cfg.n_power].size(); i++)
+                        {
+                            auto& current_kernel_params =
+                                kernel_parameters[cfg.n_power][i];
+                            InverseCore<<<dim3(current_kernel_params.griddim_x,
+                                               current_kernel_params.griddim_y,
+                                               batch_size),
+                                          dim3(
+                                              current_kernel_params.blockdim_x,
+                                              current_kernel_params.blockdim_y),
+                                          current_kernel_params.shared_memory,
+                                          cfg.stream>>>(
+                                device_in_, device_out, root_of_unity_table,
+                                modulus, current_kernel_params.shared_index,
+                                current_kernel_params.logm,
+                                current_kernel_params.k,
+                                current_kernel_params.outer_iteration_count,
+                                cfg.n_power, cfg.mod_inverse,
+                                current_kernel_params.not_last_kernel,
+                                (cfg.reduction_poly ==
+                                 ReductionPolynomial::X_N_minus));
+                            GPUNTT_CUDA_CHECK(cudaGetLastError());
+                        }
                     }
                 }
-
                 break;
             default:
                 throw std::invalid_argument("Invalid ntt_type!");
@@ -1162,7 +1573,7 @@ namespace gpuntt
                           ntt_rns_configuration<T> cfg, int batch_size,
                           int mod_count)
     {
-        if ((cfg.n_power <= 9 || cfg.n_power >= 29))
+        if ((cfg.n_power <= 0 || cfg.n_power >= 29))
         {
             throw std::invalid_argument("Invalid n_power range!");
         }
@@ -1170,136 +1581,167 @@ namespace gpuntt
         auto kernel_parameters = (cfg.ntt_type == FORWARD)
                                      ? CreateForwardNTTKernel<T>()
                                      : CreateInverseNTTKernel<T>();
+        bool low_ring_size = (cfg.n_power < 10) ? true : false;
         bool standart_kernel = (cfg.n_power < 25) ? true : false;
         T* device_in_ = device_in;
 
         switch (cfg.ntt_type)
         {
             case FORWARD:
-                if (standart_kernel)
-                {
-                    for (int i = 0; i < kernel_parameters[cfg.n_power].size();
-                         i++)
-                    {
-                        auto& current_kernel_params =
-                            kernel_parameters[cfg.n_power][i];
-                        ForwardCore<<<
-                            dim3(current_kernel_params.griddim_x,
-                                 current_kernel_params.griddim_y, batch_size),
-                            dim3(current_kernel_params.blockdim_x,
-                                 current_kernel_params.blockdim_y),
-                            current_kernel_params.shared_memory, cfg.stream>>>(
-                            device_in_, device_out, root_of_unity_table,
-                            modulus, current_kernel_params.shared_index,
-                            current_kernel_params.logm,
-                            current_kernel_params.outer_iteration_count,
-                            cfg.n_power, cfg.zero_padding,
-                            current_kernel_params.not_last_kernel,
-                            (cfg.reduction_poly ==
-                             ReductionPolynomial::X_N_minus),
-                            mod_count);
-                        GPUNTT_CUDA_CHECK(cudaGetLastError());
-                        device_in_ = device_out;
-                    }
-                }
-                else
-                {
-                    for (int i = 0;
-                         i < kernel_parameters[cfg.n_power].size() - 1; i++)
-                    {
-                        auto& current_kernel_params =
-                            kernel_parameters[cfg.n_power][i];
-                        ForwardCore<<<
-                            dim3(current_kernel_params.griddim_x,
-                                 current_kernel_params.griddim_y, batch_size),
-                            dim3(current_kernel_params.blockdim_x,
-                                 current_kernel_params.blockdim_y),
-                            current_kernel_params.shared_memory, cfg.stream>>>(
-                            device_in_, device_out, root_of_unity_table,
-                            modulus, current_kernel_params.shared_index,
-                            current_kernel_params.logm,
-                            current_kernel_params.outer_iteration_count,
-                            cfg.n_power, cfg.zero_padding,
-                            current_kernel_params.not_last_kernel,
-                            (cfg.reduction_poly ==
-                             ReductionPolynomial::X_N_minus),
-                            mod_count);
-                        GPUNTT_CUDA_CHECK(cudaGetLastError());
-                        device_in_ = device_out;
-                    }
-                    auto& current_kernel_params = kernel_parameters
-                        [cfg.n_power]
-                        [kernel_parameters[cfg.n_power].size() - 1];
-                    ForwardCore_<<<
-                        dim3(current_kernel_params.griddim_x,
-                             current_kernel_params.griddim_y, batch_size),
-                        dim3(current_kernel_params.blockdim_x,
-                             current_kernel_params.blockdim_y),
-                        current_kernel_params.shared_memory, cfg.stream>>>(
-                        device_in_, device_out, root_of_unity_table, modulus,
-                        current_kernel_params.shared_index,
-                        current_kernel_params.logm,
-                        current_kernel_params.outer_iteration_count,
-                        cfg.n_power, cfg.zero_padding,
-                        current_kernel_params.not_last_kernel,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
-                    GPUNTT_CUDA_CHECK(cudaGetLastError());
-                }
-                break;
-            case INVERSE:
-                if (standart_kernel)
-                {
-                    for (int i = 0; i < kernel_parameters[cfg.n_power].size();
-                         i++)
-                    {
-                        auto& current_kernel_params =
-                            kernel_parameters[cfg.n_power][i];
-                        InverseCore<<<
-                            dim3(current_kernel_params.griddim_x,
-                                 current_kernel_params.griddim_y, batch_size),
-                            dim3(current_kernel_params.blockdim_x,
-                                 current_kernel_params.blockdim_y),
-                            current_kernel_params.shared_memory, cfg.stream>>>(
-                            device_in_, device_out, root_of_unity_table,
-                            modulus, current_kernel_params.shared_index,
-                            current_kernel_params.logm, current_kernel_params.k,
-                            current_kernel_params.outer_iteration_count,
-                            cfg.n_power, cfg.mod_inverse,
-                            current_kernel_params.not_last_kernel,
-                            (cfg.reduction_poly ==
-                             ReductionPolynomial::X_N_minus),
-                            mod_count);
-                        GPUNTT_CUDA_CHECK(cudaGetLastError());
-                        device_in_ = device_out;
-                    }
-                }
-                else
+                if (low_ring_size)
                 {
                     auto& current_kernel_params =
                         kernel_parameters[cfg.n_power][0];
-                    InverseCore_<<<
-                        dim3(current_kernel_params.griddim_x,
-                             current_kernel_params.griddim_y, batch_size),
+                    ForwardCoreLowRing<<<
+                        dim3((batch_size +
+                              (current_kernel_params.blockdim_y - 1)) /
+                                 current_kernel_params.blockdim_y,
+                             1, 1),
                         dim3(current_kernel_params.blockdim_x,
                              current_kernel_params.blockdim_y),
                         current_kernel_params.shared_memory, cfg.stream>>>(
                         device_in_, device_out, root_of_unity_table, modulus,
-                        current_kernel_params.shared_index,
-                        current_kernel_params.logm, current_kernel_params.k,
-                        current_kernel_params.outer_iteration_count,
-                        cfg.n_power, cfg.mod_inverse,
-                        current_kernel_params.not_last_kernel,
+                        current_kernel_params.shared_index, cfg.n_power,
+                        cfg.zero_padding,
                         (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count);
+                        batch_size, mod_count);
                     GPUNTT_CUDA_CHECK(cudaGetLastError());
-                    device_in_ = device_out;
-                    for (int i = 1; i < kernel_parameters[cfg.n_power].size();
-                         i++)
+                }
+                else
+                {
+                    if (standart_kernel)
+                    {
+                        for (int i = 0;
+                             i < kernel_parameters[cfg.n_power].size(); i++)
+                        {
+                            auto& current_kernel_params =
+                                kernel_parameters[cfg.n_power][i];
+                            ForwardCore<<<dim3(current_kernel_params.griddim_x,
+                                               current_kernel_params.griddim_y,
+                                               batch_size),
+                                          dim3(
+                                              current_kernel_params.blockdim_x,
+                                              current_kernel_params.blockdim_y),
+                                          current_kernel_params.shared_memory,
+                                          cfg.stream>>>(
+                                device_in_, device_out, root_of_unity_table,
+                                modulus, current_kernel_params.shared_index,
+                                current_kernel_params.logm,
+                                current_kernel_params.outer_iteration_count,
+                                cfg.n_power, cfg.zero_padding,
+                                current_kernel_params.not_last_kernel,
+                                (cfg.reduction_poly ==
+                                 ReductionPolynomial::X_N_minus),
+                                mod_count);
+                            GPUNTT_CUDA_CHECK(cudaGetLastError());
+                            device_in_ = device_out;
+                        }
+                    }
+                    else
+                    {
+                        for (int i = 0;
+                             i < kernel_parameters[cfg.n_power].size() - 1; i++)
+                        {
+                            auto& current_kernel_params =
+                                kernel_parameters[cfg.n_power][i];
+                            ForwardCore<<<dim3(current_kernel_params.griddim_x,
+                                               current_kernel_params.griddim_y,
+                                               batch_size),
+                                          dim3(
+                                              current_kernel_params.blockdim_x,
+                                              current_kernel_params.blockdim_y),
+                                          current_kernel_params.shared_memory,
+                                          cfg.stream>>>(
+                                device_in_, device_out, root_of_unity_table,
+                                modulus, current_kernel_params.shared_index,
+                                current_kernel_params.logm,
+                                current_kernel_params.outer_iteration_count,
+                                cfg.n_power, cfg.zero_padding,
+                                current_kernel_params.not_last_kernel,
+                                (cfg.reduction_poly ==
+                                 ReductionPolynomial::X_N_minus),
+                                mod_count);
+                            GPUNTT_CUDA_CHECK(cudaGetLastError());
+                            device_in_ = device_out;
+                        }
+                        auto& current_kernel_params = kernel_parameters
+                            [cfg.n_power]
+                            [kernel_parameters[cfg.n_power].size() - 1];
+                        ForwardCore_<<<
+                            dim3(current_kernel_params.griddim_x,
+                                 current_kernel_params.griddim_y, batch_size),
+                            dim3(current_kernel_params.blockdim_x,
+                                 current_kernel_params.blockdim_y),
+                            current_kernel_params.shared_memory, cfg.stream>>>(
+                            device_in_, device_out, root_of_unity_table,
+                            modulus, current_kernel_params.shared_index,
+                            current_kernel_params.logm,
+                            current_kernel_params.outer_iteration_count,
+                            cfg.n_power, cfg.zero_padding,
+                            current_kernel_params.not_last_kernel,
+                            (cfg.reduction_poly ==
+                             ReductionPolynomial::X_N_minus),
+                            mod_count);
+                        GPUNTT_CUDA_CHECK(cudaGetLastError());
+                    }
+                }
+                break;
+            case INVERSE:
+                if (low_ring_size)
+                {
+                    auto& current_kernel_params =
+                        kernel_parameters[cfg.n_power][0];
+                    InverseCoreLowRing<<<
+                        dim3((batch_size +
+                              (current_kernel_params.blockdim_y - 1)) /
+                                 current_kernel_params.blockdim_y,
+                             1, 1),
+                        dim3(current_kernel_params.blockdim_x,
+                             current_kernel_params.blockdim_y),
+                        current_kernel_params.shared_memory, cfg.stream>>>(
+                        device_in_, device_out, root_of_unity_table, modulus,
+                        current_kernel_params.shared_index, cfg.n_power,
+                        cfg.mod_inverse,
+                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
+                        batch_size, mod_count);
+                    GPUNTT_CUDA_CHECK(cudaGetLastError());
+                }
+                else
+                {
+                    if (standart_kernel)
+                    {
+                        for (int i = 0;
+                             i < kernel_parameters[cfg.n_power].size(); i++)
+                        {
+                            auto& current_kernel_params =
+                                kernel_parameters[cfg.n_power][i];
+                            InverseCore<<<dim3(current_kernel_params.griddim_x,
+                                               current_kernel_params.griddim_y,
+                                               batch_size),
+                                          dim3(
+                                              current_kernel_params.blockdim_x,
+                                              current_kernel_params.blockdim_y),
+                                          current_kernel_params.shared_memory,
+                                          cfg.stream>>>(
+                                device_in_, device_out, root_of_unity_table,
+                                modulus, current_kernel_params.shared_index,
+                                current_kernel_params.logm,
+                                current_kernel_params.k,
+                                current_kernel_params.outer_iteration_count,
+                                cfg.n_power, cfg.mod_inverse,
+                                current_kernel_params.not_last_kernel,
+                                (cfg.reduction_poly ==
+                                 ReductionPolynomial::X_N_minus),
+                                mod_count);
+                            GPUNTT_CUDA_CHECK(cudaGetLastError());
+                            device_in_ = device_out;
+                        }
+                    }
+                    else
                     {
                         auto& current_kernel_params =
-                            kernel_parameters[cfg.n_power][i];
-                        InverseCore<<<
+                            kernel_parameters[cfg.n_power][0];
+                        InverseCore_<<<
                             dim3(current_kernel_params.griddim_x,
                                  current_kernel_params.griddim_y, batch_size),
                             dim3(current_kernel_params.blockdim_x,
@@ -1315,6 +1757,32 @@ namespace gpuntt
                              ReductionPolynomial::X_N_minus),
                             mod_count);
                         GPUNTT_CUDA_CHECK(cudaGetLastError());
+                        device_in_ = device_out;
+                        for (int i = 1;
+                             i < kernel_parameters[cfg.n_power].size(); i++)
+                        {
+                            auto& current_kernel_params =
+                                kernel_parameters[cfg.n_power][i];
+                            InverseCore<<<dim3(current_kernel_params.griddim_x,
+                                               current_kernel_params.griddim_y,
+                                               batch_size),
+                                          dim3(
+                                              current_kernel_params.blockdim_x,
+                                              current_kernel_params.blockdim_y),
+                                          current_kernel_params.shared_memory,
+                                          cfg.stream>>>(
+                                device_in_, device_out, root_of_unity_table,
+                                modulus, current_kernel_params.shared_index,
+                                current_kernel_params.logm,
+                                current_kernel_params.k,
+                                current_kernel_params.outer_iteration_count,
+                                cfg.n_power, cfg.mod_inverse,
+                                current_kernel_params.not_last_kernel,
+                                (cfg.reduction_poly ==
+                                 ReductionPolynomial::X_N_minus),
+                                mod_count);
+                            GPUNTT_CUDA_CHECK(cudaGetLastError());
+                        }
                     }
                 }
                 break;
@@ -2761,6 +3229,32 @@ namespace gpuntt
     GentlemanSandeUnit<Data64>(Data64& U, Data64& V, const Root<Data64>& root,
                                const Modulus<Data64>& modulus);
 
+    template __global__ void ForwardCoreLowRing<Data32>(
+        Data32* polynomial_in, Data32* polynomial_out,
+        const Root<Data32>* __restrict__ root_of_unity_table,
+        Modulus<Data32> modulus, int shared_index, int N_power,
+        bool zero_padding, bool reduction_poly_check, int total_batch);
+
+    template __global__ void ForwardCoreLowRing<Data64>(
+        Data64* polynomial_in, Data64* polynomial_out,
+        const Root<Data64>* __restrict__ root_of_unity_table,
+        Modulus<Data64> modulus, int shared_index, int N_power,
+        bool zero_padding, bool reduction_poly_check, int total_batch);
+
+    template __global__ void ForwardCoreLowRing<Data32>(
+        Data32* polynomial_in, Data32* polynomial_out,
+        const Root<Data32>* __restrict__ root_of_unity_table,
+        Modulus<Data32>* modulus, int shared_index, int N_power,
+        bool zero_padding, bool reduction_poly_check, int total_batch,
+        int mod_count);
+
+    template __global__ void ForwardCoreLowRing<Data64>(
+        Data64* polynomial_in, Data64* polynomial_out,
+        const Root<Data64>* __restrict__ root_of_unity_table,
+        Modulus<Data64>* modulus, int shared_index, int N_power,
+        bool zero_padding, bool reduction_poly_check, int total_batch,
+        int mod_count);
+
     template __global__ void
     ForwardCore<Data32>(Data32* polynomial_in, Data32* polynomial_out,
                         const Root<Data32>* __restrict__ root_of_unity_table,
@@ -2824,6 +3318,32 @@ namespace gpuntt
                          int outer_iteration_count, int N_power,
                          bool zero_padding, bool not_last_kernel,
                          bool reduction_poly_check, int mod_count);
+
+    template __global__ void InverseCoreLowRing<Data32>(
+        Data32* polynomial_in, Data32* polynomial_out,
+        const Root<Data32>* __restrict__ inverse_root_of_unity_table,
+        Modulus<Data32> modulus, int shared_index, int N_power,
+        Ninverse<Data32> n_inverse, bool reduction_poly_check, int total_batch);
+
+    template __global__ void InverseCoreLowRing<Data64>(
+        Data64* polynomial_in, Data64* polynomial_out,
+        const Root<Data64>* __restrict__ inverse_root_of_unity_table,
+        Modulus<Data64> modulus, int shared_index, int N_power,
+        Ninverse<Data64> n_inverse, bool reduction_poly_check, int total_batch);
+
+    template __global__ void InverseCoreLowRing<Data32>(
+        Data32* polynomial_in, Data32* polynomial_out,
+        const Root<Data32>* __restrict__ inverse_root_of_unity_table,
+        Modulus<Data32>* modulus, int shared_index, int N_power,
+        Ninverse<Data32>* n_inverse, bool reduction_poly_check, int total_batch,
+        int mod_count);
+
+    template __global__ void InverseCoreLowRing<Data64>(
+        Data64* polynomial_in, Data64* polynomial_out,
+        const Root<Data64>* __restrict__ inverse_root_of_unity_table,
+        Modulus<Data64>* modulus, int shared_index, int N_power,
+        Ninverse<Data64>* n_inverse, bool reduction_poly_check, int total_batch,
+        int mod_count);
 
     template __global__ void InverseCore<Data32>(
         Data32* polynomial_in, Data32* polynomial_out,

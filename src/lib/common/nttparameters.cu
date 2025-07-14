@@ -83,83 +83,61 @@ namespace gpuntt
 
     template <typename T> Modulus<T> NTTParameters<T>::modulus_pool()
     {
-        customAssert(10 <= logn <= 24, "LOGN should be in range 10 to 24.");
         if constexpr (std::is_same<T, Data32>::value)
         {
-            static Data32 primes[] = {
-                268441601, 268460033, 268460033, 268582913, 268664833,
-                268369921, 269221889, 269221889, 270532609, 270532609,
-                270532609, 377487361, 377487361, 469762049, 469762049};
-
-            Modulus32 prime(primes[logn - 10]);
-            return prime;
+            customAssert(0 < logn <= 25,
+                         "LOGN should be in range 2^0 to 2^25.");
+            return Modulus32(469762049);
         }
         else
         {
-            static Data64 primes[] = {
-                576460752303421441, 576460752303419393, 576460752303415297,
-                576460752303439873, 576460752304439297, 576460752308273153,
-                576460752308273153, 576460752315482113, 576460752315482113,
-                576460752340123649, 576460752364240897, 576460752475389953,
-                576460752597024769, 576460753024843777, 576460753175838721,
-                288230377292562433, 288230383802122241, 288230385815388161,
-                288230385815388161};
-
-            Modulus64 prime(primes[logn - 10]);
-            return prime;
+            customAssert(0 < logn <= 28,
+                         "LOGN should be in range 2^0 to 2^28.");
+            return Modulus64(576460756061519873ULL);
         }
     }
 
     template <typename T> T NTTParameters<T>::omega_pool()
     {
-        customAssert(10 <= logn <= 24, "LOGN should be in range 12 to 24.");
         if constexpr (std::is_same<T, Data32>::value)
         {
-            static Data32 W[] = {171232872, 169716870, 36747374, 249229369,
-                                 4092529,   175218169, 10653696, 238764304,
-                                 240100,    23104,     179776,   19321,
-                                 38809,     1600,      169};
-
-            return W[logn - 10];
+            customAssert(0 < logn <= 25,
+                         "LOGN should be in range 2^0 to 2^25.");
+            Data32 w = 900;
+            Modulus32 mod = modulus_pool();
+            return OPERATOR32::exp(w, static_cast<Data32>(1 << (28 - logn)),
+                                   mod);
         }
         else
         {
-            static Data64 W[] = {
-                519393899572142737, 146041421535762571, 288482366111684746,
-                37048445140799662,  459782973201979845, 64800917766465203,
-                425015386842055933, 18734847765732801,  119109113519742895,
-                227584740857897520, 477282059544659462, 570131728462077067,
-                433594414095420776, 219263994987749328, 189790554094222112,
-                96649110792683523,  250648942594717784, 279172744045218282,
-                225865349704673648};
-
-            return W[logn - 10];
+            customAssert(0 < logn <= 28,
+                         "LOGN should be in range 2^0 to 2^28.");
+            Data64 w = 229929041166717729ULL;
+            Modulus64 mod = modulus_pool();
+            return OPERATOR64::exp(w, static_cast<Data64>(1 << (28 - logn)),
+                                   mod);
         }
     }
 
     template <typename T> T NTTParameters<T>::psi_pool()
     {
-        customAssert(10 <= logn <= 24, "LOGN should be in range 10 to 24.");
         if constexpr (std::is_same<T, Data32>::value)
         {
-            static Data32 PSI[] = {825353, 97805, 77090, 15787, 2023,
-                                   13237,  3264,  15452, 490,   152,
-                                   424,    139,   197,   40,    13};
-
-            return PSI[logn - 10];
+            customAssert(0 < logn <= 25,
+                         "LOGN should be in range 2^0 to 2^25.");
+            Data32 w = 30;
+            Modulus32 mod = modulus_pool();
+            return OPERATOR32::exp(w, static_cast<Data32>(1 << (28 - logn)),
+                                   mod);
         }
         else
         {
-            static Data64 PSI[] = {
-                640404000258467, 308546778929262, 238394956950829,
-                54612008597396,  8242615629351,   16141297350887,
-                3760097055997,   11571974431275,  328867687796,
-                2298846063117,   731868219707,    409596963254,
-                189266227206,    31864818375,     92067739764,
-                5214432335,      734084005,       3351406780,
-                717004697};
-
-            return PSI[logn - 10];
+            customAssert(0 < logn <= 28,
+                         "LOGN should be in range 2^0 to 2^28.");
+            Data64 psi = 4517306222ULL;
+            Modulus64 mod = modulus_pool();
+            return OPERATOR64::exp(psi, static_cast<Data64>(1 << (28 - logn)),
+                                   mod);
         }
     }
 
