@@ -118,7 +118,20 @@ Please use the below BibTeX, to cite GPU-NTT in academic papers.
       url = {https://eprint.iacr.org/2023/1410}
 }
 ```
-
+or
+```
+@ARTICLE{11003946,
+      author={Ozcan, Alisah and Javeed, Arsalan and Savas, Erkay},
+      journal={IEEE Access}, 
+      title={High-Performance Number Theoretic Transform on GPU Through radix2-CT and 4-Step Algorithms}, 
+      year={2025},
+      volume={13},
+      number={},
+      pages={87862-87883},
+      keywords={Graphics processing units;Polynomials;Instruction sets;Parallel processing;Kernel;Optimization;Memory management;Transforms;Computational efficiency;Tensors;Graphical processing unit;homomorphic cryptography;hardware acceleration;number theoretic transform;polynomial arithmetic},
+      doi={10.1109/ACCESS.2025.3570024}
+}
+```
 ## License
 This project is licensed under the [Apache License](LICENSE). For more details, please refer to the License file.
 
