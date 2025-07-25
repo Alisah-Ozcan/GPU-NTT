@@ -49,6 +49,7 @@ void GPU_NTT_Forward_Benchmark(nvbench::state& state)
     ntt_configuration<BenchmarkDataType> cfg_ntt = {
         .n_power = static_cast<int>(ring_size_logN),
         .ntt_type = FORWARD,
+        .ntt_layout = PerPolynomial,
         .reduction_poly = ReductionPolynomial::X_N_minus,
         .zero_padding = false,
         .stream = stream};
@@ -113,6 +114,7 @@ void GPU_NTT_Inverse_Benchmark(nvbench::state& state)
     ntt_configuration<BenchmarkDataType> cfg_intt = {
         .n_power = static_cast<int>(ring_size_logN),
         .ntt_type = INVERSE,
+        .ntt_layout = PerPolynomial,
         .reduction_poly = ReductionPolynomial::X_N_minus,
         .zero_padding = false,
         .mod_inverse = inv_mod_data,

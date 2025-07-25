@@ -32,6 +32,7 @@ namespace gpuntt
     {
         int n_power;
         type ntt_type;
+        NTTLayout ntt_layout;
         ReductionPolynomial reduction_poly;
         bool zero_padding;
         Ninverse<T> mod_inverse;
@@ -42,6 +43,7 @@ namespace gpuntt
     {
         int n_power;
         type ntt_type;
+        NTTLayout ntt_layout;
         ReductionPolynomial reduction_poly;
         bool zero_padding;
         Ninverse<T>* mod_inverse;
@@ -185,16 +187,86 @@ namespace gpuntt
                  int outer_iteration_count, int N_power, Ninverse<T>* n_inverse,
                  bool last_kernel, bool reduction_poly_check, int mod_count);
 
-    /*
-     * | GPU_NTT & GPU_NTT_Inplace |
+    template <typename T>
+    __global__ void
+    ForwardCoreTranspose(T* polynomial_in, T* polynomial_out,
+                         const Root<T>* __restrict__ root_of_unity_table,
+                         const Modulus<T> modulus, int log_row, int log_column,
+                         bool reduction_poly_check);
+
+    template <typename T>
+    __global__ void
+    ForwardCoreTranspose(T* polynomial_in, T* polynomial_out,
+                         const Root<T>* __restrict__ root_of_unity_table,
+                         const Modulus<T>* modulus, int log_row, int log_column,
+                         bool reduction_poly_check, int mod_count);
+
+    template <typename T>
+    __global__ void InverseCoreTranspose(
+        T* polynomial_in, T* polynomial_out,
+        const Root<T>* __restrict__ inverse_root_of_unity_table,
+        Modulus<T> modulus, Ninverse<T> n_inverse, int log_row, int log_column,
+        bool reduction_poly_check);
+
+    template <typename T>
+    __global__ void InverseCoreTranspose(
+        T* polynomial_in, T* polynomial_out,
+        const Root<T>* __restrict__ inverse_root_of_unity_table,
+        Modulus<T>* modulus, Ninverse<T>* n_inverse, int log_row,
+        int log_column, bool reduction_poly_check, int mod_count);
+
+    /**
+     * @brief Performs Number Theoretic Transform (NTT) over batched polynomials
+     * on GPU.
      *
-     * [batch_size]: polynomial count
+     * This function interprets the input data as a 2D matrix of size
+     * (batch_size × poly_size), where each row represents a single polynomial
+     * of degree (poly_size - 1). It applies the NTT independently on each row —
+     * i.e., a *row-wise NTT*.
      *
-     * example1: batch_size = 8
-     *   - poly order   : [poly1, poly2, poly3, poly4, poly5, poly6, poly7,
-     * poly8]
-     *   - modulus order: [ q1  ,   q1 ,   q1 ,   q1 ,   q1 ,   q1 ,   q1 ,   q1
-     * ]
+     * Optionally, a different kernel can be used to perform **column-wise NTT**
+     * on the same memory layout without requiring transposition.
+     *
+     * # Data Layout in Memory
+     * Let the input pointer represent `batch_size` polynomials, each of size
+     * `poly_size`. The layout in memory is assumed to be *row-major*, like
+     * this:
+     *
+     * ┌──────────────────────────── poly_size ───────────────────────────┐
+     * │   a₀₀    a₀₁   ...    a₀ₙ₋₁  ← Polynomial 0 (Row 0) (mod q)      │
+     * │   a₁₀    a₁₁   ...    a₁ₙ₋₁  ← Polynomial 1 (Row 1) (mod q)      │
+     * │   a₂₀    a₂₁   ...    a₂ₙ₋₁  ← Polynomial 2 (Row 2) (mod q)      │
+     * │    ⋮     ⋮     ⋱       ⋮                                      │
+     * │   aₘ₋₁₀  aₘ₋₁₁ ...  aₘ₋₁ₙ₋₁  ← Polynomial (m-1) (Row m-1) (mod q)│
+     * └──────────────────────────────────────────────────────────────────┘
+     *   ↑
+     *   └─ Each row contains one polynomial with `poly_size` coefficients.
+     *      These are transformed *independently* in a row-wise manner.
+     *
+     * # Row-wise NTT (Standard Mode)
+     * Applies NTT to each polynomial (i.e., each row), as if calling:
+     *
+     *
+     * for (int i = 0; i < batch_size; ++i)
+     *     NTT(input[i * poly_size : (i + 1) * poly_size]);
+     *
+     *
+     * # Column-wise NTT (Transpose-free Mode)
+     * An alternative mode where the same memory is interpreted **column-wise**:
+     *
+     * ┌────────────────── Columns (same index across batches)──────────────┐
+     * │   a₀₀    a₁₀  ...    aₘ₋₁₀  ← Coefficient 0 of all polys(mod q)    │
+     * │   a₀₁    a₁₁  ...    aₘ₋₁₁  ← Coefficient 1 of all polys(mod q)    │
+     * │   a₀₂    a₁₂  ...    aₘ₋₁₂  ← Coefficient 2 of all polys(mod q)    │
+     * │    ⋮      ⋮     ⋱    ⋮                                          │
+     * │   a₀ₙ₋₁  a₁ₙ₋₁ ...  aₘ₋₁ₙ₋₁ ← Coefficient (n-1) of all polys(mod q)│
+     * └────────────────────────────────────────────────────────────────────┘
+     *   ↑
+     *   └─ Each column is a sequence: same-index coefficients from all
+     * polynomials. NTT is applied to each column independently.
+     *
+     * No transposition is performed — both modes read from the same memory
+     * layout but interpret it differently depending on the NTT strategy.
      */
     template <typename T>
     __host__ void GPU_NTT(T* device_in, T* device_out,
@@ -206,23 +278,58 @@ namespace gpuntt
                                   Modulus<T> modulus, ntt_configuration<T> cfg,
                                   int batch_size);
 
-    /*
-     * | GPU_NTT & GPU_NTT_Inplace |
+    /**
+     * @brief Performs Number Theoretic Transform (NTT) over batched polynomials
+     * on GPU.
      *
-     * [batch_size]: polynomial count
-     * [mod_count]:  modulus count
+     * This function interprets the input data as a 2D matrix of size
+     * (batch_size × poly_size), where each row represents a single polynomial
+     * of degree (poly_size - 1). It applies the NTT independently on each row —
+     * i.e., a *row-wise NTT*.
      *
-     * example1: batch_size = 8, mod_count = 1
-     *   - poly order   : [poly1, poly2, poly3, poly4, poly5, poly6, poly7,
-     * poly8]
-     *   - modulus order: [ q1  ,   q1 ,   q1 ,   q1 ,   q1 ,   q1 ,   q1 ,   q1
-     * ]
+     * Optionally, a different kernel can be used to perform **column-wise NTT**
+     * on the same memory layout without requiring transposition.
      *
-     * example2: batch_size = 8, mod_count = 4
-     *   - poly order   : [poly1, poly2, poly3, poly4, poly5, poly6, poly7,
-     * poly8]
-     *   - modulus order: [ q1  ,   q2 ,   q3 ,   q4 ,   q1 ,   q2 ,   q3 ,   q4
-     * ]
+     * # Data Layout in Memory
+     * Let the input pointer represent `batch_size` polynomials, each of size
+     * `poly_size`. The layout in memory is assumed to be *row-major*, like
+     * this:
+     *
+     * ┌──────────────────────────── poly_size ────────────────────────────┐
+     * │   a₀₀    a₀₁   ...    a₀ₙ₋₁  ← Polynomial 0 (Row 0) (mod q0)      │
+     * │   a₁₀    a₁₁   ...    a₁ₙ₋₁  ← Polynomial 1 (Row 1) (mod q1)      │
+     * │   a₂₀    a₂₁   ...    a₂ₙ₋₁  ← Polynomial 2 (Row 2) (mod q2)      │
+     * │    ⋮     ⋮     ⋱       ⋮                                       │
+     * │   aₘ₋₁₀  aₘ₋₁₁ ...  aₘ₋₁ₙ₋₁  ← Polynomial (m-1) (Row m-1) (mod qx)│
+     * └───────────────────────────────────────────────────────────────────┘
+     *   ↑
+     *   └─ Each row contains one polynomial with `poly_size` coefficients.
+     *      These are transformed *independently* in a row-wise manner.
+     *
+     * # Row-wise NTT (Standard Mode)
+     * Applies NTT to each polynomial (i.e., each row), as if calling:
+     *
+     *
+     * for (int i = 0; i < batch_size; ++i)
+     *     NTT(input[i * poly_size : (i + 1) * poly_size]);
+     *
+     *
+     * # Column-wise NTT (Transpose-free Mode)
+     * An alternative mode where the same memory is interpreted **column-wise**:
+     *
+     * ┌────────────────── Columns (same index across batches)───────────────┐
+     * │   a₀₀    a₁₀  ...    aₘ₋₁₀  ← Coefficient 0 of all polys(mod q0)    │
+     * │   a₀₁    a₁₁  ...    aₘ₋₁₁  ← Coefficient 1 of all polys(mod q1)    │
+     * │   a₀₂    a₁₂  ...    aₘ₋₁₂  ← Coefficient 2 of all polys(mod q2)    │
+     * │    ⋮      ⋮     ⋱    ⋮                                           │
+     * │   a₀ₙ₋₁  a₁ₙ₋₁ ...  aₘ₋₁ₙ₋₁ ← Coefficient (n-1) of all polys(mod qx)│
+     * └─────────────────────────────────────────────────────────────────────┘
+     *   ↑
+     *   └─ Each column is a sequence: same-index coefficients from all
+     * polynomials. NTT is applied to each column independently.
+     *
+     * No transposition is performed — both modes read from the same memory
+     * layout but interpret it differently depending on the NTT strategy.
      */
     template <typename T>
     __host__ void GPU_NTT(T* device_in, T* device_out,

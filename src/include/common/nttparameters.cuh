@@ -22,6 +22,13 @@ namespace gpuntt
         INVERSE
     };
 
+    enum NTTLayout
+    {
+        PerPolynomial, // NTT per row (i.e., per polynomial)
+        PerCoefficient // NTT per column (i.e., per coefficient index across
+                       // batch)
+    };
+
     enum ReductionPolynomial
     {
         X_N_plus,
