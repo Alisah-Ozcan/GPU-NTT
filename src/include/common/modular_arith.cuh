@@ -11,11 +11,12 @@
 #include <string>
 #include <vector>
 #include <cstdint>
+#include <type_traits>
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
 
 typedef std::int32_t Data32s; // signed 32-bit integer
-typedef std::uint32_t Data32; // unsigned 32-bit integer  
+typedef std::uint32_t Data32; // unsigned 32-bit integer
 typedef std::uint32_t Root32;
 typedef std::uint32_t Ninverse32;
 
@@ -364,6 +365,42 @@ namespace modular_operation_gpu
                 return (z.value.x >= modulus.value)
                            ? (z.value.x - modulus.value)
                            : z.value.x;
+            }
+        }
+
+        // Converts a potentially negative signed input into [0, modulus) range.
+        static __device__ __forceinline__ T1
+        reduce(const typename std::make_signed<T1>::type& input,
+               const Modulus<T1>& modulus)
+        {
+            if (input < 0)
+            {
+                return modulus.value -
+                       static_cast<T1>(-static_cast<Data64s>(input));
+            }
+            else
+            {
+                return static_cast<T1>(input);
+            }
+        }
+
+        // Converts an unsigned input in [0, modulus) into a centered range
+        // [−modulus/2, modulus/2).
+        static __device__ __forceinline__ typename std::make_signed<T1>::type
+        centered_reduction(const T1& input, const Modulus<T1>& modulus)
+        {
+            using SignedT = typename std::make_signed<T1>::type;
+
+            T1 half_mod = modulus.value >> 1;
+
+            if (input > half_mod)
+            {
+                return static_cast<SignedT>(input) -
+                       static_cast<SignedT>(modulus.value);
+            }
+            else
+            {
+                return static_cast<SignedT>(input);
             }
         }
 
