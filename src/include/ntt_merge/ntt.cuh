@@ -77,142 +77,169 @@ namespace gpuntt
     // It provides multiple NTT operation with using single prime.
     template <typename T>
     __global__ void
-    ForwardCoreLowRing(T* polynomial_in, T* polynomial_out,
-                       const Root<T>* __restrict__ root_of_unity_table,
-                       Modulus<T> modulus, int shared_index, int N_power,
-                       bool zero_padding, bool reduction_poly_check,
-                       int total_batch);
+    ForwardCoreLowRing(T* polynomial_in,
+                       typename std::make_unsigned<T>::type* polynomial_out,
+                       const Root<typename std::make_unsigned<
+                           T>::type>* __restrict__ root_of_unity_table,
+                       Modulus<typename std::make_unsigned<T>::type> modulus,
+                       int shared_index, int N_power, bool zero_padding,
+                       bool reduction_poly_check, int total_batch);
 
     // It provides multiple NTT operation with using single prime.
     template <typename T>
-    __global__ void
-    ForwardCoreLowRing(T* polynomial_in, T* polynomial_out,
-                       const Root<T>* __restrict__ root_of_unity_table,
-                       Modulus<T>* modulus, int shared_index, int N_power,
-                       bool zero_padding, bool reduction_poly_check,
-                       int total_batch, int mod_count);
+    __global__ void ForwardCoreLowRing(
+        T* polynomial_in, typename std::make_unsigned<T>::type* polynomial_out,
+        const Root<typename std::make_unsigned<
+            T>::type>* __restrict__ root_of_unity_table,
+        Modulus<typename std::make_unsigned<T>::type>* modulus,
+        int shared_index, int N_power, bool zero_padding,
+        bool reduction_poly_check, int total_batch, int mod_count);
 
     // It provides multiple NTT operation with using single prime.
     template <typename T>
-    __global__ void ForwardCore(T* polynomial_in, T* polynomial_out,
-                                const Root<T>* __restrict__ root_of_unity_table,
-                                Modulus<T> modulus, int shared_index, int logm,
-                                int outer_iteration_count, int N_power,
-                                bool zero_padding, bool not_last_kernel,
-                                bool reduction_poly_check);
-
-    // It provides multiple NTT operation with using multiple prime for
-    // RNS(Residue Number System).
-    template <typename T>
-    __global__ void ForwardCore(T* polynomial_in, T* polynomial_out,
-                                const Root<T>* __restrict__ root_of_unity_table,
-                                Modulus<T>* modulus, int shared_index, int logm,
-                                int outer_iteration_count, int N_power,
-                                bool zero_padding, bool not_last_kernel,
-                                bool reduction_poly_check, int mod_count);
-
-    // It provides multiple NTT operation with using single prime.
-    template <typename T>
-    __global__ void
-    ForwardCore_(T* polynomial_in, T* polynomial_out,
-                 const Root<T>* __restrict__ root_of_unity_table,
-                 Modulus<T> modulus, int shared_index, int logm,
-                 int outer_iteration_count, int N_power, bool zero_padding,
-                 bool not_last_kernel, bool reduction_poly_check);
+    __global__ void ForwardCore(
+        T* polynomial_in, typename std::make_unsigned<T>::type* polynomial_out,
+        const Root<typename std::make_unsigned<
+            T>::type>* __restrict__ root_of_unity_table,
+        Modulus<typename std::make_unsigned<T>::type> modulus, int shared_index,
+        int logm, int outer_iteration_count, int N_power, bool zero_padding,
+        bool not_last_kernel, bool reduction_poly_check);
 
     // It provides multiple NTT operation with using multiple prime for
     // RNS(Residue Number System).
     template <typename T>
     __global__ void
-    ForwardCore_(T* polynomial_in, T* polynomial_out,
-                 const Root<T>* __restrict__ root_of_unity_table,
-                 Modulus<T>* modulus, int shared_index, int logm,
-                 int outer_iteration_count, int N_power, bool zero_padding,
-                 bool not_last_kernel, bool reduction_poly_check,
-                 int mod_count);
+    ForwardCore(T* polynomial_in,
+                typename std::make_unsigned<T>::type* polynomial_out,
+                const Root<typename std::make_unsigned<
+                    T>::type>* __restrict__ root_of_unity_table,
+                Modulus<typename std::make_unsigned<T>::type>* modulus,
+                int shared_index, int logm, int outer_iteration_count,
+                int N_power, bool zero_padding, bool not_last_kernel,
+                bool reduction_poly_check, int mod_count);
 
     // It provides multiple NTT operation with using single prime.
     template <typename T>
-    __global__ void
-    InverseCoreLowRing(T* polynomial_in, T* polynomial_out,
-                       const Root<T>* __restrict__ inverse_root_of_unity_table,
-                       Modulus<T> modulus, int shared_index, int N_power,
-                       Ninverse<T> n_inverse, bool reduction_poly_check,
-                       int total_batch);
-
-    // It provides multiple NTT operation with using single prime.
-    template <typename T>
-    __global__ void
-    InverseCoreLowRing(T* polynomial_in, T* polynomial_out,
-                       const Root<T>* __restrict__ inverse_root_of_unity_table,
-                       Modulus<T>* modulus, int shared_index, int N_power,
-                       Ninverse<T>* n_inverse, bool reduction_poly_check,
-                       int total_batch, int mod_count);
-
-    // It provides multiple NTT operation with using single prime.
-    template <typename T>
-    __global__ void
-    InverseCore(T* polynomial_in, T* polynomial_out,
-                const Root<T>* __restrict__ inverse_root_of_unity_table,
-                Modulus<T> modulus, int shared_index, int logm, int k,
-                int outer_iteration_count, int N_power, Ninverse<T> n_inverse,
-                bool last_kernel, bool reduction_poly_check);
+    __global__ void ForwardCore_(
+        T* polynomial_in, typename std::make_unsigned<T>::type* polynomial_out,
+        const Root<typename std::make_unsigned<
+            T>::type>* __restrict__ root_of_unity_table,
+        Modulus<typename std::make_unsigned<T>::type> modulus, int shared_index,
+        int logm, int outer_iteration_count, int N_power, bool zero_padding,
+        bool not_last_kernel, bool reduction_poly_check);
 
     // It provides multiple NTT operation with using multiple prime for
     // RNS(Residue Number System).
     template <typename T>
     __global__ void
-    InverseCore(T* polynomial_in, T* polynomial_out,
-                const Root<T>* __restrict__ inverse_root_of_unity_table,
-                Modulus<T>* modulus, int shared_index, int logm, int k,
-                int outer_iteration_count, int N_power, Ninverse<T>* n_inverse,
-                bool last_kernel, bool reduction_poly_check, int mod_count);
+    ForwardCore_(T* polynomial_in,
+                 typename std::make_unsigned<T>::type* polynomial_out,
+                 const Root<typename std::make_unsigned<
+                     T>::type>* __restrict__ root_of_unity_table,
+                 Modulus<typename std::make_unsigned<T>::type>* modulus,
+                 int shared_index, int logm, int outer_iteration_count,
+                 int N_power, bool zero_padding, bool not_last_kernel,
+                 bool reduction_poly_check, int mod_count);
 
     // It provides multiple NTT operation with using single prime.
     template <typename T>
-    __global__ void
-    InverseCore_(T* polynomial_in, T* polynomial_out,
-                 const Root<T>* __restrict__ inverse_root_of_unity_table,
-                 Modulus<T> modulus, int shared_index, int logm, int k,
-                 int outer_iteration_count, int N_power, Ninverse<T> n_inverse,
-                 bool last_kernel, bool reduction_poly_check);
+    __global__ void InverseCoreLowRing(
+        typename std::make_unsigned<T>::type* polynomial_in, T* polynomial_out,
+        const Root<typename std::make_unsigned<
+            T>::type>* __restrict__ inverse_root_of_unity_table,
+        Modulus<typename std::make_unsigned<T>::type> modulus, int shared_index,
+        int N_power, Ninverse<typename std::make_unsigned<T>::type> n_inverse,
+        bool reduction_poly_check, int total_batch);
+
+    // It provides multiple NTT operation with using single prime.
+    template <typename T>
+    __global__ void InverseCoreLowRing(
+        typename std::make_unsigned<T>::type* polynomial_in, T* polynomial_out,
+        const Root<typename std::make_unsigned<
+            T>::type>* __restrict__ inverse_root_of_unity_table,
+        Modulus<typename std::make_unsigned<T>::type>* modulus,
+        int shared_index, int N_power,
+        Ninverse<typename std::make_unsigned<T>::type>* n_inverse,
+        bool reduction_poly_check, int total_batch, int mod_count);
+
+    // It provides multiple NTT operation with using single prime.
+    template <typename T>
+    __global__ void InverseCore(
+        typename std::make_unsigned<T>::type* polynomial_in, T* polynomial_out,
+        const Root<typename std::make_unsigned<
+            T>::type>* __restrict__ inverse_root_of_unity_table,
+        Modulus<typename std::make_unsigned<T>::type> modulus, int shared_index,
+        int logm, int k, int outer_iteration_count, int N_power,
+        Ninverse<typename std::make_unsigned<T>::type> n_inverse,
+        bool last_kernel, bool reduction_poly_check);
 
     // It provides multiple NTT operation with using multiple prime for
     // RNS(Residue Number System).
     template <typename T>
-    __global__ void
-    InverseCore_(T* polynomial_in, T* polynomial_out,
-                 const Root<T>* __restrict__ inverse_root_of_unity_table,
-                 Modulus<T>* modulus, int shared_index, int logm, int k,
-                 int outer_iteration_count, int N_power, Ninverse<T>* n_inverse,
-                 bool last_kernel, bool reduction_poly_check, int mod_count);
+    __global__ void InverseCore(
+        typename std::make_unsigned<T>::type* polynomial_in, T* polynomial_out,
+        const Root<typename std::make_unsigned<
+            T>::type>* __restrict__ inverse_root_of_unity_table,
+        Modulus<typename std::make_unsigned<T>::type>* modulus,
+        int shared_index, int logm, int k, int outer_iteration_count,
+        int N_power, Ninverse<typename std::make_unsigned<T>::type>* n_inverse,
+        bool last_kernel, bool reduction_poly_check, int mod_count);
+
+    // It provides multiple NTT operation with using single prime.
+    template <typename T>
+    __global__ void InverseCore_(
+        typename std::make_unsigned<T>::type* polynomial_in, T* polynomial_out,
+        const Root<typename std::make_unsigned<
+            T>::type>* __restrict__ inverse_root_of_unity_table,
+        Modulus<typename std::make_unsigned<T>::type> modulus, int shared_index,
+        int logm, int k, int outer_iteration_count, int N_power,
+        Ninverse<typename std::make_unsigned<T>::type> n_inverse,
+        bool last_kernel, bool reduction_poly_check);
+
+    // It provides multiple NTT operation with using multiple prime for
+    // RNS(Residue Number System).
+    template <typename T>
+    __global__ void InverseCore_(
+        typename std::make_unsigned<T>::type* polynomial_in, T* polynomial_out,
+        const Root<typename std::make_unsigned<
+            T>::type>* __restrict__ inverse_root_of_unity_table,
+        Modulus<typename std::make_unsigned<T>::type>* modulus,
+        int shared_index, int logm, int k, int outer_iteration_count,
+        int N_power, Ninverse<typename std::make_unsigned<T>::type>* n_inverse,
+        bool last_kernel, bool reduction_poly_check, int mod_count);
 
     template <typename T>
-    __global__ void
-    ForwardCoreTranspose(T* polynomial_in, T* polynomial_out,
-                         const Root<T>* __restrict__ root_of_unity_table,
-                         const Modulus<T> modulus, int log_row, int log_column,
-                         bool reduction_poly_check);
+    __global__ void ForwardCoreTranspose(
+        T* polynomial_in, typename std::make_unsigned<T>::type* polynomial_out,
+        const Root<typename std::make_unsigned<
+            T>::type>* __restrict__ root_of_unity_table,
+        const Modulus<typename std::make_unsigned<T>::type> modulus,
+        int log_row, int log_column, bool reduction_poly_check);
 
     template <typename T>
-    __global__ void
-    ForwardCoreTranspose(T* polynomial_in, T* polynomial_out,
-                         const Root<T>* __restrict__ root_of_unity_table,
-                         const Modulus<T>* modulus, int log_row, int log_column,
-                         bool reduction_poly_check, int mod_count);
+    __global__ void ForwardCoreTranspose(
+        T* polynomial_in, typename std::make_unsigned<T>::type* polynomial_out,
+        const Root<typename std::make_unsigned<
+            T>::type>* __restrict__ root_of_unity_table,
+        const Modulus<typename std::make_unsigned<T>::type>* modulus,
+        int log_row, int log_column, bool reduction_poly_check, int mod_count);
 
     template <typename T>
     __global__ void InverseCoreTranspose(
-        T* polynomial_in, T* polynomial_out,
-        const Root<T>* __restrict__ inverse_root_of_unity_table,
-        Modulus<T> modulus, Ninverse<T> n_inverse, int log_row, int log_column,
-        bool reduction_poly_check);
+        typename std::make_unsigned<T>::type* polynomial_in, T* polynomial_out,
+        const Root<typename std::make_unsigned<
+            T>::type>* __restrict__ inverse_root_of_unity_table,
+        Modulus<typename std::make_unsigned<T>::type> modulus,
+        Ninverse<typename std::make_unsigned<T>::type> n_inverse, int log_row,
+        int log_column, bool reduction_poly_check);
 
     template <typename T>
     __global__ void InverseCoreTranspose(
-        T* polynomial_in, T* polynomial_out,
-        const Root<T>* __restrict__ inverse_root_of_unity_table,
-        Modulus<T>* modulus, Ninverse<T>* n_inverse, int log_row,
+        typename std::make_unsigned<T>::type* polynomial_in, T* polynomial_out,
+        const Root<typename std::make_unsigned<
+            T>::type>* __restrict__ inverse_root_of_unity_table,
+        Modulus<typename std::make_unsigned<T>::type>* modulus,
+        Ninverse<typename std::make_unsigned<T>::type>* n_inverse, int log_row,
         int log_column, bool reduction_poly_check, int mod_count);
 
     /**
@@ -269,14 +296,31 @@ namespace gpuntt
      * layout but interpret it differently depending on the NTT strategy.
      */
     template <typename T>
-    __host__ void GPU_NTT(T* device_in, T* device_out,
-                          Root<T>* root_of_unity_table, Modulus<T> modulus,
-                          ntt_configuration<T> cfg, int batch_size);
+    __host__ void
+    GPU_NTT(T* device_in, typename std::make_unsigned<T>::type* device_out,
+            Root<typename std::make_unsigned<T>::type>* root_of_unity_table,
+            Modulus<typename std::make_unsigned<T>::type> modulus,
+            ntt_configuration<typename std::make_unsigned<T>::type> cfg,
+            int batch_size);
+
+    template <typename T>
+    __host__ void
+    GPU_INTT(typename std::make_unsigned<T>::type* device_in, T* device_out,
+             Root<typename std::make_unsigned<T>::type>* root_of_unity_table,
+             Modulus<typename std::make_unsigned<T>::type> modulus,
+             ntt_configuration<typename std::make_unsigned<T>::type> cfg,
+             int batch_size);
 
     template <typename T>
     __host__ void GPU_NTT_Inplace(T* device_inout, Root<T>* root_of_unity_table,
                                   Modulus<T> modulus, ntt_configuration<T> cfg,
                                   int batch_size);
+
+    template <typename T>
+    __host__ void GPU_INTT_Inplace(T* device_inout,
+                                   Root<T>* root_of_unity_table,
+                                   Modulus<T> modulus, ntt_configuration<T> cfg,
+                                   int batch_size);
 
     /**
      * @brief Performs Number Theoretic Transform (NTT) over batched polynomials
@@ -332,16 +376,32 @@ namespace gpuntt
      * layout but interpret it differently depending on the NTT strategy.
      */
     template <typename T>
-    __host__ void GPU_NTT(T* device_in, T* device_out,
-                          Root<T>* root_of_unity_table, Modulus<T>* modulus,
-                          ntt_rns_configuration<T> cfg, int batch_size,
-                          int mod_count);
+    __host__ void
+    GPU_NTT(T* device_in, typename std::make_unsigned<T>::type* device_out,
+            Root<typename std::make_unsigned<T>::type>* root_of_unity_table,
+            Modulus<typename std::make_unsigned<T>::type>* modulus,
+            ntt_rns_configuration<typename std::make_unsigned<T>::type> cfg,
+            int batch_size, int mod_count);
+
+    template <typename T>
+    __host__ void
+    GPU_INTT(typename std::make_unsigned<T>::type* device_in, T* device_out,
+             Root<typename std::make_unsigned<T>::type>* root_of_unity_table,
+             Modulus<typename std::make_unsigned<T>::type>* modulus,
+             ntt_rns_configuration<typename std::make_unsigned<T>::type> cfg,
+             int batch_size, int mod_count);
 
     template <typename T>
     __host__ void GPU_NTT_Inplace(T* device_inout, Root<T>* root_of_unity_table,
                                   Modulus<T>* modulus,
                                   ntt_rns_configuration<T> cfg, int batch_size,
                                   int mod_count);
+
+    template <typename T>
+    __host__ void
+    GPU_INTT_Inplace(T* device_inout, Root<T>* root_of_unity_table,
+                     Modulus<T>* modulus, ntt_rns_configuration<T> cfg,
+                     int batch_size, int mod_count);
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 

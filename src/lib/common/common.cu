@@ -47,4 +47,10 @@ namespace gpuntt
     template bool check_result<std::uint32_t>(std::uint32_t* input1,
                                               std::uint32_t* input2, int size);
 
+    template bool check_result<std::int64_t>(std::int64_t* input1,
+                                             std::int64_t* input2, int size);
+
+    template bool check_result<std::int32_t>(std::int32_t* input1,
+                                             std::int32_t* input2, int size);
+
 } // namespace gpuntt

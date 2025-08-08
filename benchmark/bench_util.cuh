@@ -48,8 +48,7 @@ template <typename T> struct random_functor
         }
         else if constexpr (std::is_same<T, std::uint64_t>::value)
         {
-            thrust::uniform_int_distribution<std::uint64_t> dist(
-                0, ULLONG_MAX);
+            thrust::uniform_int_distribution<std::uint64_t> dist(0, ULLONG_MAX);
             return dist(rng);
         }
         else
