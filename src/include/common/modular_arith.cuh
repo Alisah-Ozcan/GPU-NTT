@@ -10,16 +10,19 @@
 #include <cinttypes>
 #include <string>
 #include <vector>
+#include <cstdint>
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
 
-typedef unsigned Data32;
-typedef unsigned Root32;
-typedef unsigned Ninverse32;
+typedef std::int32_t Data32s; // signed 32-bit integer
+typedef std::uint32_t Data32; // unsigned 32-bit integer  
+typedef std::uint32_t Root32;
+typedef std::uint32_t Ninverse32;
 
-typedef unsigned long long Data64;
-typedef unsigned long long Root64;
-typedef unsigned long long Ninverse64;
+typedef std::int64_t Data64s; // signed 64-bit integer
+typedef std::uint64_t Data64; // unsigned 64-bit integer
+typedef std::uint64_t Root64;
+typedef std::uint64_t Ninverse64;
 
 template <typename T1> struct Modulus
 {
@@ -187,12 +190,6 @@ namespace modular_operation_gpu
                 value.y = 0;
             }
 
-            __device__ __forceinline__ uint128_t(const uint64_t& input)
-            {
-                value.x = input;
-                value.y = 0;
-            }
-
             __device__ __forceinline__ uint128_t(const Data64& input)
             {
                 value.x = input;
@@ -212,7 +209,7 @@ namespace modular_operation_gpu
             }
 
             __device__ __forceinline__ uint128_t
-            operator<<(const unsigned& shift)
+            operator<<(const std::uint32_t& shift)
             {
                 uint128_t result;
 
@@ -224,7 +221,7 @@ namespace modular_operation_gpu
             }
 
             __device__ __forceinline__ uint128_t
-            operator>>(const unsigned& shift)
+            operator>>(const std::uint32_t& shift)
             {
                 uint128_t result;
 

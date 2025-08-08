@@ -41,11 +41,11 @@ namespace gpuntt
         return chk;
     }
 
-    template bool check_result<unsigned long long>(unsigned long long* input1,
-                                                   unsigned long long* input2,
+    template bool check_result<std::uint64_t>(std::uint64_t* input1,
+                                                   std::uint64_t* input2,
                                                    int size);
 
-    template bool check_result<unsigned>(unsigned* input1, unsigned* input2,
+    template bool check_result<std::uint32_t>(std::uint32_t* input1, std::uint32_t* input2,
                                          int size);
 
 } // namespace gpuntt

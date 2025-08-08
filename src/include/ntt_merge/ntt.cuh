@@ -17,12 +17,12 @@
 // --------------------- //
 // Authors: Alisah Ozcan
 // --------------------- //
-typedef unsigned location_t;
+typedef std::uint32_t location_t;
 /*
 #if MAX_LOG2_RINGSIZE <= 32
-typedef unsigned location_t;
+typedef std::uint32_t location_t;
 #else
-typedef unsigned long long location_t;
+typedef std::uint64_t location_t;
 #endif
 */
 

@@ -22,9 +22,9 @@
 
 template <typename T> struct random_functor
 {
-    unsigned seed;
+    std::uint32_t seed;
 
-    __host__ __device__ random_functor(unsigned _seed) : seed(_seed) {}
+    __host__ __device__ random_functor(std::uint32_t _seed) : seed(_seed) {}
 
     __host__ __device__ T operator()(const int n) const
     {
@@ -41,14 +41,14 @@ template <typename T> struct random_functor
             thrust::uniform_real_distribution<double> dist(0.0, 1.0);
             return dist(rng);
         }
-        else if constexpr (std::is_same<T, unsigned>::value)
+        else if constexpr (std::is_same<T, std::uint32_t>::value)
         {
-            thrust::uniform_int_distribution<unsigned> dist(0, UINT_MAX);
+            thrust::uniform_int_distribution<std::uint32_t> dist(0, UINT_MAX);
             return dist(rng);
         }
-        else if constexpr (std::is_same<T, unsigned long long>::value)
+        else if constexpr (std::is_same<T, std::uint64_t>::value)
         {
-            thrust::uniform_int_distribution<unsigned long long> dist(
+            thrust::uniform_int_distribution<std::uint64_t> dist(
                 0, ULLONG_MAX);
             return dist(rng);
         }
