@@ -13,7 +13,7 @@ You no longer need to manually select a reduction method, as this version is now
 
 ### Requirements
 
-- [CMake](https://cmake.org/download/) >=3.2
+- [CMake](https://cmake.org/download/) >=3.26 (package config and CUDA arch handling rely on 3.26+)
 - [GCC](https://gcc.gnu.org/)
 - [CUDA Toolkit](https://developer.nvidia.com/cuda-downloads)
 

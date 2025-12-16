@@ -9,14 +9,6 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(nvbench)
 
-include(FetchContent)
-FetchContent_Declare(
-  thrust
-  GIT_REPOSITORY https://github.com/NVIDIA/thrust.git
-  GIT_TAG master 
-)
-FetchContent_MakeAvailable(thrust)
-
 set(EXECUTABLES
     benchmark_merge_ntt bench_merge_ntt.cu
     benchmark_4step_ntt bench_4step_ntt.cu
@@ -44,7 +36,6 @@ foreach(i RANGE 0 ${EXECUTABLES_COUNT_LOOP})
     list(GET EXECUTABLES ${index2} source)
     add_benchmark(${exe} ${source})
 endforeach()
-
 
 
 

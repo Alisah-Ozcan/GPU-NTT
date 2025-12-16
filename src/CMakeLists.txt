@@ -1,20 +1,42 @@
-file(GLOB_RECURSE LIB_SOURCE_FILES
-    RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}
-    CONFIGURE_DEPENDS
-    lib/common/*.cu
-    lib/ntt_4step/*.cu
-    lib/ntt_merge/*.cu
+set(LIB_SOURCE_FILES
+    lib/common/common.cu
+    lib/common/nttparameters.cu
+    lib/ntt_4step/ntt_4step.cu
+    lib/ntt_4step/ntt_4step_cpu.cu
+    lib/ntt_merge/ntt.cu
+    lib/ntt_merge/ntt_cpu.cu
 )
 
-file(GLOB_RECURSE LIB_HEADER_FILES
-    RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}
-    CONFIGURE_DEPENDS
-    include/common/*.cuh
-    include/ntt_4step/*.cuh
-    include/ntt_merge/*.cuh
+set(LIB_HEADER_FILES
+    include/common/common.cuh
+    include/common/nttparameters.cuh
+    include/common/modular_arith.cuh
+    include/ntt_4step/ntt_4step.cuh
+    include/ntt_4step/ntt_4step_cpu.cuh
+    include/ntt_merge/ntt.cuh
+    include/ntt_merge/ntt_cpu.cuh
 )
 
 add_library(ntt STATIC ${LIB_SOURCE_FILES})
+add_library(GPUNTT::ntt ALIAS ntt)
+target_compile_features(ntt PUBLIC cxx_std_17)
+target_compile_options(ntt PRIVATE
+    $<$<CONFIG:Release>:-O3 -DNDEBUG>
+    $<$<CONFIG:RelWithDebInfo>:-O3 -g -DNDEBUG>
+    $<$<CONFIG:MinSizeRel>:-Os -DNDEBUG>
+    $<$<CONFIG:Debug>:-g>
+    $<$<AND:$<CONFIG:Debug>,$<COMPILE_LANGUAGE:CUDA>>:--generate-line-info>
+    $<$<AND:$<CONFIG:RelWithDebInfo>,$<COMPILE_LANGUAGE:CUDA>>:--generate-line-info>
+)
+option(GPUNTT_ENABLE_WARNINGS "Enable extra warnings for GPUNTT" OFF)
+if(GPUNTT_ENABLE_WARNINGS)
+    target_compile_options(ntt PRIVATE
+        $<$<COMPILE_LANGUAGE:CXX>:-Wall -Wextra -Wpedantic>
+        $<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler=-Wall,-Wextra,-Wpedantic>
+    )
+endif()
+
+target_link_libraries(ntt PUBLIC CUDA::cudart)
 
 set_target_properties(ntt PROPERTIES
   VERSION ${PROJECT_VERSION}
@@ -34,9 +56,9 @@ target_include_directories(
 set_target_properties(ntt PROPERTIES
         CUDA_SEPARABLE_COMPILATION ON
         POSITION_INDEPENDENT_CODE ON
-        CMAKE_CUDA_RESOLVE_DEVICE_SYMBOLS ON
+        CUDA_RESOLVE_DEVICE_SYMBOLS ON
         CUDA_RUNTIME_LIBRARY Static
-        CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES}
+        CUDA_ARCHITECTURES "${CMAKE_CUDA_ARCHITECTURES}"
 )
 
 install(TARGETS ntt
@@ -46,4 +68,7 @@ install(TARGETS ntt
   ARCHIVE DESTINATION ${ARCHIVE_DESTINATION}
 )
 
-install(FILES ${LIB_HEADER_FILES} DESTINATION ${INCLUDES_INSTALL_DIR})
+install(
+    DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/
+    DESTINATION ${INCLUDES_INSTALL_DIR}
+)
