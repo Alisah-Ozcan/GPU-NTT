@@ -67,12 +67,28 @@ namespace gpuntt
     };
 
     template <typename T>
-    __device__ void CooleyTukeyUnit(T& U, T& V, const Root<T>& root,
-                                    const Modulus<T>& modulus);
+    __device__ __forceinline__ void CooleyTukeyUnit(T& U, T& V, const Root<T>& root,
+                                    const Modulus<T>& modulus)
+    {
+        T u_ = U;
+        T v_ = OPERATOR_GPU<T>::mult(V, root, modulus);
+
+        U = OPERATOR_GPU<T>::add(u_, v_, modulus);
+        V = OPERATOR_GPU<T>::sub(u_, v_, modulus);
+    }
 
     template <typename T>
-    __device__ void GentlemanSandeUnit(T& U, T& V, const Root<T>& root,
-                                       const Modulus<T>& modulus);
+    __device__ __forceinline__ void GentlemanSandeUnit(T& U, T& V, const Root<T>& root,
+                                       const Modulus<T>& modulus)
+    {
+        T u_ = U;
+        T v_ = V;
+
+        U = OPERATOR_GPU<T>::add(u_, v_, modulus);
+
+        v_ = OPERATOR_GPU<T>::sub(u_, v_, modulus);
+        V = OPERATOR_GPU<T>::mult(v_, root, modulus);
+    }
 
     // It provides multiple NTT operation with using single prime.
     template <typename T>

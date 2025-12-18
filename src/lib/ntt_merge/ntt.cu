@@ -9,30 +9,6 @@
 namespace gpuntt
 {
     template <typename T>
-    __device__ void CooleyTukeyUnit(T& U, T& V, const Root<T>& root,
-                                    const Modulus<T>& modulus)
-    {
-        T u_ = U;
-        T v_ = OPERATOR_GPU<T>::mult(V, root, modulus);
-
-        U = OPERATOR_GPU<T>::add(u_, v_, modulus);
-        V = OPERATOR_GPU<T>::sub(u_, v_, modulus);
-    }
-
-    template <typename T>
-    __device__ void GentlemanSandeUnit(T& U, T& V, const Root<T>& root,
-                                       const Modulus<T>& modulus)
-    {
-        T u_ = U;
-        T v_ = V;
-
-        U = OPERATOR_GPU<T>::add(u_, v_, modulus);
-
-        v_ = OPERATOR_GPU<T>::sub(u_, v_, modulus);
-        V = OPERATOR_GPU<T>::mult(v_, root, modulus);
-    }
-
-    template <typename T>
     __global__ void
     ForwardCoreLowRing(T* polynomial_in,
                        typename std::make_unsigned<T>::type* polynomial_out,
@@ -4528,19 +4504,6 @@ namespace gpuntt
         Ninverse<Data64>* mod_inverse;
         cudaStream_t stream;
     };
-
-    template __device__ void
-    CooleyTukeyUnit<Data32>(Data32& U, Data32& V, const Root<Data32>& root,
-                            const Modulus<Data32>& modulus);
-    template __device__ void
-    CooleyTukeyUnit<Data64>(Data64& U, Data64& V, const Root<Data64>& root,
-                            const Modulus<Data64>& modulus);
-    template __device__ void
-    GentlemanSandeUnit<Data32>(Data32& U, Data32& V, const Root<Data32>& root,
-                               const Modulus<Data32>& modulus);
-    template __device__ void
-    GentlemanSandeUnit<Data64>(Data64& U, Data64& V, const Root<Data64>& root,
-                               const Modulus<Data64>& modulus);
 
     template __global__ void ForwardCoreLowRing<Data32>(
         Data32* polynomial_in, Data32* polynomial_out,
