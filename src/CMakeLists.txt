@@ -19,7 +19,21 @@ set(LIB_HEADER_FILES
 
 add_library(ntt STATIC ${LIB_SOURCE_FILES})
 add_library(GPUNTT::ntt ALIAS ntt)
-target_compile_features(ntt PUBLIC cxx_std_17)
+if(CMAKE_CXX_COMPILE_FEATURES)
+    target_compile_features(ntt PUBLIC cxx_std_17)
+else()
+    message(WARNING
+        "CMake does not know C++ compile features for ${CMAKE_CXX_COMPILER_ID} "
+        "${CMAKE_CXX_COMPILER_VERSION}; falling back to -std=c++17"
+    )
+    target_compile_options(ntt PUBLIC $<$<COMPILE_LANGUAGE:CXX>:-std=c++17>)
+endif()
+
+if(CMAKE_CUDA_COMPILE_FEATURES)
+    target_compile_features(ntt PRIVATE cuda_std_17)
+else()
+    target_compile_options(ntt PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:--std=c++17>)
+endif()
 target_compile_options(ntt PRIVATE
     $<$<CONFIG:Release>:-O3 -DNDEBUG>
     $<$<CONFIG:RelWithDebInfo>:-O3 -g -DNDEBUG>

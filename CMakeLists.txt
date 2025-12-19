@@ -1,6 +1,13 @@
 cmake_minimum_required(VERSION 3.26)
 project(GPUNTT VERSION 1.0 LANGUAGES C CXX CUDA ASM)
 
+if(NOT CMAKE_BUILD_TYPE OR CMAKE_BUILD_TYPE STREQUAL "")
+  set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type (Debug or Release)" )
+endif()
+set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS Release Debug)
+message(STATUS "Build GPUNTT version: ${PROJECT_VERSION}")
+message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
+
 set(BINARY_LOCATION ${CMAKE_CURRENT_BINARY_DIR}/bin)
 
 include(GNUInstallDirs)

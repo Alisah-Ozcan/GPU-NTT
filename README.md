@@ -1,91 +1,110 @@
 # GPU-NTT
-
-Welcome to the GPU-NTT-Optimization repository! We present cutting-edge algorithms and implementations for optimizing the 2 diferrent Number Theoretic Transform (NTT) model (`Merge` & `4-Step`) on Graphics Processing Units (GPUs).
+Welcome to the GPU-NTT-Optimization repository! We present cutting-edge algorithms and implementations for optimizing the Merge and 4-Step Number Theoretic Transforms (NTT) on GPUs. GPU-NTT automatically supports both 32-bit and 64-bit arithmetic via Barrett reduction; the older manual reduction selection is kept in the [paper_version](https://github.com/Alisah-Ozcan/GPU-NTT/tree/paper_version) branch.
 
 The associated research paper: https://eprint.iacr.org/2023/1410
 
 FFT variant of GPU-NTT is available: https://github.com/Alisah-Ozcan/GPU-FFT
 
-You no longer need to manually select a reduction method, as this version is now available in the [paper_version](https://github.com/Alisah-Ozcan/GPU-NTT/tree/paper_version)
- branch. GPU-NTT now **automatically supports both 32-bit and 64-bit operations using Barrett Reduction**, and various optimizations will be introduced over time.
-
 ## Development
 
 ### Requirements
 
-- [CMake](https://cmake.org/download/) >=3.26 (package config and CUDA arch handling rely on 3.26+)
+- [CMake](https://cmake.org/download/) >=3.26
 - [GCC](https://gcc.gnu.org/)
 - [CUDA Toolkit](https://developer.nvidia.com/cuda-downloads)
 
 ### Build & Install
 
-To build:
+Configure + build:
 
 ```bash
-$ cmake . -D CMAKE_CUDA_ARCHITECTURES=86 -B./build
-$ cmake --build ./build/ --parallel
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_ARCHITECTURES=86
+cmake --build build --parallel
 ```
 
-To install:
+Install:
 
 ```bash
-$ cmake . -D CMAKE_CUDA_ARCHITECTURES=86 -B./build
-$ cmake --build ./build/ --parallel
-$ sudo cmake --install build
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_ARCHITECTURES=86
+cmake --build build --parallel
+cmake --install build
+```
+
+Notes:
+- If you install to a system location (default: `/usr/local`), you may need `sudo` or set `-DCMAKE_INSTALL_PREFIX=/your/prefix`.
+- If you omit `-DCMAKE_CUDA_ARCHITECTURES=...`, GPU-NTT defaults to `80;86;89;90`.
+- If CMake cannot find `nvcc`, set `CUDACXX=/path/to/nvcc` or pass `-DCMAKE_CUDA_COMPILER=/path/to/nvcc`.
+- If you change compilers/toolchains, prefer a clean configure: `cmake --fresh -S . -B build`.
+
+### Compile Options
+
+GPU-NTT uses C++17/CUDA17 and applies per-configuration compile flags.
+
+- Build type (single-config generators like Makefiles/Ninja): `-DCMAKE_BUILD_TYPE=Release|Debug|RelWithDebInfo|MinSizeRel`
+- Optimization/debug defaults:
+  - `Release`: `-O3 -DNDEBUG`
+  - `RelWithDebInfo`: `-O3 -g -DNDEBUG`
+  - `Debug`: `-g` (and CUDA adds line info)
+- Extra warnings: `-DGPUNTT_ENABLE_WARNINGS=ON`
+
+Example:
+
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo -DGPUNTT_ENABLE_WARNINGS=ON
+cmake --build build --parallel
 ```
 
 ### Testing & Benchmarking
 
-#### Testing CPU Merge & 4-Step NTT vs Schoolbook Polynomial Multiplication
+#### Examples (CPU & GPU Merge / 4-Step)
 
-Choose one of data type which is upper line of the example files:
+Choose one of the data types at the top of the example files:
 - typedef Data32 TestDataType;
 - typedef Data64 TestDataType;
 
-To run examples:
+Configure + build:
 
 ```bash
-$ cmake -D CMAKE_CUDA_ARCHITECTURES=86 -D GPUNTT_BUILD_EXAMPLES=ON -B./build
-$ cmake --build ./build/ --parallel
-
-$ ./build/bin/example/cpu_4step_ntt_examples <RING_SIZE_IN_LOG2> <BATCH_SIZE>
-$ ./build/bin/example/cpu_merge_ntt_examples <RING_SIZE_IN_LOG2> <BATCH_SIZE>
-$ Example: ./build/bin/example/cpu_merge_ntt_examples 15 1
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_ARCHITECTURES=86 -DGPUNTT_BUILD_EXAMPLES=ON
+cmake --build build --parallel
 ```
 
-#### Testing GPU NTTs vs CPU NTTs
-
-Choose one of data type which is upper line of the example files:
-- typedef Data32 TestDataType;
-- typedef Data64 TestDataType;
-
-To run examples:
+Run CPU examples:
 
 ```bash
-$ cmake -D CMAKE_CUDA_ARCHITECTURES=86 -D GPUNTT_BUILD_EXAMPLES=ON -B./build
-$ cmake --build ./build/ --parallel
+./build/bin/example/cpu_4step_ntt_examples <RING_SIZE_IN_LOG2> <BATCH_SIZE>
+./build/bin/example/cpu_merge_ntt_examples <RING_SIZE_IN_LOG2> <BATCH_SIZE>
+# Example: ./build/bin/example/cpu_merge_ntt_examples 15 1
+```
 
-$ ./build/bin/example/gpu_4step_ntt_examples <RING_SIZE_IN_LOG2> <BATCH_SIZE>
-$ ./build/bin/example/gpu_4step_intt_examples <RING_SIZE_IN_LOG2> <BATCH_SIZE>
-$ ./build/bin/example/gpu_merge_ntt_examples <RING_SIZE_IN_LOG2> <BATCH_SIZE>
-$ ./build/bin/example/gpu_merge_intt_examples <RING_SIZE_IN_LOG2> <BATCH_SIZE>
-$ Example: ./build/bin/example/gpu_merge_ntt_examples 12 1
+Run GPU examples:
+
+```bash
+./build/bin/example/gpu_4step_ntt_examples <RING_SIZE_IN_LOG2> <BATCH_SIZE>
+./build/bin/example/gpu_4step_intt_examples <RING_SIZE_IN_LOG2> <BATCH_SIZE>
+./build/bin/example/gpu_merge_ntt_examples <RING_SIZE_IN_LOG2> <BATCH_SIZE>
+./build/bin/example/gpu_merge_intt_examples <RING_SIZE_IN_LOG2> <BATCH_SIZE>
+# Example: ./build/bin/example/gpu_merge_ntt_examples 12 1
 ```
 
 #### Benchmarking GPU NTT
 
-Choose one of data type which is upper line of the benchmark files:
+Choose one of the data types at the top of the benchmark files:
 - typedef Data32 BenchmarkDataType;
 - typedef Data64 BenchmarkDataType;
 
-To run benchmarks:
+Configure + build:
 
 ```bash
-$ cmake -D CMAKE_CUDA_ARCHITECTURES=86 -D GPUNTT_BUILD_BENCHMARKS=ON -B./build
-$ cmake --build ./build/ --parallel
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_ARCHITECTURES=86 -DGPUNTT_BUILD_BENCHMARKS=ON
+cmake --build build --parallel
+```
 
-$ ./build/bin/benchmark/benchmark_4step_ntt --disable-blocking-kernel
-$ ./build/bin/benchmark/benchmark_merge_ntt --disable-blocking-kernel
+Run benchmarks:
+
+```bash
+./build/bin/benchmark/benchmark_4step_ntt --disable-blocking-kernel
+./build/bin/benchmark/benchmark_merge_ntt --disable-blocking-kernel
 ```
 
 ## Using GPU-NTT in a downstream CMake project
@@ -96,7 +115,7 @@ Make sure GPU-NTT is installed before integrating it into your project. The inst
 project(<your-project> LANGUAGES CXX CUDA)
 find_package(CUDAToolkit REQUIRED)
 # ...
-find_package(GPUNTT)
+find_package(GPUNTT CONFIG REQUIRED)
 # ...
 target_link_libraries(<your-target> (PRIVATE|PUBLIC|INTERFACE) GPUNTT::ntt CUDA::cudart)
 # ...
