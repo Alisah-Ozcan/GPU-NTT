@@ -6,7 +6,7 @@
 #ifndef NTT_CPU_H
 #define NTT_CPU_H
 
-#include "nttparameters.cuh"
+#include "common/nttparameters.cuh"
 
 namespace gpuntt
 {

@@ -2,7 +2,7 @@
 // Authors: Alisah Ozcan
 // --------------------- //
 
-#include "nttparameters.cuh"
+#include "common/nttparameters.cuh"
 
 namespace gpuntt
 {

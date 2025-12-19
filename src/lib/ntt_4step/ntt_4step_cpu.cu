@@ -2,7 +2,7 @@
 // Authors: Alisah Ozcan
 // --------------------- //
 
-#include "ntt_4step_cpu.cuh"
+#include "ntt_4step/ntt_4step_cpu.cuh"
 
 namespace gpuntt
 {

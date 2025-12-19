@@ -67,8 +67,8 @@ namespace gpuntt
     };
 
     template <typename T>
-    __device__ __forceinline__ void CooleyTukeyUnit(T& U, T& V, const Root<T>& root,
-                                    const Modulus<T>& modulus)
+    __device__ __forceinline__ void
+    CooleyTukeyUnit(T& U, T& V, const Root<T>& root, const Modulus<T>& modulus)
     {
         T u_ = U;
         T v_ = OPERATOR_GPU<T>::mult(V, root, modulus);
@@ -78,8 +78,9 @@ namespace gpuntt
     }
 
     template <typename T>
-    __device__ __forceinline__ void GentlemanSandeUnit(T& U, T& V, const Root<T>& root,
-                                       const Modulus<T>& modulus)
+    __device__ __forceinline__ void
+    GentlemanSandeUnit(T& U, T& V, const Root<T>& root,
+                       const Modulus<T>& modulus)
     {
         T u_ = U;
         T v_ = V;

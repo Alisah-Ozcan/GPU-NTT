@@ -61,9 +61,7 @@ set_target_properties(ntt PROPERTIES
 target_include_directories(
     ntt
     PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/common>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/ntt_4step>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/ntt_merge>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include/GPUNTT-${PROJECT_VERSION}>
 )
 

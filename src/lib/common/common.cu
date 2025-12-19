@@ -1,4 +1,4 @@
-#include "common.cuh"
+#include "common/common.cuh"
 
 namespace gpuntt
 {

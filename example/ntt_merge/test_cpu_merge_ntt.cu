@@ -6,8 +6,8 @@
 #include <cstdlib> // For atoi or atof functions
 #include <random>
 
-#include "ntt.cuh"
-#include "ntt_4step_cpu.cuh"
+#include "ntt_merge/ntt.cuh"
+#include "ntt_4step/ntt_4step_cpu.cuh"
 
 #define DEFAULT_MODULUS
 
