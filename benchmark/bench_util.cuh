@@ -17,8 +17,8 @@
 #include <cuda_runtime.h>
 #include <type_traits>
 #include <limits>
-#include "ntt_4step/ntt_4step_cpu.cuh"
-#include "ntt_merge/ntt.cuh"
+#include "gpuntt/ntt_4step/ntt_4step_cpu.cuh"
+#include "gpuntt/ntt_merge/ntt.cuh"
 
 template <typename T> struct random_functor
 {

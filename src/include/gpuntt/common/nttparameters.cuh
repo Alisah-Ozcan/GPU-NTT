@@ -7,8 +7,8 @@
 #define NTT_PARAMETERS_H
 
 #include <vector>
-#include "common.cuh"
-#include "modular_arith.cuh"
+#include "gpuntt/common/common.cuh"
+#include "gpuntt/common/modular_arith.cuh"
 #include <type_traits>
 
 namespace gpuntt

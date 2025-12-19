@@ -8,7 +8,7 @@
 #define NTT_4STEP_CORE_H
 
 #include "cuda_runtime.h"
-#include "ntt_4step_cpu.cuh"
+#include "gpuntt/ntt_4step/ntt_4step_cpu.cuh"
 
 // --------------------- //
 // Authors: Alisah Ozcan

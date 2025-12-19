@@ -6,9 +6,9 @@
 #include <cstdlib>
 #include <random>
 
-#include "ntt_merge/ntt.cuh"
-#include "ntt_4step/ntt_4step.cuh"
-#include "ntt_4step/ntt_4step_cpu.cuh"
+#include "gpuntt/ntt_merge/ntt.cuh"
+#include "gpuntt/ntt_4step/ntt_4step.cuh"
+#include "gpuntt/ntt_4step/ntt_4step_cpu.cuh"
 
 #define DEFAULT_MODULUS
 

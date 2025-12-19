@@ -4,7 +4,7 @@
 // Developer: Alişah Özcan
 // Paper: https://eprint.iacr.org/2023/1410
 
-#include "ntt_merge/ntt.cuh"
+#include "gpuntt/ntt_merge/ntt.cuh"
 
 namespace gpuntt
 {

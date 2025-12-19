@@ -8,13 +8,13 @@ set(LIB_SOURCE_FILES
 )
 
 set(LIB_HEADER_FILES
-    include/common/common.cuh
-    include/common/nttparameters.cuh
-    include/common/modular_arith.cuh
-    include/ntt_4step/ntt_4step.cuh
-    include/ntt_4step/ntt_4step_cpu.cuh
-    include/ntt_merge/ntt.cuh
-    include/ntt_merge/ntt_cpu.cuh
+    include/gpuntt/common/common.cuh
+    include/gpuntt/common/nttparameters.cuh
+    include/gpuntt/common/modular_arith.cuh
+    include/gpuntt/ntt_4step/ntt_4step.cuh
+    include/gpuntt/ntt_4step/ntt_4step_cpu.cuh
+    include/gpuntt/ntt_merge/ntt.cuh
+    include/gpuntt/ntt_merge/ntt_cpu.cuh
 )
 
 add_library(ntt STATIC ${LIB_SOURCE_FILES})

@@ -6,7 +6,7 @@
 #include <cstdlib>
 #include <random>
 
-#include "ntt_merge/ntt.cuh"
+#include "gpuntt/ntt_merge/ntt.cuh"
 
 #define DEFAULT_MODULUS
 

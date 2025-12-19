@@ -10,7 +10,7 @@
 #define CC_89 // for RTX 4090
 
 #include "cuda_runtime.h"
-#include "ntt_cpu.cuh"
+#include "gpuntt/ntt_merge/ntt_cpu.cuh"
 #include <functional>
 #include <unordered_map>
 
