@@ -105,7 +105,7 @@ namespace gpuntt
                          "LOGN should be in range 2^0 to 2^25.");
             Data32 w = 900;
             Modulus32 mod = modulus_pool();
-            return OPERATOR32::exp(w, static_cast<Data32>(1 << (28 - logn)),
+            return OPERATOR32::exp(w, static_cast<Data32>(1 << (25 - logn)),
                                    mod);
         }
         else
@@ -127,7 +127,7 @@ namespace gpuntt
                          "LOGN should be in range 2^0 to 2^25.");
             Data32 w = 30;
             Modulus32 mod = modulus_pool();
-            return OPERATOR32::exp(w, static_cast<Data32>(1 << (28 - logn)),
+            return OPERATOR32::exp(w, static_cast<Data32>(1 << (25 - logn)),
                                    mod);
         }
         else
