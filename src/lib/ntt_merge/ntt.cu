@@ -389,11 +389,13 @@ namespace gpuntt
             int group_in_shared_address = in_shared_address + offset;
             if (reduction_poly_check)
             { // X_N_minus
-                current_root_index = (omega_addresss >> t_2);
+                current_root_index = (omega_addresss >> t_2) +
+                     (location_t)(mod_index << N_power);
             }
             else
             { // X_N_plus
-                current_root_index = m + (omega_addresss >> t_2);
+                current_root_index = m + (omega_addresss >> t_2) +
+                     (location_t)(mod_index << N_power);
             }
 
             GentlemanSandeUnit(shared_memory[group_in_shared_address],
