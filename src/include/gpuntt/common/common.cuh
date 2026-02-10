@@ -9,6 +9,7 @@
 #include <cuda_runtime.h>
 
 #include <cassert>
+#include <cstdint>
 #include <exception>
 #include <iostream>
 #include <string>
