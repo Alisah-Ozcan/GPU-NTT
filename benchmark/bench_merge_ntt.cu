@@ -5,137 +5,350 @@
 
 #include "bench_util.cuh"
 
-using namespace std;
 using namespace gpuntt;
 
-// typedef Data32 BenchmarkDataType; // Use for 32-bit benchmark
-typedef Data64 BenchmarkDataType; // Use for 64-bit benchmark
-
-void GPU_NTT_Forward_Benchmark(nvbench::state& state)
+namespace
 {
-    const auto ring_size_logN = state.get_int64("Ring Size LogN");
-    const auto batch_count = state.get_int64("Batch Count");
-    const auto ring_size = 1 << ring_size_logN;
+    using DataTypes = nvbench::type_list<Data32, Data64>;
 
-    thrust::device_vector<BenchmarkDataType> inout_data(ring_size *
-                                                        batch_count);
-    thrust::transform(thrust::counting_iterator<int>(0),
-                      thrust::counting_iterator<int>(ring_size * batch_count),
-                      inout_data.begin(),
-                      random_functor<BenchmarkDataType>(1234));
-
-    thrust::device_vector<Root<BenchmarkDataType>> root_table_data(ring_size >>
-                                                                   1);
-    thrust::transform(thrust::counting_iterator<int>(0),
-                      thrust::counting_iterator<int>((ring_size >> 1)),
-                      root_table_data.begin(),
-                      random_functor<Root<BenchmarkDataType>>(1234));
-
-    state.add_global_memory_reads<BenchmarkDataType>(
-        (ring_size * batch_count) + ((ring_size >> 1) * batch_count),
-        "Read Memory Size");
-    state.add_global_memory_writes<BenchmarkDataType>(ring_size * batch_count,
-                                                      "Write Memory Size");
-    state.collect_l1_hit_rates();
-    state.collect_l2_hit_rates();
-    // state.collect_loads_efficiency();
-    // state.collect_stores_efficiency();
-    // state.collect_dram_throughput();
-
-    cudaStream_t stream;
-    cudaStreamCreate(&stream);
-    state.set_cuda_stream(nvbench::make_cuda_stream_view(stream));
-
-    ntt_configuration<BenchmarkDataType> cfg_ntt = {
-        .n_power = static_cast<int>(ring_size_logN),
-        .ntt_type = FORWARD,
-        .ntt_layout = PerPolynomial,
-        .reduction_poly = ReductionPolynomial::X_N_minus,
-        .zero_padding = false,
-        .stream = stream};
-
-    Modulus<BenchmarkDataType> mod_data(10000ULL);
-
-    state.exec(
-        [&](nvbench::launch& launch)
+    // Primes within the Barrett reduction limits. The run time only depends on
+    // the size of the modulus, so the root tables hold random values.
+    template <typename T> T bench_prime()
+    {
+        if constexpr (std::is_same<T, Data32>::value)
         {
-            GPU_NTT_Inplace(thrust::raw_pointer_cast(inout_data.data()),
-                            thrust::raw_pointer_cast(root_table_data.data()),
-                            mod_data, cfg_ntt, static_cast<int>(batch_count));
-        });
+            return 469762049;
+        }
+        else
+        {
+            return 576460756061519873ULL;
+        }
+    }
 
-    cudaStreamSynchronize(stream);
-    cudaStreamDestroy(stream);
-}
+    template <typename T> struct mod_functor
+    {
+        T prime;
 
-NVBENCH_BENCH(GPU_NTT_Forward_Benchmark)
-    .add_int64_axis("Ring Size LogN",
-                    {12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24})
-    .add_int64_axis("Batch Count", {1})
+        __host__ __device__ T operator()(const T value) const
+        {
+            return value % prime;
+        }
+    };
+
+    template <typename T> struct centered_functor
+    {
+        T prime;
+
+        __host__ __device__ typename std::make_signed<T>::type
+        operator()(const T value) const
+        {
+            using S = typename std::make_signed<T>::type;
+            return (value > (prime >> 1))
+                       ? static_cast<S>(value) - static_cast<S>(prime)
+                       : static_cast<S>(value);
+        }
+    };
+
+    template <typename T>
+    thrust::device_vector<T> random_vector(size_t count, T prime,
+                                           std::uint32_t seed)
+    {
+        thrust::device_vector<T> values(count);
+        thrust::transform(thrust::counting_iterator<int>(0),
+                          thrust::counting_iterator<int>(count), values.begin(),
+                          random_functor<T>(seed));
+        thrust::transform(values.begin(), values.end(), values.begin(),
+                          mod_functor<T>{prime});
+        return values;
+    }
+
+    template <typename T> T* ptr(thrust::device_vector<T>& values)
+    {
+        return thrust::raw_pointer_cast(values.data());
+    }
+
+    class BenchStream
+    {
+      public:
+        explicit BenchStream(nvbench::state& state)
+        {
+            cudaStreamCreate(&stream_);
+            state.set_cuda_stream(nvbench::make_cuda_stream_view(stream_));
+        }
+
+        ~BenchStream()
+        {
+            cudaStreamSynchronize(stream_);
+            cudaStreamDestroy(stream_);
+        }
+
+        cudaStream_t get() const { return stream_; }
+
+      private:
+        cudaStream_t stream_;
+    };
+
+    // Around 2^22 coefficients for the "bulk" workload.
+    int bulk_batch(int logn, int at_least)
+    {
+        return std::max(at_least, std::max(1, (1 << 22) >> logn));
+    }
+
+    type direction_of(nvbench::state& state)
+    {
+        return state.get_string("Direction") == "forward" ? FORWARD : INVERSE;
+    }
+
+    template <typename T>
+    void add_memory_traffic(nvbench::state& state, size_t coefficients,
+                            size_t roots)
+    {
+        state.add_element_count(coefficients, "Coefficients");
+        state.add_global_memory_reads<T>(coefficients + roots, "Read");
+        state.add_global_memory_writes<T>(coefficients, "Write");
+    }
+
+    // Single modulus, row-wise, in-place NTT/INTT.
+    template <typename T>
+    void merge_ntt(nvbench::state& state, nvbench::type_list<T>)
+    {
+        const int logn = static_cast<int>(state.get_int64("LogN"));
+        const size_t n = size_t(1) << logn;
+        const int batch =
+            (state.get_string("Workload") == "bulk") ? bulk_batch(logn, 1) : 1;
+        const type dir = direction_of(state);
+        const ReductionPolynomial poly = (state.get_string("Poly") == "X^N-1")
+                                             ? ReductionPolynomial::X_N_minus
+                                             : ReductionPolynomial::X_N_plus;
+        const T prime = bench_prime<T>();
+        const size_t root_count =
+            (poly == ReductionPolynomial::X_N_minus) ? n / 2 : n;
+
+        auto data = random_vector<T>(n * batch, prime, 1234);
+        auto roots = random_vector<T>(root_count, prime, 4321);
+        const Modulus<T> modulus(prime);
+        add_memory_traffic<T>(state, n * batch, root_count);
+
+        BenchStream stream(state);
+        ntt_configuration<T> cfg = {.n_power = logn,
+                                    .ntt_type = dir,
+                                    .ntt_layout = PerPolynomial,
+                                    .reduction_poly = poly,
+                                    .zero_padding = false,
+                                    .mod_inverse = static_cast<T>(12345),
+                                    .stream = stream.get()};
+
+        state.exec(
+            [&](nvbench::launch&)
+            {
+                if (dir == FORWARD)
+                    GPU_NTT_Inplace(ptr(data), ptr(roots), modulus, cfg, batch);
+                else
+                    GPU_INTT_Inplace(ptr(data), ptr(roots), modulus, cfg,
+                                     batch);
+            });
+    }
+
+    // RNS, signed input/output and ordered variants (X^N + 1, bulk workload).
+    template <typename T>
+    void merge_ntt_variants(nvbench::state& state, nvbench::type_list<T>)
+    {
+        using S = typename std::make_signed<T>::type;
+
+        const std::string variant = state.get_string("Variant");
+        const int logn = static_cast<int>(state.get_int64("LogN"));
+        const size_t n = size_t(1) << logn;
+        const type dir = direction_of(state);
+        const bool ordered =
+            (variant == "modulus_ordered" || variant == "poly_ordered");
+        if (ordered && logn < 10)
+        {
+            state.skip("Ordered NTT requires LogN >= 10.");
+            return;
+        }
+
+        const int mod_count = (variant == "signed") ? 1 : 3;
+        const int prime_count = 4;
+        const int batch = bulk_batch(logn, 2 * mod_count);
+        const size_t total = n * batch;
+        const T prime = bench_prime<T>();
+
+        auto data = random_vector<T>(total, prime, 1234);
+        auto roots = random_vector<T>(prime_count * n, prime, 4321);
+        thrust::device_vector<Modulus<T>> moduli(prime_count,
+                                                 Modulus<T>(prime));
+        thrust::device_vector<Ninverse<T>> n_inverse(prime_count,
+                                                     static_cast<T>(12345));
+
+        std::vector<int> host_order;
+        if (variant == "modulus_ordered")
+        {
+            host_order = {2, 0, 3};
+        }
+        else
+        {
+            for (int z = 0; z < batch; z++)
+            {
+                host_order.push_back(batch - 1 - z);
+            }
+        }
+        thrust::device_vector<int> order(host_order);
+        add_memory_traffic<T>(state, total, mod_count * n);
+
+        BenchStream stream(state);
+        ntt_configuration<T> cfg = {.n_power = logn,
+                                    .ntt_type = dir,
+                                    .ntt_layout = PerPolynomial,
+                                    .reduction_poly =
+                                        ReductionPolynomial::X_N_plus,
+                                    .zero_padding = false,
+                                    .mod_inverse = static_cast<T>(12345),
+                                    .stream = stream.get()};
+        ntt_rns_configuration<T> cfg_rns = {
+            .n_power = logn,
+            .ntt_type = dir,
+            .ntt_layout = PerPolynomial,
+            .reduction_poly = ReductionPolynomial::X_N_plus,
+            .zero_padding = false,
+            .mod_inverse = ptr(n_inverse),
+            .stream = stream.get()};
+
+        if (variant == "signed" || variant == "signed_rns")
+        {
+            const bool use_rns = (variant == "signed_rns");
+            thrust::device_vector<S> signed_data(total);
+            thrust::transform(data.begin(), data.end(), signed_data.begin(),
+                              centered_functor<T>{prime});
+            const Modulus<T> modulus(prime);
+            state.exec(
+                [&](nvbench::launch&)
+                {
+                    if (dir == FORWARD && use_rns)
+                        GPU_NTT(ptr(signed_data), ptr(data), ptr(roots),
+                                ptr(moduli), cfg_rns, batch, mod_count);
+                    else if (dir == FORWARD)
+                        GPU_NTT(ptr(signed_data), ptr(data), ptr(roots),
+                                modulus, cfg, batch);
+                    else if (use_rns)
+                        GPU_INTT(ptr(data), ptr(signed_data), ptr(roots),
+                                 ptr(moduli), cfg_rns, batch, mod_count);
+                    else
+                        GPU_INTT(ptr(data), ptr(signed_data), ptr(roots),
+                                 modulus, cfg, batch);
+                });
+        }
+        else if (variant == "rns")
+        {
+            state.exec(
+                [&](nvbench::launch&)
+                {
+                    if (dir == FORWARD)
+                        GPU_NTT_Inplace(ptr(data), ptr(roots), ptr(moduli),
+                                        cfg_rns, batch, mod_count);
+                    else
+                        GPU_INTT_Inplace(ptr(data), ptr(roots), ptr(moduli),
+                                         cfg_rns, batch, mod_count);
+                });
+        }
+        else if (variant == "modulus_ordered")
+        {
+            state.exec(
+                [&](nvbench::launch&)
+                {
+                    GPU_NTT_Modulus_Ordered_Inplace(ptr(data), ptr(roots),
+                                                    ptr(moduli), cfg_rns, batch,
+                                                    mod_count, ptr(order));
+                });
+        }
+        else
+        {
+            state.exec(
+                [&](nvbench::launch&)
+                {
+                    GPU_NTT_Poly_Ordered_Inplace(ptr(data), ptr(roots),
+                                                 ptr(moduli), cfg_rns, batch,
+                                                 mod_count, ptr(order));
+                });
+        }
+    }
+
+    // Column-wise NTT/INTT (X^N + 1, about 2^22 coefficients).
+    template <typename T>
+    void merge_ntt_per_coefficient(nvbench::state& state,
+                                   nvbench::type_list<T>)
+    {
+        const int logn = static_cast<int>(state.get_int64("LogN"));
+        const size_t n = size_t(1) << logn;
+        const int batch = 1 << (22 - logn);
+        const type dir = direction_of(state);
+        const bool use_rns = (state.get_string("Moduli") == "rns");
+        const int mod_count = use_rns ? 3 : 1;
+        const T prime = bench_prime<T>();
+
+        auto data = random_vector<T>(n * batch, prime, 1234);
+        auto roots = random_vector<T>(mod_count * n, prime, 4321);
+        const Modulus<T> modulus(prime);
+        thrust::device_vector<Modulus<T>> moduli(mod_count, modulus);
+        thrust::device_vector<Ninverse<T>> n_inverse(mod_count,
+                                                     static_cast<T>(12345));
+        add_memory_traffic<T>(state, n * batch, mod_count * n);
+
+        BenchStream stream(state);
+        ntt_configuration<T> cfg = {.n_power = logn,
+                                    .ntt_type = dir,
+                                    .ntt_layout = PerCoefficient,
+                                    .reduction_poly =
+                                        ReductionPolynomial::X_N_plus,
+                                    .zero_padding = false,
+                                    .mod_inverse = static_cast<T>(12345),
+                                    .stream = stream.get()};
+        ntt_rns_configuration<T> cfg_rns = {
+            .n_power = logn,
+            .ntt_type = dir,
+            .ntt_layout = PerCoefficient,
+            .reduction_poly = ReductionPolynomial::X_N_plus,
+            .zero_padding = false,
+            .mod_inverse = ptr(n_inverse),
+            .stream = stream.get()};
+
+        state.exec(
+            [&](nvbench::launch&)
+            {
+                if (dir == FORWARD && use_rns)
+                    GPU_NTT_Inplace(ptr(data), ptr(roots), ptr(moduli), cfg_rns,
+                                    batch, mod_count);
+                else if (dir == FORWARD)
+                    GPU_NTT_Inplace(ptr(data), ptr(roots), modulus, cfg, batch);
+                else if (use_rns)
+                    GPU_INTT_Inplace(ptr(data), ptr(roots), ptr(moduli),
+                                     cfg_rns, batch, mod_count);
+                else
+                    GPU_INTT_Inplace(ptr(data), ptr(roots), modulus, cfg,
+                                     batch);
+            });
+    }
+
+} // namespace
+
+NVBENCH_BENCH_TYPES(merge_ntt, NVBENCH_TYPE_AXES(DataTypes))
+    .set_type_axes_names({"Data"})
+    .add_int64_axis("LogN", nvbench::range(1, 24))
+    .add_string_axis("Workload", {"single", "bulk"})
+    .add_string_axis("Direction", {"forward", "inverse"})
+    .add_string_axis("Poly", {"X^N-1", "X^N+1"})
     .set_timeout(1);
 
-void GPU_NTT_Inverse_Benchmark(nvbench::state& state)
-{
-    const auto ring_size_logN = state.get_int64("Ring Size LogN");
-    const auto batch_count = state.get_int64("Batch Count");
-    const auto ring_size = 1 << ring_size_logN;
+NVBENCH_BENCH_TYPES(merge_ntt_variants, NVBENCH_TYPE_AXES(DataTypes))
+    .set_type_axes_names({"Data"})
+    .add_string_axis("Variant", {"rns", "signed", "signed_rns",
+                                 "modulus_ordered", "poly_ordered"})
+    .add_int64_axis("LogN", {5, 9, 10, 12, 14, 16, 20, 24})
+    .add_string_axis("Direction", {"forward", "inverse"})
+    .set_timeout(1);
 
-    thrust::device_vector<BenchmarkDataType> inout_data(ring_size *
-                                                        batch_count);
-    thrust::transform(thrust::counting_iterator<int>(0),
-                      thrust::counting_iterator<int>(ring_size * batch_count),
-                      inout_data.begin(),
-                      random_functor<BenchmarkDataType>(1234));
-
-    thrust::device_vector<Root<BenchmarkDataType>> root_table_data(ring_size >>
-                                                                   1);
-    thrust::transform(thrust::counting_iterator<int>(0),
-                      thrust::counting_iterator<int>((ring_size >> 1)),
-                      root_table_data.begin(),
-                      random_functor<Root<BenchmarkDataType>>(1234));
-
-    state.add_global_memory_reads<BenchmarkDataType>(
-        (ring_size * batch_count) + ((ring_size >> 1) * batch_count),
-        "Read Memory Size");
-    state.add_global_memory_writes<BenchmarkDataType>(ring_size * batch_count,
-                                                      "Write Memory Size");
-    state.collect_l1_hit_rates();
-    state.collect_l2_hit_rates();
-    // state.collect_loads_efficiency();
-    // state.collect_stores_efficiency();
-    // state.collect_dram_throughput();
-
-    cudaStream_t stream;
-    cudaStreamCreate(&stream);
-    state.set_cuda_stream(nvbench::make_cuda_stream_view(stream));
-
-    Ninverse<BenchmarkDataType> inv_mod_data(20000ULL);
-
-    ntt_configuration<BenchmarkDataType> cfg_intt = {
-        .n_power = static_cast<int>(ring_size_logN),
-        .ntt_type = INVERSE,
-        .ntt_layout = PerPolynomial,
-        .reduction_poly = ReductionPolynomial::X_N_minus,
-        .zero_padding = false,
-        .mod_inverse = inv_mod_data,
-        .stream = stream};
-
-    Modulus<BenchmarkDataType> mod_data(10000ULL);
-
-    state.exec(
-        [&](nvbench::launch& launch)
-        {
-            GPU_NTT_Inplace(thrust::raw_pointer_cast(inout_data.data()),
-                            thrust::raw_pointer_cast(root_table_data.data()),
-                            mod_data, cfg_intt, static_cast<int>(batch_count));
-        });
-
-    cudaStreamSynchronize(stream);
-    cudaStreamDestroy(stream);
-}
-
-NVBENCH_BENCH(GPU_NTT_Inverse_Benchmark)
-    .add_int64_axis("Ring Size LogN", {10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
-                                       20, 21, 22, 23, 24})
-    .add_int64_axis("Batch Count", {1})
+NVBENCH_BENCH_TYPES(merge_ntt_per_coefficient, NVBENCH_TYPE_AXES(DataTypes))
+    .set_type_axes_names({"Data"})
+    .add_int64_axis("LogN", nvbench::range(1, 9))
+    .add_string_axis("Moduli", {"single", "rns"})
+    .add_string_axis("Direction", {"forward", "inverse"})
     .set_timeout(1);

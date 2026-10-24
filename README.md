@@ -99,11 +99,10 @@ ctest --test-dir build --output-on-failure
 
 #### Benchmarking GPU NTT
 
-Benchmarks use [nvbench](https://github.com/NVIDIA/nvbench), which requires CMake >= 3.30.4.
-
-Choose one of the data types at the top of the benchmark files:
-- typedef Data32 BenchmarkDataType;
-- typedef Data64 BenchmarkDataType;
+Benchmarks use [nvbench](https://github.com/NVIDIA/nvbench), which requires CMake >= 3.30.4. Every benchmark runs for both 32-bit and 64-bit data:
+- `merge_ntt`: single modulus NTT/INTT for `LogN` 1–24, one polynomial (`single`) or about 2^22 coefficients (`bulk`), X^N-1 and X^N+1.
+- `merge_ntt_variants`: RNS, signed input/output and modulus/poly ordered NTT.
+- `merge_ntt_per_coefficient`: column-wise NTT/INTT with single modulus and RNS.
 
 Configure + build:
 
@@ -116,7 +115,20 @@ Run benchmarks:
 
 ```bash
 ./build/bin/benchmark/benchmark_merge_ntt --disable-blocking-kernel
+# Only one benchmark / configuration:
+./build/bin/benchmark/benchmark_merge_ntt --disable-blocking-kernel -b merge_ntt -a Data=U64 -a LogN=16
 ```
+
+Compare two runs (e.g. before and after a change):
+
+```bash
+./build/bin/benchmark/benchmark_merge_ntt --disable-blocking-kernel --json before.json
+# ... change and rebuild ...
+./build/bin/benchmark/benchmark_merge_ntt --disable-blocking-kernel --json after.json
+python3 benchmark/compare_results.py before.json after.json --threshold 3
+```
+
+`compare_results.py` has no dependencies; it lists the configurations whose GPU time changed by more than the threshold and the measured noise, and exits with status 1 if any configuration got slower. The `single` workload (one polynomial) takes only a few microseconds and is dominated by launch latency, so its run-to-run noise is high; use `--skip Workload=single` to compare only the stable workloads. nvbench's own `build/_deps/nvbench-src/scripts/nvbench_compare.py` can be used as well (requires `pip install tabulate colorama`).
 
 ## Using GPU-NTT in a downstream CMake project
 
