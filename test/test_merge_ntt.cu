@@ -6,8 +6,8 @@
 // Correctness tests of the merge NTT host API against the CPU reference.
 //
 // Usage: merge_ntt_tests --bits <32|64> --suite <name|all> --max-logn <N>
-// Suites: single, pool_parameters, modulus, rns, signed, per_coefficient,
-//         per_coefficient_rns, modulus_ordered, poly_ordered
+// Suites: single, pool_parameters, modulus, validation, rns, signed,
+//         per_coefficient, per_coefficient_rns, modulus_ordered, poly_ordered
 
 #include <algorithm>
 #include <cstring>
@@ -63,6 +63,8 @@ namespace
                 return pool_parameters();
             if (suite == "modulus")
                 return modulus();
+            if (suite == "validation")
+                return validation();
             if (suite == "rns")
                 return rns();
             if (suite == "signed")
@@ -79,7 +81,8 @@ namespace
             {
                 int result = 0;
                 for (const char* s :
-                     {"single", "pool_parameters", "modulus", "rns", "signed",
+                     {"single", "pool_parameters", "modulus", "validation",
+                      "rns", "signed",
                       "per_coefficient", "per_coefficient_rns",
                       "modulus_ordered", "poly_ordered"})
                 {
@@ -365,6 +368,108 @@ namespace
                             largest[0].parameters(logn, poly);
                         single_case(report, params, "largest prime", dir);
                     }
+            return report.finish();
+        }
+
+        // Invalid batch sizes are rejected before any kernel is launched (the
+        // calls use null device pointers).
+        int validation()
+        {
+            TestReport report(suite_name("validation"));
+            const Modulus<T> modulus(fields_[0].prime);
+            auto expect_rejected = [&](const std::string& name,
+                                       const std::function<void()>& call) {
+                bool rejected = false;
+                try
+                {
+                    call();
+                }
+                catch (const std::invalid_argument&)
+                {
+                    rejected = true;
+                }
+                catch (const std::exception& e)
+                {
+                    report.error(name, std::string("unexpected: ") + e.what());
+                    return;
+                }
+                report.expect(rejected, name, "call was not rejected");
+            };
+
+            struct Case
+            {
+                std::string name;
+                int logn;
+                int batch;
+                NTTLayout layout;
+            };
+            const std::vector<Case> cases = {
+                {"batch=0", 12, 0, PerPolynomial},
+                {"batch=-1", 12, -1, PerPolynomial},
+                {"2^31 + 2^20 coefficients", 20, 2049, PerPolynomial},
+                {"2^33 coefficients", 28, 32, PerPolynomial},
+                {"per_coefficient batch=3", 8, 3, PerCoefficient},
+                {"per_coefficient batch=24", 6, 24, PerCoefficient},
+            };
+
+            T* null_data = nullptr;
+            Root<T>* null_roots = nullptr;
+            Modulus<T>* null_moduli = nullptr;
+            int* null_order = nullptr;
+            for (const Case& c : cases)
+                for (type dir : kDirections)
+                {
+                    ntt_configuration<T> cfg = {
+                        .n_power = c.logn,
+                        .ntt_type = dir,
+                        .ntt_layout = c.layout,
+                        .reduction_poly = ReductionPolynomial::X_N_plus,
+                        .zero_padding = false,
+                        .mod_inverse = 1,
+                        .stream = 0};
+                    ntt_rns_configuration<T> cfg_rns = {
+                        .n_power = c.logn,
+                        .ntt_type = dir,
+                        .ntt_layout = c.layout,
+                        .reduction_poly = ReductionPolynomial::X_N_plus,
+                        .zero_padding = false,
+                        .mod_inverse = nullptr,
+                        .stream = 0};
+                    const std::string suffix =
+                        (dir == FORWARD ? " ntt " : " intt ") + c.name;
+
+                    expect_rejected("single" + suffix, [&] {
+                        if (dir == FORWARD)
+                            GPU_NTT(null_data, null_data, null_roots, modulus,
+                                    cfg, c.batch);
+                        else
+                            GPU_INTT(null_data, null_data, null_roots, modulus,
+                                     cfg, c.batch);
+                    });
+                    expect_rejected("rns" + suffix, [&] {
+                        if (dir == FORWARD)
+                            GPU_NTT(null_data, null_data, null_roots,
+                                    null_moduli, cfg_rns, c.batch, 1);
+                        else
+                            GPU_INTT(null_data, null_data, null_roots,
+                                     null_moduli, cfg_rns, c.batch, 1);
+                    });
+                    if (c.layout == PerPolynomial)
+                    {
+                        expect_rejected("modulus_ordered" + suffix, [&] {
+                            GPU_NTT_Modulus_Ordered(null_data, null_data,
+                                                    null_roots, null_moduli,
+                                                    cfg_rns, c.batch, 1,
+                                                    null_order);
+                        });
+                        expect_rejected("poly_ordered" + suffix, [&] {
+                            GPU_NTT_Poly_Ordered(null_data, null_data,
+                                                 null_roots, null_moduli,
+                                                 cfg_rns, c.batch, 1,
+                                                 null_order);
+                        });
+                    }
+                }
             return report.finish();
         }
 

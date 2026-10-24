@@ -9,6 +9,23 @@
 
 namespace gpuntt
 {
+    // Kernels compute global memory offsets with 32-bit integers, so a call
+    // can transform at most 2^31 coefficients in total.
+    static void check_batch_size(int n_power, int batch_size)
+    {
+        if (batch_size <= 0)
+        {
+            throw std::invalid_argument("Invalid batch_size!");
+        }
+        if (n_power > 0 && n_power < 31 &&
+            (static_cast<std::int64_t>(batch_size) << n_power) >
+                (static_cast<std::int64_t>(1) << 31))
+        {
+            throw std::invalid_argument(
+                "batch_size * ring size must be at most 2^31!");
+        }
+    }
+
     template <typename T>
     __global__ void
     ForwardCoreLowRing(T* polynomial_in,
@@ -2091,6 +2108,8 @@ namespace gpuntt
             ntt_configuration<typename std::make_unsigned<T>::type> cfg,
             int batch_size)
     {
+        check_batch_size(cfg.n_power, batch_size);
+
         switch (cfg.ntt_layout)
         {
             case PerPolynomial:
@@ -2242,6 +2261,13 @@ namespace gpuntt
                     throw std::invalid_argument("Invalid n_power range!");
                 }
 
+                if ((batch_size & (batch_size - 1)) != 0)
+                {
+                    throw std::invalid_argument(
+                        "batch_size must be a power of two for "
+                        "PerCoefficient layout!");
+                }
+
                 int log_batch_size = log2(batch_size);
                 int total_size = 1 << (cfg.n_power + log_batch_size);
                 int total_block_thread = 512;
@@ -2273,6 +2299,8 @@ namespace gpuntt
              ntt_configuration<typename std::make_unsigned<T>::type> cfg,
              int batch_size)
     {
+        check_batch_size(cfg.n_power, batch_size);
+
         switch (cfg.ntt_layout)
         {
             case PerPolynomial:
@@ -2546,6 +2574,13 @@ namespace gpuntt
                     throw std::invalid_argument("Invalid n_power range!");
                 }
 
+                if ((batch_size & (batch_size - 1)) != 0)
+                {
+                    throw std::invalid_argument(
+                        "batch_size must be a power of two for "
+                        "PerCoefficient layout!");
+                }
+
                 int log_batch_size = log2(batch_size);
                 int total_size = 1 << (cfg.n_power + log_batch_size);
                 int total_block_thread = 512;
@@ -2577,6 +2612,8 @@ namespace gpuntt
             ntt_rns_configuration<typename std::make_unsigned<T>::type> cfg,
             int batch_size, int mod_count)
     {
+        check_batch_size(cfg.n_power, batch_size);
+
         switch (cfg.ntt_layout)
         {
             case PerPolynomial:
@@ -2731,6 +2768,13 @@ namespace gpuntt
                 if ((cfg.n_power <= 0 || cfg.n_power >= 10))
                 {
                     throw std::invalid_argument("Invalid n_power range!");
+                }
+
+                if ((batch_size & (batch_size - 1)) != 0)
+                {
+                    throw std::invalid_argument(
+                        "batch_size must be a power of two for "
+                        "PerCoefficient layout!");
                 }
 
                 int log_batch_size = log2(batch_size);
@@ -2766,6 +2810,8 @@ namespace gpuntt
              ntt_rns_configuration<typename std::make_unsigned<T>::type> cfg,
              int batch_size, int mod_count)
     {
+        check_batch_size(cfg.n_power, batch_size);
+
         switch (cfg.ntt_layout)
         {
             case PerPolynomial:
@@ -3044,6 +3090,13 @@ namespace gpuntt
                 if ((cfg.n_power <= 0 || cfg.n_power >= 10))
                 {
                     throw std::invalid_argument("Invalid n_power range!");
+                }
+
+                if ((batch_size & (batch_size - 1)) != 0)
+                {
+                    throw std::invalid_argument(
+                        "batch_size must be a power of two for "
+                        "PerCoefficient layout!");
                 }
 
                 int log_batch_size = log2(batch_size);
@@ -3618,6 +3671,8 @@ namespace gpuntt
                             ntt_rns_configuration<T> cfg, int batch_size,
                             int mod_count, int* order)
     {
+        check_batch_size(cfg.n_power, batch_size);
+
         if ((cfg.n_power <= 9 || cfg.n_power >= 29))
         {
             throw std::invalid_argument("Invalid n_power range!");
@@ -4299,6 +4354,8 @@ namespace gpuntt
                          ntt_rns_configuration<T> cfg, int batch_size,
                          int mod_count, int* order)
     {
+        check_batch_size(cfg.n_power, batch_size);
+
         if ((cfg.n_power <= 9 || cfg.n_power >= 29))
         {
             throw std::invalid_argument("Invalid n_power range!");
