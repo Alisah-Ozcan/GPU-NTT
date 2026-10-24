@@ -295,44 +295,76 @@ namespace
         // Modulus<T> precomputes the bit length and the Barrett constant
         // mu = floor(2^(2 * bit + 1) / value). They are checked for values next
         // to powers of two, where floating point rounding goes wrong first.
+        // Moduli above the supported size (30 bits for Data32, 61 bits for
+        // Data64) must be rejected, and transforms are run with the largest
+        // supported NTT-friendly prime.
         int modulus()
         {
             TestReport report(suite_name("modulus"));
             constexpr bool is32 = std::is_same<T, Data32>::value;
-            constexpr int max_bits = is32 ? 30 : 62;
+            constexpr int max_bits = Modulus<T>::max_bit;
+            constexpr int type_bits = 8 * sizeof(T);
 
             std::vector<T> values;
-            for (int k = 2; k <= max_bits; k++)
+            for (int k = 2; k <= type_bits; k++)
             {
-                const T power = T(1) << k;
+                const T power = (k == type_bits) ? T(0) : T(1) << k;
                 for (T distance : {T(1), T(3), T(57), T(255)})
                 {
-                    if (distance < (power >> 1))
+                    if (k == type_bits || distance < (power >> 1))
                     {
                         values.push_back(power - distance);
                     }
                 }
-                values.push_back((power >> 1) + 1);
+                values.push_back((T(1) << (k - 1)) + 1);
             }
 
             for (T value : values)
             {
-                const Modulus<T> m(value);
                 T bits = 0;
                 for (T v = value; v != 0; v >>= 1)
                 {
                     bits++;
                 }
+                const std::string name =
+                    "Modulus(" + std::to_string(value) + ")";
+                if (bits > static_cast<T>(max_bits))
+                {
+                    bool rejected = false;
+                    try
+                    {
+                        Modulus<T> m(value);
+                    }
+                    catch (const std::invalid_argument&)
+                    {
+                        rejected = true;
+                    }
+                    report.expect(rejected, name,
+                                  std::to_string(bits) +
+                                      "-bit modulus was not rejected");
+                    continue;
+                }
+
+                const Modulus<T> m(value);
                 const T mu =
                     static_cast<T>((Wide<T>(1) << (2 * bits + 1)) / value);
                 report.expect(
-                    m.bit == bits && m.mu == mu,
-                    "Modulus(" + std::to_string(value) + ")",
+                    m.bit == bits && m.mu == mu, name,
                     "got bit=" + std::to_string(m.bit) +
                         " mu=" + std::to_string(m.mu) + ", expected bit=" +
                         std::to_string(bits) + " mu=" + std::to_string(mu));
             }
 
+            auto largest = make_fields<T>(1, max_bits, is32 ? 23 : 20);
+            for (int logn = 1;
+                 logn <= std::min(max_logn_, largest[0].max_logn()); logn++)
+                for (ReductionPolynomial poly : kPolys)
+                    for (type dir : kDirections)
+                    {
+                        NTTParameters<T> params =
+                            largest[0].parameters(logn, poly);
+                        single_case(report, params, "largest prime", dir);
+                    }
             return report.finish();
         }
 

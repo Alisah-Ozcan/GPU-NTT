@@ -1,5 +1,5 @@
 # GPU-NTT
-Welcome to the GPU-NTT-Optimization repository! We present cutting-edge algorithms and implementations for optimizing the Merge and [4-Step](https://github.com/Alisah-Ozcan/GPU-NTT/tree/v.0.0.0) Number Theoretic Transforms (NTT) on GPUs. GPU-NTT automatically supports both 32-bit and 64-bit arithmetic via Barrett reduction; the older manual reduction selection is kept in the [paper_version](https://github.com/Alisah-Ozcan/GPU-NTT/tree/paper_version) branch.
+Welcome to the GPU-NTT-Optimization repository! We present cutting-edge algorithms and implementations for optimizing the Merge and [4-Step](https://github.com/Alisah-Ozcan/GPU-NTT/tree/v.0.0.0) Number Theoretic Transforms (NTT) on GPUs. GPU-NTT automatically supports both 32-bit and 64-bit arithmetic via Barrett reduction (moduli up to 30 bits for 32-bit data and up to 61 bits for 64-bit data; larger moduli are rejected with `std::invalid_argument`); the older manual reduction selection is kept in the [paper_version](https://github.com/Alisah-Ozcan/GPU-NTT/tree/paper_version) branch.
 
 The associated research paper: https://eprint.iacr.org/2023/1410
 

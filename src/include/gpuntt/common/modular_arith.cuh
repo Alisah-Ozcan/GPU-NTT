@@ -11,6 +11,7 @@
 #include <string>
 #include <vector>
 #include <cstdint>
+#include <stdexcept>
 #include <type_traits>
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
@@ -31,10 +32,22 @@ template <typename T1> struct Modulus
     T1 bit;
     T1 mu;
 
+    // Largest modulus size supported by the GPU Barrett reduction. Larger
+    // moduli give wrong results on the GPU, so they are rejected.
+    static constexpr int max_bit = std::is_same<T1, Data32>::value ? 30 : 61;
+
     // Constructor to initialize the Modulus
     __host__ Modulus(T1 mod) : value(mod)
     {
         bit = bit_generator();
+        if (bit > max_bit)
+        {
+            throw std::invalid_argument(
+                "Modulus " + std::to_string(mod) + " has " +
+                std::to_string(bit) + " bits; GPU-NTT supports at most " +
+                std::to_string(max_bit) + "-bit moduli for " +
+                (std::is_same<T1, Data32>::value ? "Data32." : "Data64."));
+        }
         mu = mu_generator();
     }
 
@@ -70,8 +83,8 @@ namespace modular_operation_cpu
 {
     template <typename T1> class BarrettOperations
     {
-        // It does not work  modulus higher than 30 bit for Data32.
-        // It does not work  modulus higher than 62 bit for Data64.
+        // Supports up to 30-bit moduli for Data32 and 61-bit moduli for
+        // Data64 (checked by Modulus).
       public:
         // Modular Addition
         // result = (input1 + input2) % modulus
@@ -182,8 +195,8 @@ namespace modular_operation_gpu
 {
     template <typename T1> class BarrettOperations
     {
-        // It does not work  modulus higher than 30 bit for Data32.
-        // It does not work  modulus higher than 62 bit for Data64.
+        // Supports up to 30-bit moduli for Data32 and 61-bit moduli for
+        // Data64 (checked by Modulus).
       private:
         class uint128_t
         {
