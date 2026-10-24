@@ -9,6 +9,218 @@
 
 namespace gpuntt
 {
+    struct KernelConfig
+    {
+        int griddim_x;
+        int griddim_y;
+        int blockdim_x;
+        int blockdim_y;
+        size_t shared_memory;
+
+        int shared_index;
+        int logm;
+        int k;
+        int outer_iteration_count;
+
+        bool not_last_kernel;
+    };
+
+    // Kernel parameters per log2(ring size). GPUNTT_CC_89_KERNEL_CONFIG
+    // (CMake option, ON by default) selects the configuration tuned for
+    // compute capability 8.9 for log2(ring size) 27 and 28.
+    template <typename T> auto CreateForwardNTTKernel()
+    {
+        return std::unordered_map<int, std::vector<KernelConfig>>{
+            {1, {{1, 1, 1, 256, 512 * sizeof(T), 0, 0, 0, 1, false}}},
+            {2, {{1, 1, 2, 128, 512 * sizeof(T), 1, 0, 0, 2, false}}},
+            {3, {{1, 1, 4, 64, 512 * sizeof(T), 2, 0, 0, 3, false}}},
+            {4, {{1, 1, 8, 32, 512 * sizeof(T), 3, 0, 0, 4, false}}},
+            {5, {{1, 1, 16, 16, 512 * sizeof(T), 4, 0, 0, 5, false}}},
+            {6, {{1, 1, 32, 8, 512 * sizeof(T), 5, 0, 0, 6, false}}},
+            {7, {{1, 1, 64, 4, 512 * sizeof(T), 6, 0, 0, 7, false}}},
+            {8, {{1, 1, 128, 2, 512 * sizeof(T), 7, 0, 0, 8, false}}},
+            {9, {{1, 1, 256, 1, 512 * sizeof(T), 8, 0, 0, 9, false}}},
+            {10, {{1, 1, 512, 1, 1024 * sizeof(T), 9, 0, 0, 10, false}}},
+            {11,
+             {{4, 1, 128, 2, 512 * sizeof(T), 8, 0, 0, 2, true},
+              {1, 4, 256, 1, 512 * sizeof(T), 8, 2, 0, 9, false}}},
+            {12,
+             {{8, 1, 64, 4, 512 * sizeof(T), 8, 0, 0, 3, true},
+              {1, 8, 256, 1, 512 * sizeof(T), 8, 3, 0, 9, false}}},
+            {13,
+             {{16, 1, 32, 8, 512 * sizeof(T), 8, 0, 0, 4, true},
+              {1, 16, 256, 1, 512 * sizeof(T), 8, 4, 0, 9, false}}},
+            {14,
+             {{32, 1, 16, 16, 512 * sizeof(T), 8, 0, 0, 5, true},
+              {1, 32, 256, 1, 512 * sizeof(T), 8, 5, 0, 9, false}}},
+            {15,
+             {{64, 1, 8, 32, 512 * sizeof(T), 8, 0, 0, 6, true},
+              {1, 64, 256, 1, 512 * sizeof(T), 8, 6, 0, 9, false}}},
+            {16,
+             {{128, 1, 4, 64, 512 * sizeof(T), 8, 0, 0, 7, true},
+              {1, 128, 256, 1, 512 * sizeof(T), 8, 7, 0, 9, false}}},
+            {17,
+             {{256, 1, 32, 8, 512 * sizeof(T), 8, 0, 0, 4, true},
+              {16, 16, 32, 8, 512 * sizeof(T), 8, 4, 0, 4, true},
+              {1, 256, 256, 1, 512 * sizeof(T), 8, 8, 0, 9, false}}},
+            {18,
+             {{512, 1, 32, 8, 512 * sizeof(T), 8, 0, 0, 4, true},
+              {32, 16, 16, 16, 512 * sizeof(T), 8, 4, 0, 5, true},
+              {1, 512, 256, 1, 512 * sizeof(T), 8, 9, 0, 9, false}}},
+            {19,
+             {{1024, 1, 16, 16, 512 * sizeof(T), 8, 0, 0, 5, true},
+              {32, 32, 16, 16, 512 * sizeof(T), 8, 5, 0, 5, true},
+              {1, 1024, 256, 1, 512 * sizeof(T), 8, 10, 0, 9, false}}},
+            {20,
+             {{2048, 1, 16, 16, 512 * sizeof(T), 8, 0, 0, 5, true},
+              {64, 32, 8, 32, 512 * sizeof(T), 8, 5, 0, 6, true},
+              {1, 2048, 256, 1, 512 * sizeof(T), 8, 11, 0, 9, false}}},
+            {21,
+             {{4096, 1, 8, 32, 512 * sizeof(T), 8, 0, 0, 6, true},
+              {64, 64, 8, 32, 512 * sizeof(T), 8, 6, 0, 6, true},
+              {1, 4096, 256, 1, 512 * sizeof(T), 8, 12, 0, 9, false}}},
+            {22,
+             {{8192, 1, 8, 32, 512 * sizeof(T), 8, 0, 0, 6, true},
+              {128, 64, 4, 64, 512 * sizeof(T), 8, 6, 0, 7, true},
+              {1, 8192, 256, 1, 512 * sizeof(T), 8, 13, 0, 9, false}}},
+            {23,
+             {{16384, 1, 4, 64, 512 * sizeof(T), 8, 0, 0, 7, true},
+              {128, 128, 4, 64, 512 * sizeof(T), 8, 7, 0, 7, true},
+              {1, 16384, 256, 1, 512 * sizeof(T), 8, 14, 0, 9, false}}},
+            {24,
+             {{16384, 1, 8, 64, 1024 * sizeof(T), 9, 0, 0, 7, true},
+              {128, 128, 8, 64, 1024 * sizeof(T), 9, 7, 0, 7, true},
+              {1, 16384, 512, 1, 1024 * sizeof(T), 9, 14, 0, 10, false}}},
+            {25,
+             {{32768, 1, 8, 64, 1024 * sizeof(T), 9, 0, 0, 7, true},
+              {256, 128, 4, 128, 1024 * sizeof(T), 9, 7, 0, 8, true},
+              {32768, 1, 512, 1, 1024 * sizeof(T), 9, 15, 0, 10, false}}},
+            {26,
+             {{65536, 1, 4, 128, 1024 * sizeof(T), 9, 0, 0, 8, true},
+              {256, 256, 4, 128, 1024 * sizeof(T), 9, 8, 0, 8, true},
+              {65536, 1, 512, 1, 1024 * sizeof(T), 9, 16, 0, 10, false}}},
+#ifndef GPUNTT_CC_89_KERNEL_CONFIG
+            {27,
+             {{262144, 1, 16, 16, 512 * sizeof(T), 8, 0, 0, 5, true},
+              {8192, 32, 8, 32, 512 * sizeof(T), 8, 5, 0, 6, true},
+              {128, 2048, 4, 64, 512 * sizeof(T), 8, 11, 0, 7, true},
+              {262144, 1, 256, 1, 512 * sizeof(T), 8, 18, 0, 9, false}}},
+
+            {28,
+             {{524288, 1, 8, 32, 512 * sizeof(T), 8, 0, 0, 6, true},
+              {8192, 64, 8, 32, 512 * sizeof(T), 8, 6, 0, 6, true},
+              {128, 4096, 4, 64, 512 * sizeof(T), 8, 12, 0, 7,
+               true}, {524288, 1, 256, 1, 512 * sizeof(T), 8, 19, 0, 9, false}}}
+#else
+            {27,
+             {{131072, 1, 4, 128, 1024 * sizeof(T), 9, 0, 0, 8, true},
+              {512, 256, 2, 256, 1024 * sizeof(T), 9, 8, 0, 9, true},
+              {131072, 1, 512, 1, 1024 * sizeof(T), 9, 17, 0, 10, false}}},
+            {28,
+             {{262144, 1, 2, 256, 1024 * sizeof(T), 9, 0, 0, 9, true},
+              {512, 512, 2, 256, 1024 * sizeof(T), 9, 9, 0, 9, true},
+              {262144, 1, 512, 1, 1024 * sizeof(T), 9, 18, 0, 10, false}}}
+#endif
+        };
+    }
+
+    template <typename T> auto CreateInverseNTTKernel()
+    {
+        return std::unordered_map<int, std::vector<KernelConfig>>{
+            {1, {{1, 1, 1, 256, 512 * sizeof(T), 0, 0, 0, 1, true}}},
+            {2, {{1, 1, 2, 128, 512 * sizeof(T), 1, 1, 0, 2, true}}},
+            {3, {{1, 1, 4, 64, 512 * sizeof(T), 2, 2, 0, 3, true}}},
+            {4, {{1, 1, 8, 32, 512 * sizeof(T), 3, 3, 0, 4, true}}},
+            {5, {{1, 1, 16, 16, 512 * sizeof(T), 4, 4, 0, 5, true}}},
+            {6, {{1, 1, 32, 8, 512 * sizeof(T), 5, 5, 0, 6, true}}},
+            {7, {{1, 1, 64, 4, 512 * sizeof(T), 6, 6, 0, 7, true}}},
+            {8, {{1, 1, 128, 2, 512 * sizeof(T), 7, 7, 0, 8, true}}},
+            {9, {{1, 1, 256, 1, 512 * sizeof(T), 8, 8, 0, 9, true}}},
+            {10, {{1, 1, 512, 1, 1024 * sizeof(T), 9, 9, 0, 10, true}}},
+            {11,
+             {{1, 4, 256, 1, 512 * sizeof(T), 8, 10, 2, 9, false},
+              {4, 1, 128, 2, 512 * sizeof(T), 8, 1, 0, 2, true}}},
+            {12,
+             {{1, 8, 256, 1, 512 * sizeof(T), 8, 11, 3, 9, false},
+              {8, 1, 64, 4, 512 * sizeof(T), 8, 2, 0, 3, true}}},
+            {13,
+             {{1, 16, 256, 1, 512 * sizeof(T), 8, 12, 4, 9, false},
+              {16, 1, 32, 8, 512 * sizeof(T), 8, 3, 0, 4, true}}},
+            {14,
+             {{1, 32, 256, 1, 512 * sizeof(T), 8, 13, 5, 9, false},
+              {32, 1, 16, 16, 512 * sizeof(T), 8, 4, 0, 5, true}}},
+            {15,
+             {{1, 64, 256, 1, 512 * sizeof(T), 8, 14, 6, 9, false},
+              {64, 1, 8, 32, 512 * sizeof(T), 8, 5, 0, 6, true}}},
+            {16,
+             {{1, 128, 256, 1, 512 * sizeof(T), 8, 15, 7, 9, false},
+              {128, 1, 4, 64, 512 * sizeof(T), 8, 6, 0, 7, true}}},
+            {17,
+             {{1, 256, 256, 1, 512 * sizeof(T), 8, 16, 8, 9, false},
+              {16, 16, 32, 8, 512 * sizeof(T), 8, 7, 4, 4, false},
+              {256, 1, 32, 8, 512 * sizeof(T), 8, 3, 0, 4, true}}},
+            {18,
+             {{1, 512, 256, 1, 512 * sizeof(T), 8, 17, 9, 9, false},
+              {32, 16, 16, 16, 512 * sizeof(T), 8, 8, 4, 5, false},
+              {512, 1, 32, 8, 512 * sizeof(T), 8, 3, 0, 4, true}}},
+            {19,
+             {{1, 1024, 256, 1, 512 * sizeof(T), 8, 18, 10, 9, false},
+              {32, 32, 16, 16, 512 * sizeof(T), 8, 9, 5, 5, false},
+              {1024, 1, 16, 16, 512 * sizeof(T), 8, 4, 0, 5, true}}},
+            {20,
+             {{1, 2048, 256, 1, 512 * sizeof(T), 8, 19, 11, 9, false},
+              {64, 32, 8, 32, 512 * sizeof(T), 8, 10, 5, 6, false},
+              {2048, 1, 16, 16, 512 * sizeof(T), 8, 4, 0, 5, true}}},
+            {21,
+             {{1, 4096, 256, 1, 512 * sizeof(T), 8, 20, 12, 9, false},
+              {64, 64, 8, 32, 512 * sizeof(T), 8, 11, 6, 6, false},
+              {4096, 1, 8, 32, 512 * sizeof(T), 8, 5, 0, 6, true}}},
+            {22,
+             {{1, 8192, 256, 1, 512 * sizeof(T), 8, 21, 13, 9, false},
+              {128, 64, 4, 64, 512 * sizeof(T), 8, 12, 6, 7, false},
+              {8192, 1, 8, 32, 512 * sizeof(T), 8, 5, 0, 6, true}}},
+            {23,
+             {{1, 16384, 256, 1, 512 * sizeof(T), 8, 22, 14, 9, false},
+              {128, 128, 4, 64, 512 * sizeof(T), 8, 13, 7, 7, false},
+              {16384, 1, 4, 64, 512 * sizeof(T), 8, 6, 0, 7, true}}},
+            {24,
+             {{1, 16384, 512, 1, 1024 * sizeof(T), 9, 23, 14, 10, false},
+              {128, 128, 8, 64, 1024 * sizeof(T), 9, 13, 7, 7, false},
+              {16384, 1, 8, 64, 1024 * sizeof(T), 9, 6, 0, 7, true}}},
+            {25,
+             {{32768, 1, 512, 1, 1024 * sizeof(T), 9, 24, 15, 10, false},
+              {256, 128, 4, 128, 1024 * sizeof(T), 9, 14, 7, 8, false},
+              {32768, 1, 8, 64, 1024 * sizeof(T), 9, 6, 0, 7, true}}},
+            {26,
+             {{65536, 1, 512, 1, 1024 * sizeof(T), 9, 25, 16, 10, false},
+              {256, 256, 4, 128, 1024 * sizeof(T), 9, 15, 8, 8, false},
+              {65536, 1, 4, 128, 1024 * sizeof(T), 9, 7, 0, 8, true}}},
+#ifndef GPUNTT_CC_89_KERNEL_CONFIG
+            {27,
+             {{262144, 1, 256, 1, 512 * sizeof(T), 8, 26, 18, 9, false},
+              {128, 2048, 4, 64, 512 * sizeof(T), 8, 17, 11, 7, false},
+              {8192, 32, 8, 32, 512 * sizeof(T), 8, 10, 5, 6, false},
+              {262144, 1, 16, 16, 512 * sizeof(T), 8, 4, 0, 5, true}}},
+            {28,
+             {
+                 {524288, 1, 256, 1, 512 * sizeof(T), 8, 27, 19, 9, false},
+                 {128, 4096, 4, 64, 512 * sizeof(T), 8, 18, 12, 7, false},
+                 {8192, 64, 8, 32, 512 * sizeof(T), 8, 11, 6, 6, false},
+                 {524288, 1, 8, 32, 512 * sizeof(T), 8, 5, 0, 6, true},
+             }}
+#else
+            {27,
+             {{131072, 1, 512, 1, 1024 * sizeof(T), 9, 26, 17, 10, false},
+              {512, 256, 2, 256, 1024 * sizeof(T), 9, 16, 8, 9, false},
+              {131072, 1, 4, 128, 1024 * sizeof(T), 9, 7, 0, 8, true}}},
+            {28,
+             {{262144, 1, 512, 1, 1024 * sizeof(T), 9, 27, 18, 10, false},
+              {512, 512, 2, 256, 1024 * sizeof(T), 9, 17, 9, 9, false},
+              {262144, 1, 2, 256, 1024 * sizeof(T), 9, 8, 0, 9, true}}}
+#endif
+        };
+    }
+
     // Kernels compute global memory offsets with 32-bit integers, so a call
     // can transform at most 2^31 coefficients in total.
     static void check_batch_size(int n_power, int batch_size)
