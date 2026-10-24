@@ -205,7 +205,6 @@ namespace
                                         .ntt_type = dir,
                                         .ntt_layout = PerPolynomial,
                                         .reduction_poly = poly,
-                                        .zero_padding = false,
                                         .mod_inverse = params.n_inv,
                                         .stream = 0};
             const std::string name = case_name(variant, dir, logn, poly, batch);
@@ -424,7 +423,6 @@ namespace
                         .ntt_type = dir,
                         .ntt_layout = c.layout,
                         .reduction_poly = ReductionPolynomial::X_N_plus,
-                        .zero_padding = false,
                         .mod_inverse = 1,
                         .stream = 0};
                     ntt_rns_configuration<T> cfg_rns = {
@@ -432,7 +430,6 @@ namespace
                         .ntt_type = dir,
                         .ntt_layout = c.layout,
                         .reduction_poly = ReductionPolynomial::X_N_plus,
-                        .zero_padding = false,
                         .mod_inverse = nullptr,
                         .stream = 0};
                     const std::string suffix =
@@ -515,7 +512,6 @@ namespace
                                 .ntt_type = dir,
                                 .ntt_layout = PerPolynomial,
                                 .reduction_poly = poly,
-                                .zero_padding = false,
                                 .mod_inverse = d_n_inverse.get(),
                                 .stream = 0};
 
@@ -598,7 +594,6 @@ namespace
                                     .ntt_type = dir,
                                     .ntt_layout = PerPolynomial,
                                     .reduction_poly = poly,
-                                    .zero_padding = false,
                                     .mod_inverse = params[0].n_inv,
                                     .stream = 0};
                                 ntt_rns_configuration<T> cfg_rns = {
@@ -606,7 +601,6 @@ namespace
                                     .ntt_type = dir,
                                     .ntt_layout = PerPolynomial,
                                     .reduction_poly = poly,
-                                    .zero_padding = false,
                                     .mod_inverse = d_n_inverse.get(),
                                     .stream = 0};
 
@@ -711,7 +705,6 @@ namespace
                                     .ntt_type = dir,
                                     .ntt_layout = PerCoefficient,
                                     .reduction_poly = poly,
-                                    .zero_padding = false,
                                     .mod_inverse = params[0].n_inv,
                                     .stream = 0};
                                 ntt_rns_configuration<T> cfg_rns = {
@@ -719,7 +712,6 @@ namespace
                                     .ntt_type = dir,
                                     .ntt_layout = PerCoefficient,
                                     .reduction_poly = poly,
-                                    .zero_padding = false,
                                     .mod_inverse = d_n_inverse.get(),
                                     .stream = 0};
 
@@ -871,7 +863,6 @@ namespace
                                 .ntt_type = dir,
                                 .ntt_layout = PerPolynomial,
                                 .reduction_poly = poly,
-                                .zero_padding = false,
                                 .mod_inverse = d_n_inverse.get(),
                                 .stream = 0};
 
@@ -954,7 +945,6 @@ namespace
                                 .ntt_type = dir,
                                 .ntt_layout = PerPolynomial,
                                 .reduction_poly = poly,
-                                .zero_padding = false,
                                 .mod_inverse = d_n_inverse.get(),
                                 .stream = 0};
 

@@ -138,7 +138,6 @@ int main(int argc, char* argv[])
             .ntt_type = FORWARD,
             .ntt_layout = PerPolynomial,
             .reduction_poly = ReductionPolynomial::X_N_minus,
-            .zero_padding = false,
             .stream = 0};
         GPU_NTT_Inplace(InOut_Datas, Forward_Omega_Table_Device, test_modulus,
                         cfg_ntt, BATCH, 1);
@@ -297,7 +296,6 @@ int main(int argc, char* argv[])
             .ntt_type = FORWARD,
             .ntt_layout = PerPolynomial,
             .reduction_poly = ReductionPolynomial::X_N_minus,
-            .zero_padding = false,
             .stream = 0};
         GPU_NTT(In_Datas, Out_Datas, Forward_Omega_Table_Device, test_modulus,
                 cfg_ntt, BATCH, 1);
@@ -415,7 +413,6 @@ int main(int argc, char* argv[])
             .ntt_type = FORWARD,
             .ntt_layout = PerPolynomial,
             .reduction_poly = ReductionPolynomial::X_N_plus,
-            .zero_padding = false,
             .stream = 0};
         GPU_NTT_Inplace(InOut_Transpose_Datas, Forward_Omega_Table_Device,
                         parameters.modulus, cfg_ntt, W);
@@ -435,7 +432,6 @@ int main(int argc, char* argv[])
             .ntt_type = FORWARD,
             .ntt_layout = PerCoefficient,
             .reduction_poly = ReductionPolynomial::X_N_plus,
-            .zero_padding = false,
             .stream = 0};
         GPU_NTT_Inplace(InOut_Normal_Datas, Forward_Omega_Table_Device,
                         parameters.modulus, cfg_ntt_c, W);

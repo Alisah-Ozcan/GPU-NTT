@@ -35,7 +35,6 @@ namespace gpuntt
         type ntt_type;
         NTTLayout ntt_layout;
         ReductionPolynomial reduction_poly;
-        bool zero_padding;
         Ninverse<T> mod_inverse;
         cudaStream_t stream;
     };
@@ -46,7 +45,6 @@ namespace gpuntt
         type ntt_type;
         NTTLayout ntt_layout;
         ReductionPolynomial reduction_poly;
-        bool zero_padding;
         Ninverse<T>* mod_inverse;
         cudaStream_t stream;
     };
@@ -100,7 +98,7 @@ namespace gpuntt
                        const Root<typename std::make_unsigned<
                            T>::type>* __restrict__ root_of_unity_table,
                        Modulus<typename std::make_unsigned<T>::type> modulus,
-                       int shared_index, int N_power, bool zero_padding,
+                       int shared_index, int N_power,
                        bool reduction_poly_check, int total_batch);
 
     // It provides multiple NTT operation with using single prime.
@@ -110,7 +108,7 @@ namespace gpuntt
         const Root<typename std::make_unsigned<
             T>::type>* __restrict__ root_of_unity_table,
         Modulus<typename std::make_unsigned<T>::type>* modulus,
-        int shared_index, int N_power, bool zero_padding,
+        int shared_index, int N_power,
         bool reduction_poly_check, int total_batch, int mod_count);
 
     // It provides multiple NTT operation with using single prime.
@@ -120,7 +118,7 @@ namespace gpuntt
         const Root<typename std::make_unsigned<
             T>::type>* __restrict__ root_of_unity_table,
         Modulus<typename std::make_unsigned<T>::type> modulus, int shared_index,
-        int logm, int outer_iteration_count, int N_power, bool zero_padding,
+        int logm, int outer_iteration_count, int N_power,
         bool not_last_kernel, bool reduction_poly_check);
 
     // It provides multiple NTT operation with using multiple prime for
@@ -133,7 +131,7 @@ namespace gpuntt
                     T>::type>* __restrict__ root_of_unity_table,
                 Modulus<typename std::make_unsigned<T>::type>* modulus,
                 int shared_index, int logm, int outer_iteration_count,
-                int N_power, bool zero_padding, bool not_last_kernel,
+                int N_power, bool not_last_kernel,
                 bool reduction_poly_check, int mod_count);
 
     // It provides multiple NTT operation with using single prime.
@@ -143,7 +141,7 @@ namespace gpuntt
         const Root<typename std::make_unsigned<
             T>::type>* __restrict__ root_of_unity_table,
         Modulus<typename std::make_unsigned<T>::type> modulus, int shared_index,
-        int logm, int outer_iteration_count, int N_power, bool zero_padding,
+        int logm, int outer_iteration_count, int N_power,
         bool not_last_kernel, bool reduction_poly_check);
 
     // It provides multiple NTT operation with using multiple prime for
@@ -156,7 +154,7 @@ namespace gpuntt
                      T>::type>* __restrict__ root_of_unity_table,
                  Modulus<typename std::make_unsigned<T>::type>* modulus,
                  int shared_index, int logm, int outer_iteration_count,
-                 int N_power, bool zero_padding, bool not_last_kernel,
+                 int N_power, bool not_last_kernel,
                  bool reduction_poly_check, int mod_count);
 
     // It provides multiple NTT operation with using single prime.
@@ -432,7 +430,7 @@ namespace gpuntt
     __global__ void ForwardCoreModulusOrdered(
         T* polynomial_in, T* polynomial_out, Root<T>* root_of_unity_table,
         Modulus<T>* modulus, int shared_index, int logm,
-        int outer_iteration_count, int N_power, bool zero_padding,
+        int outer_iteration_count, int N_power,
         bool not_last_kernel, bool reduction_poly_check, int mod_count,
         int* order);
 
@@ -442,7 +440,7 @@ namespace gpuntt
     __global__ void ForwardCoreModulusOrdered_(
         T* polynomial_in, T* polynomial_out, Root<T>* root_of_unity_table,
         Modulus<T>* modulus, int shared_index, int logm,
-        int outer_iteration_count, int N_power, bool zero_padding,
+        int outer_iteration_count, int N_power,
         bool not_last_kernel, bool reduction_poly_check, int mod_count,
         int* order);
 
@@ -518,7 +516,7 @@ namespace gpuntt
     __global__ void ForwardCorePolyOrdered(
         T* polynomial_in, T* polynomial_out, Root<T>* root_of_unity_table,
         Modulus<T>* modulus, int shared_index, int logm,
-        int outer_iteration_count, int N_power, bool zero_padding,
+        int outer_iteration_count, int N_power,
         bool not_last_kernel, bool reduction_poly_check, int mod_count,
         int* order);
 
@@ -528,7 +526,7 @@ namespace gpuntt
     __global__ void ForwardCorePolyOrdered_(
         T* polynomial_in, T* polynomial_out, Root<T>* root_of_unity_table,
         Modulus<T>* modulus, int shared_index, int logm,
-        int outer_iteration_count, int N_power, bool zero_padding,
+        int outer_iteration_count, int N_power,
         bool not_last_kernel, bool reduction_poly_check, int mod_count,
         int* order);
 

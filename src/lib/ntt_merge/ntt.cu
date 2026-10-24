@@ -33,7 +33,7 @@ namespace gpuntt
                        const Root<typename std::make_unsigned<
                            T>::type>* __restrict__ root_of_unity_table,
                        Modulus<typename std::make_unsigned<T>::type> modulus,
-                       int shared_index, int N_power, bool zero_padding,
+                       int shared_index, int N_power,
                        bool reduction_poly_check, int total_batch)
     {
         using TU = typename std::make_unsigned<T>::type;
@@ -136,7 +136,7 @@ namespace gpuntt
         const Root<typename std::make_unsigned<
             T>::type>* __restrict__ root_of_unity_table,
         Modulus<typename std::make_unsigned<T>::type>* modulus,
-        int shared_index, int N_power, bool zero_padding,
+        int shared_index, int N_power,
         bool reduction_poly_check, int total_batch, int mod_count)
     {
         using TU = typename std::make_unsigned<T>::type;
@@ -456,7 +456,7 @@ namespace gpuntt
         const Root<typename std::make_unsigned<
             T>::type>* __restrict__ root_of_unity_table,
         Modulus<typename std::make_unsigned<T>::type> modulus, int shared_index,
-        int logm, int outer_iteration_count, int N_power, bool zero_padding,
+        int logm, int outer_iteration_count, int N_power,
         bool not_last_kernel, bool reduction_poly_check)
     {
         using TU = typename std::make_unsigned<T>::type;
@@ -617,7 +617,7 @@ namespace gpuntt
                     T>::type>* __restrict__ root_of_unity_table,
                 Modulus<typename std::make_unsigned<T>::type>* modulus,
                 int shared_index, int logm, int outer_iteration_count,
-                int N_power, bool zero_padding, bool not_last_kernel,
+                int N_power, bool not_last_kernel,
                 bool reduction_poly_check, int mod_count)
     {
         using TU = typename std::make_unsigned<T>::type;
@@ -784,7 +784,7 @@ namespace gpuntt
         const Root<typename std::make_unsigned<
             T>::type>* __restrict__ root_of_unity_table,
         Modulus<typename std::make_unsigned<T>::type> modulus, int shared_index,
-        int logm, int outer_iteration_count, int N_power, bool zero_padding,
+        int logm, int outer_iteration_count, int N_power,
         bool not_last_kernel, bool reduction_poly_check)
     {
         using TU = typename std::make_unsigned<T>::type;
@@ -943,7 +943,7 @@ namespace gpuntt
                      T>::type>* __restrict__ root_of_unity_table,
                  Modulus<typename std::make_unsigned<T>::type>* modulus,
                  int shared_index, int logm, int outer_iteration_count,
-                 int N_power, bool zero_padding, bool not_last_kernel,
+                 int N_power, bool not_last_kernel,
                  bool reduction_poly_check, int mod_count)
     {
         using TU = typename std::make_unsigned<T>::type;
@@ -2138,7 +2138,6 @@ namespace gpuntt
                         current_kernel_params.shared_memory, cfg.stream>>>(
                         device_in, device_out, root_of_unity_table, modulus,
                         current_kernel_params.shared_index, cfg.n_power,
-                        cfg.zero_padding,
                         (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
                         batch_size);
                     GPUNTT_CUDA_CHECK(cudaGetLastError());
@@ -2159,7 +2158,7 @@ namespace gpuntt
                             current_kernel_params.shared_index,
                             current_kernel_params.logm,
                             current_kernel_params.outer_iteration_count,
-                            cfg.n_power, cfg.zero_padding,
+                            cfg.n_power,
                             current_kernel_params.not_last_kernel,
                             (cfg.reduction_poly ==
                              ReductionPolynomial::X_N_minus));
@@ -2182,7 +2181,7 @@ namespace gpuntt
                                 modulus, current_kernel_params.shared_index,
                                 current_kernel_params.logm,
                                 current_kernel_params.outer_iteration_count,
-                                cfg.n_power, cfg.zero_padding,
+                                cfg.n_power,
                                 current_kernel_params.not_last_kernel,
                                 (cfg.reduction_poly ==
                                  ReductionPolynomial::X_N_minus));
@@ -2203,7 +2202,7 @@ namespace gpuntt
                             current_kernel_params.shared_index,
                             current_kernel_params.logm,
                             current_kernel_params.outer_iteration_count,
-                            cfg.n_power, cfg.zero_padding,
+                            cfg.n_power,
                             current_kernel_params.not_last_kernel,
                             (cfg.reduction_poly ==
                              ReductionPolynomial::X_N_minus));
@@ -2226,7 +2225,7 @@ namespace gpuntt
                                 modulus, current_kernel_params.shared_index,
                                 current_kernel_params.logm,
                                 current_kernel_params.outer_iteration_count,
-                                cfg.n_power, cfg.zero_padding,
+                                cfg.n_power,
                                 current_kernel_params.not_last_kernel,
                                 (cfg.reduction_poly ==
                                  ReductionPolynomial::X_N_minus));
@@ -2245,7 +2244,7 @@ namespace gpuntt
                             modulus, current_kernel_params.shared_index,
                             current_kernel_params.logm,
                             current_kernel_params.outer_iteration_count,
-                            cfg.n_power, cfg.zero_padding,
+                            cfg.n_power,
                             current_kernel_params.not_last_kernel,
                             (cfg.reduction_poly ==
                              ReductionPolynomial::X_N_minus));
@@ -2642,7 +2641,6 @@ namespace gpuntt
                         current_kernel_params.shared_memory, cfg.stream>>>(
                         device_in, device_out, root_of_unity_table, modulus,
                         current_kernel_params.shared_index, cfg.n_power,
-                        cfg.zero_padding,
                         (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
                         batch_size, mod_count);
                     GPUNTT_CUDA_CHECK(cudaGetLastError());
@@ -2663,7 +2661,7 @@ namespace gpuntt
                             current_kernel_params.shared_index,
                             current_kernel_params.logm,
                             current_kernel_params.outer_iteration_count,
-                            cfg.n_power, cfg.zero_padding,
+                            cfg.n_power,
                             current_kernel_params.not_last_kernel,
                             (cfg.reduction_poly ==
                              ReductionPolynomial::X_N_minus),
@@ -2687,7 +2685,7 @@ namespace gpuntt
                                 modulus, current_kernel_params.shared_index,
                                 current_kernel_params.logm,
                                 current_kernel_params.outer_iteration_count,
-                                cfg.n_power, cfg.zero_padding,
+                                cfg.n_power,
                                 current_kernel_params.not_last_kernel,
                                 (cfg.reduction_poly ==
                                  ReductionPolynomial::X_N_minus),
@@ -2709,7 +2707,7 @@ namespace gpuntt
                             current_kernel_params.shared_index,
                             current_kernel_params.logm,
                             current_kernel_params.outer_iteration_count,
-                            cfg.n_power, cfg.zero_padding,
+                            cfg.n_power,
                             current_kernel_params.not_last_kernel,
                             (cfg.reduction_poly ==
                              ReductionPolynomial::X_N_minus),
@@ -2733,7 +2731,7 @@ namespace gpuntt
                                 modulus, current_kernel_params.shared_index,
                                 current_kernel_params.logm,
                                 current_kernel_params.outer_iteration_count,
-                                cfg.n_power, cfg.zero_padding,
+                                cfg.n_power,
                                 current_kernel_params.not_last_kernel,
                                 (cfg.reduction_poly ==
                                  ReductionPolynomial::X_N_minus),
@@ -2753,7 +2751,7 @@ namespace gpuntt
                             modulus, current_kernel_params.shared_index,
                             current_kernel_params.logm,
                             current_kernel_params.outer_iteration_count,
-                            cfg.n_power, cfg.zero_padding,
+                            cfg.n_power,
                             current_kernel_params.not_last_kernel,
                             (cfg.reduction_poly ==
                              ReductionPolynomial::X_N_minus),
@@ -3171,7 +3169,7 @@ namespace gpuntt
     __global__ void ForwardCoreModulusOrdered(
         T* polynomial_in, T* polynomial_out, Root<T>* root_of_unity_table,
         Modulus<T>* modulus, int shared_index, int logm,
-        int outer_iteration_count, int N_power, bool zero_padding,
+        int outer_iteration_count, int N_power,
         bool not_last_kernel, bool reduction_poly_check, int mod_count,
         int* order)
     {
@@ -3322,7 +3320,7 @@ namespace gpuntt
     __global__ void ForwardCoreModulusOrdered_(
         T* polynomial_in, T* polynomial_out, Root<T>* root_of_unity_table,
         Modulus<T>* modulus, int shared_index, int logm,
-        int outer_iteration_count, int N_power, bool zero_padding,
+        int outer_iteration_count, int N_power,
         bool not_last_kernel, bool reduction_poly_check, int mod_count,
         int* order)
     {
@@ -3704,7 +3702,7 @@ namespace gpuntt
                             modulus, current_kernel_params.shared_index,
                             current_kernel_params.logm,
                             current_kernel_params.outer_iteration_count,
-                            cfg.n_power, cfg.zero_padding,
+                            cfg.n_power,
                             current_kernel_params.not_last_kernel,
                             (cfg.reduction_poly ==
                              ReductionPolynomial::X_N_minus),
@@ -3730,7 +3728,7 @@ namespace gpuntt
                             modulus, current_kernel_params.shared_index,
                             current_kernel_params.logm,
                             current_kernel_params.outer_iteration_count,
-                            cfg.n_power, cfg.zero_padding,
+                            cfg.n_power,
                             current_kernel_params.not_last_kernel,
                             (cfg.reduction_poly ==
                              ReductionPolynomial::X_N_minus),
@@ -3751,7 +3749,7 @@ namespace gpuntt
                         current_kernel_params.shared_index,
                         current_kernel_params.logm,
                         current_kernel_params.outer_iteration_count,
-                        cfg.n_power, cfg.zero_padding,
+                        cfg.n_power,
                         current_kernel_params.not_last_kernel,
                         (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
                         mod_count, order);
@@ -3854,7 +3852,7 @@ namespace gpuntt
                            Root<T>* root_of_unity_table, Modulus<T>* modulus,
                            int shared_index, int logm,
                            int outer_iteration_count, int N_power,
-                           bool zero_padding, bool not_last_kernel,
+                           bool not_last_kernel,
                            bool reduction_poly_check, int mod_count, int* order)
     {
         const int idx_x = threadIdx.x;
@@ -4004,7 +4002,7 @@ namespace gpuntt
     __global__ void ForwardCorePolyOrdered_(
         T* polynomial_in, T* polynomial_out, Root<T>* root_of_unity_table,
         Modulus<T>* modulus, int shared_index, int logm,
-        int outer_iteration_count, int N_power, bool zero_padding,
+        int outer_iteration_count, int N_power,
         bool not_last_kernel, bool reduction_poly_check, int mod_count,
         int* order)
     {
@@ -4387,7 +4385,7 @@ namespace gpuntt
                             modulus, current_kernel_params.shared_index,
                             current_kernel_params.logm,
                             current_kernel_params.outer_iteration_count,
-                            cfg.n_power, cfg.zero_padding,
+                            cfg.n_power,
                             current_kernel_params.not_last_kernel,
                             (cfg.reduction_poly ==
                              ReductionPolynomial::X_N_minus),
@@ -4413,7 +4411,7 @@ namespace gpuntt
                             modulus, current_kernel_params.shared_index,
                             current_kernel_params.logm,
                             current_kernel_params.outer_iteration_count,
-                            cfg.n_power, cfg.zero_padding,
+                            cfg.n_power,
                             current_kernel_params.not_last_kernel,
                             (cfg.reduction_poly ==
                              ReductionPolynomial::X_N_minus),
@@ -4434,7 +4432,7 @@ namespace gpuntt
                         current_kernel_params.shared_index,
                         current_kernel_params.logm,
                         current_kernel_params.outer_iteration_count,
-                        cfg.n_power, cfg.zero_padding,
+                        cfg.n_power,
                         current_kernel_params.not_last_kernel,
                         (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
                         mod_count, order);
@@ -4538,7 +4536,6 @@ namespace gpuntt
         type ntt_type;
         NTTLayout ntt_layout;
         ReductionPolynomial reduction_poly;
-        bool zero_padding;
         Ninverse<Data32> mod_inverse;
         cudaStream_t stream;
     };
@@ -4549,7 +4546,6 @@ namespace gpuntt
         type ntt_type;
         NTTLayout ntt_layout;
         ReductionPolynomial reduction_poly;
-        bool zero_padding;
         Ninverse<Data64> mod_inverse;
         cudaStream_t stream;
     };
@@ -4560,7 +4556,6 @@ namespace gpuntt
         type ntt_type;
         NTTLayout ntt_layout;
         ReductionPolynomial reduction_poly;
-        bool zero_padding;
         Ninverse<Data32>* mod_inverse;
         cudaStream_t stream;
     };
@@ -4571,7 +4566,6 @@ namespace gpuntt
         type ntt_type;
         NTTLayout ntt_layout;
         ReductionPolynomial reduction_poly;
-        bool zero_padding;
         Ninverse<Data64>* mod_inverse;
         cudaStream_t stream;
     };
@@ -4580,52 +4574,52 @@ namespace gpuntt
         Data32* polynomial_in, Data32* polynomial_out,
         const Root<Data32>* __restrict__ root_of_unity_table,
         Modulus<Data32> modulus, int shared_index, int N_power,
-        bool zero_padding, bool reduction_poly_check, int total_batch);
+        bool reduction_poly_check, int total_batch);
 
     template __global__ void ForwardCoreLowRing<Data64>(
         Data64* polynomial_in, Data64* polynomial_out,
         const Root<Data64>* __restrict__ root_of_unity_table,
         Modulus<Data64> modulus, int shared_index, int N_power,
-        bool zero_padding, bool reduction_poly_check, int total_batch);
+        bool reduction_poly_check, int total_batch);
 
     template __global__ void ForwardCoreLowRing<Data32s>(
         Data32s* polynomial_in, Data32* polynomial_out,
         const Root<Data32>* __restrict__ root_of_unity_table,
         Modulus<Data32> modulus, int shared_index, int N_power,
-        bool zero_padding, bool reduction_poly_check, int total_batch);
+        bool reduction_poly_check, int total_batch);
 
     template __global__ void ForwardCoreLowRing<Data64s>(
         Data64s* polynomial_in, Data64* polynomial_out,
         const Root<Data64>* __restrict__ root_of_unity_table,
         Modulus<Data64> modulus, int shared_index, int N_power,
-        bool zero_padding, bool reduction_poly_check, int total_batch);
+        bool reduction_poly_check, int total_batch);
 
     template __global__ void ForwardCoreLowRing<Data32>(
         Data32* polynomial_in, Data32* polynomial_out,
         const Root<Data32>* __restrict__ root_of_unity_table,
         Modulus<Data32>* modulus, int shared_index, int N_power,
-        bool zero_padding, bool reduction_poly_check, int total_batch,
+        bool reduction_poly_check, int total_batch,
         int mod_count);
 
     template __global__ void ForwardCoreLowRing<Data64>(
         Data64* polynomial_in, Data64* polynomial_out,
         const Root<Data64>* __restrict__ root_of_unity_table,
         Modulus<Data64>* modulus, int shared_index, int N_power,
-        bool zero_padding, bool reduction_poly_check, int total_batch,
+        bool reduction_poly_check, int total_batch,
         int mod_count);
 
     template __global__ void ForwardCoreLowRing<Data32s>(
         Data32s* polynomial_in, Data32* polynomial_out,
         const Root<Data32>* __restrict__ root_of_unity_table,
         Modulus<Data32>* modulus, int shared_index, int N_power,
-        bool zero_padding, bool reduction_poly_check, int total_batch,
+        bool reduction_poly_check, int total_batch,
         int mod_count);
 
     template __global__ void ForwardCoreLowRing<Data64s>(
         Data64s* polynomial_in, Data64* polynomial_out,
         const Root<Data64>* __restrict__ root_of_unity_table,
         Modulus<Data64>* modulus, int shared_index, int N_power,
-        bool zero_padding, bool reduction_poly_check, int total_batch,
+        bool reduction_poly_check, int total_batch,
         int mod_count);
 
     template __global__ void
@@ -4633,7 +4627,7 @@ namespace gpuntt
                         const Root<Data32>* __restrict__ root_of_unity_table,
                         Modulus<Data32> modulus, int shared_index, int logm,
                         int outer_iteration_count, int N_power,
-                        bool zero_padding, bool not_last_kernel,
+                        bool not_last_kernel,
                         bool reduction_poly_check);
 
     template __global__ void
@@ -4641,7 +4635,7 @@ namespace gpuntt
                         const Root<Data64>* __restrict__ root_of_unity_table,
                         Modulus<Data64> modulus, int shared_index, int logm,
                         int outer_iteration_count, int N_power,
-                        bool zero_padding, bool not_last_kernel,
+                        bool not_last_kernel,
                         bool reduction_poly_check);
 
     template __global__ void
@@ -4649,7 +4643,7 @@ namespace gpuntt
                          const Root<Data32>* __restrict__ root_of_unity_table,
                          Modulus<Data32> modulus, int shared_index, int logm,
                          int outer_iteration_count, int N_power,
-                         bool zero_padding, bool not_last_kernel,
+                         bool not_last_kernel,
                          bool reduction_poly_check);
 
     template __global__ void
@@ -4657,7 +4651,7 @@ namespace gpuntt
                          const Root<Data64>* __restrict__ root_of_unity_table,
                          Modulus<Data64> modulus, int shared_index, int logm,
                          int outer_iteration_count, int N_power,
-                         bool zero_padding, bool not_last_kernel,
+                         bool not_last_kernel,
                          bool reduction_poly_check);
 
     template __global__ void
@@ -4665,7 +4659,7 @@ namespace gpuntt
                         const Root<Data32>* __restrict__ root_of_unity_table,
                         Modulus<Data32>* modulus, int shared_index, int logm,
                         int outer_iteration_count, int N_power,
-                        bool zero_padding, bool not_last_kernel,
+                        bool not_last_kernel,
                         bool reduction_poly_check, int mod_count);
 
     template __global__ void
@@ -4673,7 +4667,7 @@ namespace gpuntt
                         const Root<Data64>* __restrict__ root_of_unity_table,
                         Modulus<Data64>* modulus, int shared_index, int logm,
                         int outer_iteration_count, int N_power,
-                        bool zero_padding, bool not_last_kernel,
+                        bool not_last_kernel,
                         bool reduction_poly_check, int mod_count);
 
     template __global__ void
@@ -4681,7 +4675,7 @@ namespace gpuntt
                          const Root<Data32>* __restrict__ root_of_unity_table,
                          Modulus<Data32>* modulus, int shared_index, int logm,
                          int outer_iteration_count, int N_power,
-                         bool zero_padding, bool not_last_kernel,
+                         bool not_last_kernel,
                          bool reduction_poly_check, int mod_count);
 
     template __global__ void
@@ -4689,7 +4683,7 @@ namespace gpuntt
                          const Root<Data64>* __restrict__ root_of_unity_table,
                          Modulus<Data64>* modulus, int shared_index, int logm,
                          int outer_iteration_count, int N_power,
-                         bool zero_padding, bool not_last_kernel,
+                         bool not_last_kernel,
                          bool reduction_poly_check, int mod_count);
 
     template __global__ void
@@ -4697,7 +4691,7 @@ namespace gpuntt
                          const Root<Data32>* __restrict__ root_of_unity_table,
                          Modulus<Data32> modulus, int shared_index, int logm,
                          int outer_iteration_count, int N_power,
-                         bool zero_padding, bool not_last_kernel,
+                         bool not_last_kernel,
                          bool reduction_poly_check);
 
     template __global__ void
@@ -4705,7 +4699,7 @@ namespace gpuntt
                          const Root<Data64>* __restrict__ root_of_unity_table,
                          Modulus<Data64> modulus, int shared_index, int logm,
                          int outer_iteration_count, int N_power,
-                         bool zero_padding, bool not_last_kernel,
+                         bool not_last_kernel,
                          bool reduction_poly_check);
 
     template __global__ void
@@ -4713,7 +4707,7 @@ namespace gpuntt
                           const Root<Data32>* __restrict__ root_of_unity_table,
                           Modulus<Data32> modulus, int shared_index, int logm,
                           int outer_iteration_count, int N_power,
-                          bool zero_padding, bool not_last_kernel,
+                          bool not_last_kernel,
                           bool reduction_poly_check);
 
     template __global__ void
@@ -4721,7 +4715,7 @@ namespace gpuntt
                           const Root<Data64>* __restrict__ root_of_unity_table,
                           Modulus<Data64> modulus, int shared_index, int logm,
                           int outer_iteration_count, int N_power,
-                          bool zero_padding, bool not_last_kernel,
+                          bool not_last_kernel,
                           bool reduction_poly_check);
 
     template __global__ void
@@ -4729,7 +4723,7 @@ namespace gpuntt
                          const Root<Data32>* __restrict__ root_of_unity_table,
                          Modulus<Data32>* modulus, int shared_index, int logm,
                          int outer_iteration_count, int N_power,
-                         bool zero_padding, bool not_last_kernel,
+                         bool not_last_kernel,
                          bool reduction_poly_check, int mod_count);
 
     template __global__ void
@@ -4737,7 +4731,7 @@ namespace gpuntt
                          const Root<Data64>* __restrict__ root_of_unity_table,
                          Modulus<Data64>* modulus, int shared_index, int logm,
                          int outer_iteration_count, int N_power,
-                         bool zero_padding, bool not_last_kernel,
+                         bool not_last_kernel,
                          bool reduction_poly_check, int mod_count);
 
     template __global__ void
@@ -4745,7 +4739,7 @@ namespace gpuntt
                           const Root<Data32>* __restrict__ root_of_unity_table,
                           Modulus<Data32>* modulus, int shared_index, int logm,
                           int outer_iteration_count, int N_power,
-                          bool zero_padding, bool not_last_kernel,
+                          bool not_last_kernel,
                           bool reduction_poly_check, int mod_count);
 
     template __global__ void
@@ -4753,7 +4747,7 @@ namespace gpuntt
                           const Root<Data64>* __restrict__ root_of_unity_table,
                           Modulus<Data64>* modulus, int shared_index, int logm,
                           int outer_iteration_count, int N_power,
-                          bool zero_padding, bool not_last_kernel,
+                          bool not_last_kernel,
                           bool reduction_poly_check, int mod_count);
 
     template __global__ void InverseCoreLowRing<Data32>(
@@ -5156,28 +5150,28 @@ namespace gpuntt
         Data32* polynomial_in, Data32* polynomial_out,
         Root<Data32>* root_of_unity_table, Modulus<Data32>* modulus,
         int shared_index, int logm, int outer_iteration_count, int N_power,
-        bool zero_padding, bool not_last_kernel, bool reduction_poly_check,
+        bool not_last_kernel, bool reduction_poly_check,
         int mod_count, int* order);
 
     template __global__ void ForwardCoreModulusOrdered_<Data32>(
         Data32* polynomial_in, Data32* polynomial_out,
         Root<Data32>* root_of_unity_table, Modulus<Data32>* modulus,
         int shared_index, int logm, int outer_iteration_count, int N_power,
-        bool zero_padding, bool not_last_kernel, bool reduction_poly_check,
+        bool not_last_kernel, bool reduction_poly_check,
         int mod_count, int* order);
 
     template __global__ void ForwardCoreModulusOrdered<Data64>(
         Data64* polynomial_in, Data64* polynomial_out,
         Root<Data64>* root_of_unity_table, Modulus<Data64>* modulus,
         int shared_index, int logm, int outer_iteration_count, int N_power,
-        bool zero_padding, bool not_last_kernel, bool reduction_poly_check,
+        bool not_last_kernel, bool reduction_poly_check,
         int mod_count, int* order);
 
     template __global__ void ForwardCoreModulusOrdered_<Data64>(
         Data64* polynomial_in, Data64* polynomial_out,
         Root<Data64>* root_of_unity_table, Modulus<Data64>* modulus,
         int shared_index, int logm, int outer_iteration_count, int N_power,
-        bool zero_padding, bool not_last_kernel, bool reduction_poly_check,
+        bool not_last_kernel, bool reduction_poly_check,
         int mod_count, int* order);
 
     template __global__ void InverseCoreModulusOrdered<Data32>(
@@ -5236,28 +5230,28 @@ namespace gpuntt
         Data32* polynomial_in, Data32* polynomial_out,
         Root<Data32>* root_of_unity_table, Modulus<Data32>* modulus,
         int shared_index, int logm, int outer_iteration_count, int N_power,
-        bool zero_padding, bool not_last_kernel, bool reduction_poly_check,
+        bool not_last_kernel, bool reduction_poly_check,
         int mod_count, int* order);
 
     template __global__ void ForwardCorePolyOrdered_<Data32>(
         Data32* polynomial_in, Data32* polynomial_out,
         Root<Data32>* root_of_unity_table, Modulus<Data32>* modulus,
         int shared_index, int logm, int outer_iteration_count, int N_power,
-        bool zero_padding, bool not_last_kernel, bool reduction_poly_check,
+        bool not_last_kernel, bool reduction_poly_check,
         int mod_count, int* order);
 
     template __global__ void ForwardCorePolyOrdered<Data64>(
         Data64* polynomial_in, Data64* polynomial_out,
         Root<Data64>* root_of_unity_table, Modulus<Data64>* modulus,
         int shared_index, int logm, int outer_iteration_count, int N_power,
-        bool zero_padding, bool not_last_kernel, bool reduction_poly_check,
+        bool not_last_kernel, bool reduction_poly_check,
         int mod_count, int* order);
 
     template __global__ void ForwardCorePolyOrdered_<Data64>(
         Data64* polynomial_in, Data64* polynomial_out,
         Root<Data64>* root_of_unity_table, Modulus<Data64>* modulus,
         int shared_index, int logm, int outer_iteration_count, int N_power,
-        bool zero_padding, bool not_last_kernel, bool reduction_poly_check,
+        bool not_last_kernel, bool reduction_poly_check,
         int mod_count, int* order);
 
     template __global__ void InverseCorePolyOrdered<Data32>(

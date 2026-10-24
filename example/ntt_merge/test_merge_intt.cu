@@ -147,7 +147,6 @@ int main(int argc, char* argv[])
             .ntt_type = INVERSE,
             .ntt_layout = PerPolynomial,
             .reduction_poly = ReductionPolynomial::X_N_minus,
-            .zero_padding = false,
             .mod_inverse = test_ninverse,
             .stream = 0};
 
@@ -333,7 +332,6 @@ int main(int argc, char* argv[])
             .ntt_type = INVERSE,
             .ntt_layout = PerPolynomial,
             .reduction_poly = ReductionPolynomial::X_N_minus,
-            .zero_padding = false,
             .mod_inverse = test_ninverse,
             .stream = 0};
 
@@ -452,7 +450,6 @@ int main(int argc, char* argv[])
             .ntt_type = INVERSE,
             .ntt_layout = PerPolynomial,
             .reduction_poly = ReductionPolynomial::X_N_plus,
-            .zero_padding = false,
             .mod_inverse = parameters.n_inv,
             .stream = 0};
 
@@ -474,7 +471,6 @@ int main(int argc, char* argv[])
             .ntt_type = INVERSE,
             .ntt_layout = PerCoefficient,
             .reduction_poly = ReductionPolynomial::X_N_plus,
-            .zero_padding = false,
             .mod_inverse = parameters.n_inv,
             .stream = 0};
 
