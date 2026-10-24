@@ -67,6 +67,17 @@ if(GPUNTT_BUILD_EXAMPLES)
     add_subdirectory(example)
 endif()
 
+#########
+# TESTS #
+#########
+
+option(GPUNTT_BUILD_TESTS "Build GPU-NTT Tests" OFF)
+message(STATUS "GPUNTT_BUILD_TESTS: ${GPUNTT_BUILD_TESTS}")
+if(GPUNTT_BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(test)
+endif()
+
 ##############
 # BENCHMARKS #
 ##############

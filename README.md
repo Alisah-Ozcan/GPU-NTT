@@ -84,6 +84,19 @@ Run GPU examples:
 # Example: ./build/bin/example/gpu_merge_ntt_examples 12 1
 ```
 
+#### Tests
+
+The tests compare every merge NTT host API variant (single modulus, RNS, signed input/output, column-wise, modulus/poly ordered; in-place and out-of-place) against the CPU reference for 32-bit and 64-bit data.
+
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_ARCHITECTURES=86 -DGPUNTT_BUILD_TESTS=ON
+cmake --build build --parallel
+ctest --test-dir build --output-on-failure
+```
+
+- `-DGPUNTT_TEST_MAX_LOGN=<N>` sets the largest ring size covered (default `22`, up to `28` for 64-bit and `22` for 32-bit).
+- A single suite can be run directly: `./build/bin/test/merge_ntt_tests --bits 64 --suite rns --max-logn 16`
+
 #### Benchmarking GPU NTT
 
 Benchmarks use [nvbench](https://github.com/NVIDIA/nvbench), which requires CMake >= 3.30.4.
