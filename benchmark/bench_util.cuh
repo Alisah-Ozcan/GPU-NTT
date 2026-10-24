@@ -17,7 +17,6 @@
 #include <cuda_runtime.h>
 #include <type_traits>
 #include <limits>
-#include "gpuntt/ntt_4step/ntt_4step_cpu.cuh"
 #include "gpuntt/ntt_merge/ntt.cuh"
 
 template <typename T> struct random_functor
@@ -61,56 +60,5 @@ template <typename T> struct random_functor
         }
     }
 };
-
-// For 4-Step-NTT
-std::vector<int> bench_matrix_dimention(int logn)
-{
-    gpuntt::customAssert(12 <= logn <= 24, "LOGN should be in range 12 to 24.");
-    std::vector<int> shape;
-    switch (logn)
-    {
-        case 12:
-            shape = {32, 128};
-            return shape;
-        case 13:
-            shape = {32, 256};
-            return shape;
-        case 14:
-            shape = {32, 512};
-            return shape;
-        case 15:
-            shape = {64, 512};
-            return shape;
-        case 16:
-            shape = {128, 512};
-            return shape;
-        case 17:
-            shape = {32, 4096};
-            return shape;
-        case 18:
-            shape = {32, 8192};
-            return shape;
-        case 19:
-            shape = {32, 16384};
-            return shape;
-        case 20:
-            shape = {32, 32768};
-            return shape;
-        case 21:
-            shape = {64, 32768};
-            return shape;
-        case 22:
-            shape = {128, 32768};
-            return shape;
-        case 23:
-            shape = {128, 65536};
-            return shape;
-        case 24:
-            shape = {256, 65536};
-            return shape;
-        default:
-            throw std::runtime_error("Invalid choice.\n");
-    }
-}
 
 #endif // BENCH_UTIL_H

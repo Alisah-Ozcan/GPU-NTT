@@ -1,8 +1,6 @@
 set(LIB_SOURCE_FILES
     lib/common/common.cu
     lib/common/nttparameters.cu
-    lib/ntt_4step/ntt_4step.cu
-    lib/ntt_4step/ntt_4step_cpu.cu
     lib/ntt_merge/ntt.cu
     lib/ntt_merge/ntt_cpu.cu
 )
@@ -11,8 +9,6 @@ set(LIB_HEADER_FILES
     include/gpuntt/common/common.cuh
     include/gpuntt/common/nttparameters.cuh
     include/gpuntt/common/modular_arith.cuh
-    include/gpuntt/ntt_4step/ntt_4step.cuh
-    include/gpuntt/ntt_4step/ntt_4step_cpu.cuh
     include/gpuntt/ntt_merge/ntt.cuh
     include/gpuntt/ntt_merge/ntt_cpu.cuh
 )

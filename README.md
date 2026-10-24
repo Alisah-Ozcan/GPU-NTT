@@ -1,5 +1,5 @@
 # GPU-NTT
-Welcome to the GPU-NTT-Optimization repository! We present cutting-edge algorithms and implementations for optimizing the Merge and 4-Step Number Theoretic Transforms (NTT) on GPUs. GPU-NTT automatically supports both 32-bit and 64-bit arithmetic via Barrett reduction; the older manual reduction selection is kept in the [paper_version](https://github.com/Alisah-Ozcan/GPU-NTT/tree/paper_version) branch.
+Welcome to the GPU-NTT-Optimization repository! We present cutting-edge algorithms and implementations for optimizing the Merge and [4-Step](https://github.com/Alisah-Ozcan/GPU-NTT/tree/v.0.0.0) Number Theoretic Transforms (NTT) on GPUs. GPU-NTT automatically supports both 32-bit and 64-bit arithmetic via Barrett reduction; the older manual reduction selection is kept in the [paper_version](https://github.com/Alisah-Ozcan/GPU-NTT/tree/paper_version) branch.
 
 The associated research paper: https://eprint.iacr.org/2023/1410
 
@@ -56,7 +56,7 @@ cmake --build build --parallel
 
 ### Testing & Benchmarking
 
-#### Examples (CPU & GPU Merge / 4-Step)
+#### Examples (CPU & GPU Merge)
 
 Choose one of the data types at the top of the example files:
 - typedef Data32 TestDataType;
@@ -72,7 +72,6 @@ cmake --build build --parallel
 Run CPU examples:
 
 ```bash
-./build/bin/example/cpu_4step_ntt_examples <RING_SIZE_IN_LOG2> <BATCH_SIZE>
 ./build/bin/example/cpu_merge_ntt_examples <RING_SIZE_IN_LOG2> <BATCH_SIZE>
 # Example: ./build/bin/example/cpu_merge_ntt_examples 15 1
 ```
@@ -80,8 +79,6 @@ Run CPU examples:
 Run GPU examples:
 
 ```bash
-./build/bin/example/gpu_4step_ntt_examples <RING_SIZE_IN_LOG2> <BATCH_SIZE>
-./build/bin/example/gpu_4step_intt_examples <RING_SIZE_IN_LOG2> <BATCH_SIZE>
 ./build/bin/example/gpu_merge_ntt_examples <RING_SIZE_IN_LOG2> <BATCH_SIZE>
 ./build/bin/example/gpu_merge_intt_examples <RING_SIZE_IN_LOG2> <BATCH_SIZE>
 # Example: ./build/bin/example/gpu_merge_ntt_examples 12 1
@@ -103,7 +100,6 @@ cmake --build build --parallel
 Run benchmarks:
 
 ```bash
-./build/bin/benchmark/benchmark_4step_ntt --disable-blocking-kernel
 ./build/bin/benchmark/benchmark_merge_ntt --disable-blocking-kernel
 ```
 
