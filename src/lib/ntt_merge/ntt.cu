@@ -2365,6 +2365,7 @@ namespace gpuntt
                         }
                         else
                         {
+                            T* device_in_ = device_in;
                             for (int i = 0;
                                  i < kernel_parameters[cfg.n_power].size(); i++)
                             {
@@ -2378,7 +2379,7 @@ namespace gpuntt
                                          current_kernel_params.blockdim_y),
                                     current_kernel_params.shared_memory,
                                     cfg.stream>>>(
-                                    device_in, device_out, root_of_unity_table,
+                                    device_in_, device_out, root_of_unity_table,
                                     modulus, current_kernel_params.shared_index,
                                     current_kernel_params.logm,
                                     current_kernel_params.k,
@@ -2388,6 +2389,7 @@ namespace gpuntt
                                     (cfg.reduction_poly ==
                                      ReductionPolynomial::X_N_minus));
                                 GPUNTT_CUDA_CHECK(cudaGetLastError());
+                                device_in_ = device_out;
                             }
                         }
                     }
