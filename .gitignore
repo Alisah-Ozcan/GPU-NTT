@@ -4,6 +4,7 @@ CMakeCache.txt
 cmake_install.cmake
 Makefile
 CTestTestfile.cmake
+compile_commands.json
 
 # Output directories
 /bin/
