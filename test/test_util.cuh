@@ -115,14 +115,13 @@ namespace gpuntt_test
         }
     };
 
-    // Returns `count` distinct NTT-friendly prime fields, largest prime first.
-    // GPU-NTT's Barrett reduction supports up to 30-bit moduli for Data32 and
-    // 62-bit moduli for Data64.
-    template <typename T> std::vector<PrimeField<T>> make_fields(int count)
+    // Returns `count` distinct prime fields p < 2^max_bits with
+    // 2^two_adicity | p - 1, largest prime first. GPU-NTT's Barrett reduction
+    // supports up to 30-bit moduli for Data32 and 62-bit moduli for Data64.
+    template <typename T>
+    std::vector<PrimeField<T>> make_fields(int count, int max_bits,
+                                           int two_adicity)
     {
-        constexpr bool is32 = std::is_same<T, Data32>::value;
-        constexpr int max_bits = is32 ? 30 : 61;
-        constexpr int two_adicity = is32 ? 23 : 29;
 
         std::vector<PrimeField<T>> fields;
         const T step = T(1) << two_adicity;
@@ -150,6 +149,12 @@ namespace gpuntt_test
             throw std::runtime_error("Not enough NTT-friendly primes.");
         }
         return fields;
+    }
+
+    template <typename T> std::vector<PrimeField<T>> make_fields(int count)
+    {
+        constexpr bool is32 = std::is_same<T, Data32>::value;
+        return make_fields<T>(count, is32 ? 30 : 61, is32 ? 23 : 29);
     }
 
     template <typename T> class DeviceBuffer

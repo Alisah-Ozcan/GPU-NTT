@@ -13,7 +13,7 @@ set_target_properties(merge_ntt_tests PROPERTIES
 )
 
 foreach(bits 32 64)
-    foreach(suite single pool_parameters rns signed per_coefficient
+    foreach(suite single pool_parameters modulus rns signed per_coefficient
                   per_coefficient_rns modulus_ordered poly_ordered)
         add_test(
             NAME merge_ntt_${bits}_${suite}

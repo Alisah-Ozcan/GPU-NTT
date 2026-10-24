@@ -41,9 +41,16 @@ template <typename T1> struct Modulus
     __host__ Modulus() : value(0), bit(0), mu(0) {}
 
   private:
+    // Bit length of the modulus. It is computed with integers since log2 on
+    // a double rounds up for 64-bit values close to a power of two.
     __host__ T1 bit_generator() const
     {
-        return static_cast<T1>(log2(value) + 1);
+        T1 bits = 0;
+        for (T1 v = value; v != 0; v >>= 1)
+        {
+            bits++;
+        }
+        return bits;
     }
 
     __host__ T1 mu_generator() const

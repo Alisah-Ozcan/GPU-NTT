@@ -6,7 +6,7 @@
 // Correctness tests of the merge NTT host API against the CPU reference.
 //
 // Usage: merge_ntt_tests --bits <32|64> --suite <name|all> --max-logn <N>
-// Suites: single, pool_parameters, rns, signed, per_coefficient,
+// Suites: single, pool_parameters, modulus, rns, signed, per_coefficient,
 //         per_coefficient_rns, modulus_ordered, poly_ordered
 
 #include <algorithm>
@@ -61,6 +61,8 @@ namespace
                 return single();
             if (suite == "pool_parameters")
                 return pool_parameters();
+            if (suite == "modulus")
+                return modulus();
             if (suite == "rns")
                 return rns();
             if (suite == "signed")
@@ -77,7 +79,7 @@ namespace
             {
                 int result = 0;
                 for (const char* s :
-                     {"single", "pool_parameters", "rns", "signed",
+                     {"single", "pool_parameters", "modulus", "rns", "signed",
                       "per_coefficient", "per_coefficient_rns",
                       "modulus_ordered", "poly_ordered"})
                 {
@@ -287,6 +289,50 @@ namespace
                         NTTParameters<T> params(logn, poly);
                         single_case(report, params, "pool", dir);
                     }
+            return report.finish();
+        }
+
+        // Modulus<T> precomputes the bit length and the Barrett constant
+        // mu = floor(2^(2 * bit + 1) / value). They are checked for values next
+        // to powers of two, where floating point rounding goes wrong first.
+        int modulus()
+        {
+            TestReport report(suite_name("modulus"));
+            constexpr bool is32 = std::is_same<T, Data32>::value;
+            constexpr int max_bits = is32 ? 30 : 62;
+
+            std::vector<T> values;
+            for (int k = 2; k <= max_bits; k++)
+            {
+                const T power = T(1) << k;
+                for (T distance : {T(1), T(3), T(57), T(255)})
+                {
+                    if (distance < (power >> 1))
+                    {
+                        values.push_back(power - distance);
+                    }
+                }
+                values.push_back((power >> 1) + 1);
+            }
+
+            for (T value : values)
+            {
+                const Modulus<T> m(value);
+                T bits = 0;
+                for (T v = value; v != 0; v >>= 1)
+                {
+                    bits++;
+                }
+                const T mu =
+                    static_cast<T>((Wide<T>(1) << (2 * bits + 1)) / value);
+                report.expect(
+                    m.bit == bits && m.mu == mu,
+                    "Modulus(" + std::to_string(value) + ")",
+                    "got bit=" + std::to_string(m.bit) +
+                        " mu=" + std::to_string(m.mu) + ", expected bit=" +
+                        std::to_string(bits) + " mu=" + std::to_string(mu));
+            }
+
             return report.finish();
         }
 
