@@ -86,6 +86,8 @@ Run GPU examples:
 
 #### Benchmarking GPU NTT
 
+Benchmarks use [nvbench](https://github.com/NVIDIA/nvbench), which requires CMake >= 3.30.4.
+
 Choose one of the data types at the top of the benchmark files:
 - typedef Data32 BenchmarkDataType;
 - typedef Data64 BenchmarkDataType;
