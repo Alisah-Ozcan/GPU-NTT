@@ -536,6 +536,56 @@ namespace
                                              out.download(), expected);
                                 report.check(name + " in-place", inout.download(),
                                              expected);
+
+                                // Signed input (NTT) / signed output (INTT).
+                                auto prime_of = [&](size_t i) {
+                                    return fields_[(i % batch) % count].prime;
+                                };
+                                if (dir == FORWARD)
+                                {
+                                    std::vector<S> signed_input(total);
+                                    for (size_t i = 0; i < total; i++)
+                                    {
+                                        signed_input[i] =
+                                            to_centered(input[i], prime_of(i));
+                                    }
+                                    DeviceBuffer<S> s_in(signed_input);
+                                    DeviceBuffer<T> s_out(total);
+                                    if (use_rns)
+                                        GPU_NTT(s_in.get(), s_out.get(),
+                                                roots.get(), d_moduli.get(),
+                                                cfg_rns, batch, mod_count);
+                                    else
+                                        GPU_NTT(s_in.get(), s_out.get(),
+                                                roots.get(), params[0].modulus,
+                                                cfg, batch);
+                                    sync();
+                                    report.check(name + " signed input",
+                                                 s_out.download(), expected);
+                                }
+                                else
+                                {
+                                    std::vector<S> signed_expected(total);
+                                    for (size_t i = 0; i < total; i++)
+                                    {
+                                        signed_expected[i] =
+                                            to_centered(expected[i], prime_of(i));
+                                    }
+                                    DeviceBuffer<T> s_in(input);
+                                    DeviceBuffer<S> s_out(total);
+                                    if (use_rns)
+                                        GPU_INTT(s_in.get(), s_out.get(),
+                                                 roots.get(), d_moduli.get(),
+                                                 cfg_rns, batch, mod_count);
+                                    else
+                                        GPU_INTT(s_in.get(), s_out.get(),
+                                                 roots.get(), params[0].modulus,
+                                                 cfg, batch);
+                                    sync();
+                                    report.check(name + " signed output",
+                                                 s_out.download(),
+                                                 signed_expected);
+                                }
                             }
                             catch (const std::exception& e)
                             {

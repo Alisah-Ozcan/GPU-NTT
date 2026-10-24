@@ -1703,23 +1703,30 @@ namespace gpuntt
         const int idx_x = threadIdx.x;
         const int idx_y = threadIdx.y;
         const int block_x = blockIdx.x;
-        const int total_block_thread = blockDim.x * blockDim.y;
 
         extern __shared__ char shared_memory_typed[];
         TU* shared_memory = reinterpret_cast<TU*>(shared_memory_typed);
         TU* root_shared_memory = shared_memory + (1024);
 
-        if (idx_x == 0)
+        // Each column of the block (one NTT) keeps the root table of its own
+        // modulus at root_shared_memory[column << log_row].
+        const int column_base = blockDim.x * block_x;
+        const int load_mod_index = (column_base + idx_x) % mod_count;
+        const Modulus<TU> load_modulus = modulus[load_mod_index];
         {
+            const location_t root_src = (location_t) load_mod_index << log_row;
+            const int root_dst = idx_x << log_row;
             if (reduction_poly_check)
             { // X_N_minus
-                root_shared_memory[idx_y] = root_of_unity_table[idx_y];
+                root_shared_memory[root_dst + idx_y] =
+                    root_of_unity_table[root_src + idx_y];
             }
             else
             { // X_N_plus
-                root_shared_memory[idx_y] = root_of_unity_table[idx_y];
-                root_shared_memory[idx_y + blockDim.y] =
-                    root_of_unity_table[idx_y + blockDim.y];
+                root_shared_memory[root_dst + idx_y] =
+                    root_of_unity_table[root_src + idx_y];
+                root_shared_memory[root_dst + idx_y + blockDim.y] =
+                    root_of_unity_table[root_src + idx_y + blockDim.y];
             }
         }
 
@@ -1735,9 +1742,8 @@ namespace gpuntt
         const int ntt_block_index = block_thread_index >> t_;
         int offset = ntt_block_index << log_row;
 
-        const int batch_index =
-            (block_x * (total_block_thread >> t_)) + ntt_block_index;
-        int mod_index = batch_index % mod_count;
+        const int mod_index = (column_base + ntt_block_index) % mod_count;
+        const int root_offset = ntt_block_index << log_row;
 
         const Modulus<TU> modulus_thread = modulus[mod_index];
 
@@ -1748,9 +1754,9 @@ namespace gpuntt
             T input1_reg = polynomial_in[global_addresss];
             T input2_reg = polynomial_in[global_addresss + global_offset];
             shared_memory[transpose_block] =
-                OPERATOR_GPU<TU>::reduce(input1_reg, modulus_thread);
+                OPERATOR_GPU<TU>::reduce(input1_reg, load_modulus);
             shared_memory[transpose_block + blockDim.y] =
-                OPERATOR_GPU<TU>::reduce(input2_reg, modulus_thread);
+                OPERATOR_GPU<TU>::reduce(input2_reg, load_modulus);
         }
         else
         {
@@ -1776,11 +1782,11 @@ namespace gpuntt
 
             if (reduction_poly_check)
             { // X_N_minus
-                current_root_index = (omega_addresss >> t_);
+                current_root_index = (omega_addresss >> t_) + root_offset;
             }
             else
             { // X_N_plus
-                current_root_index = m + (omega_addresss >> t_);
+                current_root_index = m + (omega_addresss >> t_) + root_offset;
             }
 
             Root<TU> root = root_shared_memory[current_root_index];
@@ -1805,13 +1811,11 @@ namespace gpuntt
 
             if (reduction_poly_check)
             { // X_N_minus
-                current_root_index =
-                    (omega_addresss >> t_) + (mod_index << log_row);
+                current_root_index = (omega_addresss >> t_) + root_offset;
             }
             else
             { // X_N_plus
-                current_root_index =
-                    m + (omega_addresss >> t_) + (mod_index << log_row);
+                current_root_index = m + (omega_addresss >> t_) + root_offset;
             }
 
             Root<TU> root = root_shared_memory[current_root_index];
@@ -1965,23 +1969,29 @@ namespace gpuntt
         const int idx_x = threadIdx.x;
         const int idx_y = threadIdx.y;
         const int block_x = blockIdx.x;
-        const int total_block_thread = blockDim.x * blockDim.y;
 
         extern __shared__ char shared_memory_typed[];
         TU* shared_memory = reinterpret_cast<TU*>(shared_memory_typed);
         TU* root_shared_memory = shared_memory + (1024);
 
-        if (idx_x == 0)
+        // Each column of the block (one NTT) keeps the root table of its own
+        // modulus at root_shared_memory[column << log_row].
+        const int column_base = blockDim.x * block_x;
+        const int store_mod_index = (column_base + idx_x) % mod_count;
         {
+            const location_t root_src = (location_t) store_mod_index << log_row;
+            const int root_dst = idx_x << log_row;
             if (reduction_poly_check)
             { // X_N_minus
-                root_shared_memory[idx_y] = inverse_root_of_unity_table[idx_y];
+                root_shared_memory[root_dst + idx_y] =
+                    inverse_root_of_unity_table[root_src + idx_y];
             }
             else
             { // X_N_plus
-                root_shared_memory[idx_y] = inverse_root_of_unity_table[idx_y];
-                root_shared_memory[idx_y + blockDim.y] =
-                    inverse_root_of_unity_table[idx_y + blockDim.y];
+                root_shared_memory[root_dst + idx_y] =
+                    inverse_root_of_unity_table[root_src + idx_y];
+                root_shared_memory[root_dst + idx_y + blockDim.y] =
+                    inverse_root_of_unity_table[root_src + idx_y + blockDim.y];
             }
         }
 
@@ -2006,12 +2016,12 @@ namespace gpuntt
         const int ntt_block_index = block_thread_index >> log_row_r;
         int offset = ntt_block_index << log_row;
 
-        const int batch_index =
-            (block_x * (total_block_thread >> t_)) + ntt_block_index;
-        int mod_index = batch_index % mod_count;
+        const int mod_index = (column_base + ntt_block_index) % mod_count;
+        const int root_offset = ntt_block_index << log_row;
 
         const Modulus<TU> modulus_thread = modulus[mod_index];
-        const Ninverse<TU> n_inverse_thread = n_inverse[mod_index];
+        const Modulus<TU> store_modulus = modulus[store_mod_index];
+        const Ninverse<TU> store_n_inverse = n_inverse[store_mod_index];
 
         int omega_addresss = ntt_thread_index;
         int shared_addresss = ntt_thread_index;
@@ -2028,13 +2038,11 @@ namespace gpuntt
 
             if (reduction_poly_check)
             { // X_N_minus
-                current_root_index =
-                    (omega_addresss >> t_) + (mod_index << log_row);
+                current_root_index = (omega_addresss >> t_) + root_offset;
             }
             else
             { // X_N_plus
-                current_root_index =
-                    m + (omega_addresss >> t_) + (mod_index << log_row);
+                current_root_index = m + (omega_addresss >> t_) + root_offset;
             }
 
             Root<TU> root = root_shared_memory[current_root_index];
@@ -2052,20 +2060,21 @@ namespace gpuntt
             __syncthreads();
         }
 
+        // The thread stores its own column, so it uses that column's modulus.
         TU output1_reg = OPERATOR_GPU<TU>::mult(
-            shared_memory[transpose_block], n_inverse_thread, modulus_thread);
+            shared_memory[transpose_block], store_n_inverse, store_modulus);
         TU output2_reg =
             OPERATOR_GPU<TU>::mult(shared_memory[transpose_block + blockDim.y],
-                                   n_inverse_thread, modulus_thread);
+                                   store_n_inverse, store_modulus);
 
         if constexpr (std::is_signed<T>::value)
         {
             polynomial_out[global_addresss] =
                 OPERATOR_GPU<TU>::centered_reduction(output1_reg,
-                                                     modulus_thread);
+                                                     store_modulus);
             polynomial_out[global_addresss + global_offset] =
                 OPERATOR_GPU<TU>::centered_reduction(output2_reg,
-                                                     modulus_thread);
+                                                     store_modulus);
         }
         else
         {
@@ -2733,7 +2742,8 @@ namespace gpuntt
                 ForwardCoreTranspose<<<
                     dim3(total_block_count, 1, 1),
                     dim3(blockdim_x, blockdim_y, 1),
-                    ((total_block_thread * 2) + (1 << cfg.n_power)) * sizeof(T),
+                    // Data and one root table per column of the block.
+                    (total_block_thread * 2 * 2) * sizeof(T),
                     cfg.stream>>>(
                     device_in, device_out, root_of_unity_table, modulus,
                     cfg.n_power, log_batch_size,
@@ -3045,7 +3055,8 @@ namespace gpuntt
                 InverseCoreTranspose<<<
                     dim3(total_block_count, 1, 1),
                     dim3(blockdim_x, blockdim_y, 1),
-                    ((total_block_thread * 2) + (1 << cfg.n_power)) * sizeof(T),
+                    // Data and one root table per column of the block.
+                    (total_block_thread * 2 * 2) * sizeof(T),
                     cfg.stream>>>(
                     device_in, device_out, root_of_unity_table, modulus,
                     cfg.mod_inverse, cfg.n_power, log_batch_size,
