@@ -146,6 +146,8 @@ set_target_properties(<your-target> PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
 # ...
 ```
 
+All GPU-NTT types and functions are in the `gpuntt` namespace. For compatibility, the arithmetic types (`Data32`, `Data64`, `Modulus`, `OPERATOR`, `OPERATOR_GPU`, `Root`, `Ninverse`, ...) are also available in the global namespace; define `GPUNTT_NO_GLOBAL_ALIASES` to disable them.
+
 ## How to Cite GPU-NTT
 
 Please use the below BibTeX, to cite GPU-NTT in academic papers.

@@ -18,17 +18,18 @@
 // --------------------- //
 // Authors: Alisah Ozcan
 // --------------------- //
-typedef std::uint32_t location_t;
-/*
-#if MAX_LOG2_RINGSIZE <= 32
-typedef std::uint32_t location_t;
-#else
-typedef std::uint64_t location_t;
-#endif
-*/
 
 namespace gpuntt
 {
+    typedef std::uint32_t location_t;
+    /*
+    #if MAX_LOG2_RINGSIZE <= 32
+    typedef std::uint32_t location_t;
+    #else
+    typedef std::uint64_t location_t;
+    #endif
+    */
+
     template <typename T> struct ntt_configuration
     {
         int n_power;
