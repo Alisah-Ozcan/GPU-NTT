@@ -86,13 +86,13 @@ namespace gpuntt
     {
         if constexpr (std::is_same<T, Data32>::value)
         {
-            customAssert(0 < logn <= 25,
+            customAssert(0 < logn && logn <= 25,
                          "LOGN should be in range 2^0 to 2^25.");
             return Modulus32(469762049);
         }
         else
         {
-            customAssert(0 < logn <= 28,
+            customAssert(0 < logn && logn <= 28,
                          "LOGN should be in range 2^0 to 2^28.");
             return Modulus64(576460756061519873ULL);
         }
@@ -102,7 +102,7 @@ namespace gpuntt
     {
         if constexpr (std::is_same<T, Data32>::value)
         {
-            customAssert(0 < logn <= 25,
+            customAssert(0 < logn && logn <= 25,
                          "LOGN should be in range 2^0 to 2^25.");
             Data32 w = 900;
             Modulus32 mod = modulus_pool();
@@ -111,7 +111,7 @@ namespace gpuntt
         }
         else
         {
-            customAssert(0 < logn <= 28,
+            customAssert(0 < logn && logn <= 28,
                          "LOGN should be in range 2^0 to 2^28.");
             Data64 w = 229929041166717729ULL;
             Modulus64 mod = modulus_pool();
@@ -124,7 +124,7 @@ namespace gpuntt
     {
         if constexpr (std::is_same<T, Data32>::value)
         {
-            customAssert(0 < logn <= 25,
+            customAssert(0 < logn && logn <= 25,
                          "LOGN should be in range 2^0 to 2^25.");
             Data32 w = 30;
             Modulus32 mod = modulus_pool();
@@ -133,7 +133,7 @@ namespace gpuntt
         }
         else
         {
-            customAssert(0 < logn <= 28,
+            customAssert(0 < logn && logn <= 28,
                          "LOGN should be in range 2^0 to 2^28.");
             Data64 psi = 4517306222ULL;
             Modulus64 mod = modulus_pool();

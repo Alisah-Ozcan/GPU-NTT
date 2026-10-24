@@ -6,8 +6,8 @@
 // Correctness tests of the merge NTT host API against the CPU reference.
 //
 // Usage: merge_ntt_tests --bits <32|64> --suite <name|all> --max-logn <N>
-// Suites: single, rns, signed, per_coefficient, per_coefficient_rns,
-//         modulus_ordered, poly_ordered
+// Suites: single, pool_parameters, rns, signed, per_coefficient,
+//         per_coefficient_rns, modulus_ordered, poly_ordered
 
 #include <algorithm>
 #include <cstring>
@@ -59,6 +59,8 @@ namespace
         {
             if (suite == "single")
                 return single();
+            if (suite == "pool_parameters")
+                return pool_parameters();
             if (suite == "rns")
                 return rns();
             if (suite == "signed")
@@ -75,8 +77,9 @@ namespace
             {
                 int result = 0;
                 for (const char* s :
-                     {"single", "rns", "signed", "per_coefficient",
-                      "per_coefficient_rns", "modulus_ordered", "poly_ordered"})
+                     {"single", "pool_parameters", "rns", "signed",
+                      "per_coefficient", "per_coefficient_rns",
+                      "modulus_ordered", "poly_ordered"})
                 {
                     result |= run(s);
                 }
@@ -178,6 +181,65 @@ namespace
             return values;
         }
 
+        // Single modulus NTT/INTT, out-of-place and in-place.
+        void single_case(TestReport& report, NTTParameters<T>& params,
+                         const std::string& variant, type dir)
+        {
+            const int logn = params.logn;
+            const ReductionPolynomial poly = params.poly_reduction;
+            const int batch = batch_for(logn, 1);
+            const size_t total = size_t(batch) << logn;
+            NTTCPU<T> cpu(params);
+
+            std::vector<T> input =
+                random_values<T>(rng_, total, params.modulus.value);
+            std::vector<T> expected = reference(
+                input, logn, dir, [&](int) -> NTTCPU<T>& { return cpu; });
+
+            ntt_configuration<T> cfg = {.n_power = logn,
+                                        .ntt_type = dir,
+                                        .ntt_layout = PerPolynomial,
+                                        .reduction_poly = poly,
+                                        .zero_padding = false,
+                                        .mod_inverse = params.n_inv,
+                                        .stream = 0};
+            const std::string name = case_name(variant, dir, logn, poly, batch);
+            try
+            {
+                DeviceBuffer<Root<T>> roots(
+                    params.gpu_root_of_unity_table_generator(
+                        dir == FORWARD ? params.forward_root_of_unity_table
+                                       : params.inverse_root_of_unity_table));
+
+                DeviceBuffer<T> in(input);
+                DeviceBuffer<T> out(total);
+                if (dir == FORWARD)
+                    GPU_NTT(in.get(), out.get(), roots.get(), params.modulus,
+                            cfg, batch);
+                else
+                    GPU_INTT(in.get(), out.get(), roots.get(), params.modulus,
+                             cfg, batch);
+                sync();
+                report.check(name + " out-of-place", out.download(), expected);
+                report.check(name + " out-of-place keeps input", in.download(),
+                             input);
+
+                DeviceBuffer<T> inout(input);
+                if (dir == FORWARD)
+                    GPU_NTT_Inplace(inout.get(), roots.get(), params.modulus,
+                                    cfg, batch);
+                else
+                    GPU_INTT_Inplace(inout.get(), roots.get(), params.modulus,
+                                     cfg, batch);
+                sync();
+                report.check(name + " in-place", inout.download(), expected);
+            }
+            catch (const std::exception& e)
+            {
+                report.error(name, e.what());
+            }
+        }
+
         int single()
         {
             TestReport report(suite_name("single"));
@@ -185,61 +247,45 @@ namespace
                 for (ReductionPolynomial poly : kPolys)
                     for (type dir : kDirections)
                     {
-                        const int batch = batch_for(logn, 1);
-                        const size_t total = size_t(batch) << logn;
                         NTTParameters<T> params = fields_[0].parameters(logn, poly);
-                        NTTCPU<T> cpu(params);
+                        single_case(report, params, "single", dir);
+                    }
+            return report.finish();
+        }
 
-                        std::vector<T> input = random_input(total);
-                        std::vector<T> expected = reference(
-                            input, logn, dir, [&](int) -> NTTCPU<T>& { return cpu; });
+        // NTTParameters built from the default modulus pool (as used by the
+        // examples): out-of-range ring sizes are rejected, valid ones give
+        // correct transforms.
+        int pool_parameters()
+        {
+            TestReport report(suite_name("pool_parameters"));
+            const int pool_max_logn = std::is_same<T, Data32>::value ? 25 : 28;
+            for (int logn : {0, pool_max_logn + 1, pool_max_logn + 3})
+                for (ReductionPolynomial poly : kPolys)
+                {
+                    bool rejected = false;
+                    try
+                    {
+                        NTTParameters<T> params(logn, poly);
+                    }
+                    catch (const std::invalid_argument&)
+                    {
+                        rejected = true;
+                    }
+                    report.expect(rejected,
+                                  "pool logn=" + std::to_string(logn) +
+                                      (poly == ReductionPolynomial::X_N_minus
+                                           ? " X^N-1"
+                                           : " X^N+1"),
+                                  "out-of-range ring size was not rejected");
+                }
 
-                        ntt_configuration<T> cfg = {.n_power = logn,
-                                                    .ntt_type = dir,
-                                                    .ntt_layout = PerPolynomial,
-                                                    .reduction_poly = poly,
-                                                    .zero_padding = false,
-                                                    .mod_inverse = params.n_inv,
-                                                    .stream = 0};
-                        const std::string name =
-                            case_name("single", dir, logn, poly, batch);
-                        try
-                        {
-                            DeviceBuffer<Root<T>> roots(
-                                params.gpu_root_of_unity_table_generator(
-                                    dir == FORWARD
-                                        ? params.forward_root_of_unity_table
-                                        : params.inverse_root_of_unity_table));
-
-                            DeviceBuffer<T> in(input);
-                            DeviceBuffer<T> out(total);
-                            if (dir == FORWARD)
-                                GPU_NTT(in.get(), out.get(), roots.get(),
-                                        params.modulus, cfg, batch);
-                            else
-                                GPU_INTT(in.get(), out.get(), roots.get(),
-                                         params.modulus, cfg, batch);
-                            sync();
-                            report.check(name + " out-of-place", out.download(),
-                                         expected);
-                            report.check(name + " out-of-place keeps input",
-                                         in.download(), input);
-
-                            DeviceBuffer<T> inout(input);
-                            if (dir == FORWARD)
-                                GPU_NTT_Inplace(inout.get(), roots.get(),
-                                                params.modulus, cfg, batch);
-                            else
-                                GPU_INTT_Inplace(inout.get(), roots.get(),
-                                                 params.modulus, cfg, batch);
-                            sync();
-                            report.check(name + " in-place", inout.download(),
-                                         expected);
-                        }
-                        catch (const std::exception& e)
-                        {
-                            report.error(name, e.what());
-                        }
+            for (int logn = 1; logn <= std::min(max_logn_, pool_max_logn); logn++)
+                for (ReductionPolynomial poly : kPolys)
+                    for (type dir : kDirections)
+                    {
+                        NTTParameters<T> params(logn, poly);
+                        single_case(report, params, "pool", dir);
                     }
             return report.finish();
         }

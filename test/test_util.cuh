@@ -274,6 +274,16 @@ namespace gpuntt_test
             }
         }
 
+        void expect(bool condition, const std::string& name,
+                    const std::string& message)
+        {
+            cases_++;
+            if (!condition)
+            {
+                fail(name, message);
+            }
+        }
+
         void error(const std::string& name, const std::string& what)
         {
             cases_++;
