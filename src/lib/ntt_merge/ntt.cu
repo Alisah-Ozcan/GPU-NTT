@@ -2448,740 +2448,122 @@ namespace gpuntt
         cudaStream_t stream;
     };
 
-    template __global__ void ForwardCoreLowRing<Data32>(
-        Data32* polynomial_in, Data32* polynomial_out,
-        const Root<Data32>* __restrict__ root_of_unity_table,
-        Modulus<Data32> modulus, int shared_index, int N_power,
-        bool reduction_poly_check, int total_batch);
-
-    template __global__ void ForwardCoreLowRing<Data64>(
-        Data64* polynomial_in, Data64* polynomial_out,
-        const Root<Data64>* __restrict__ root_of_unity_table,
-        Modulus<Data64> modulus, int shared_index, int N_power,
-        bool reduction_poly_check, int total_batch);
-
-    template __global__ void ForwardCoreLowRing<Data32s>(
-        Data32s* polynomial_in, Data32* polynomial_out,
-        const Root<Data32>* __restrict__ root_of_unity_table,
-        Modulus<Data32> modulus, int shared_index, int N_power,
-        bool reduction_poly_check, int total_batch);
-
-    template __global__ void ForwardCoreLowRing<Data64s>(
-        Data64s* polynomial_in, Data64* polynomial_out,
-        const Root<Data64>* __restrict__ root_of_unity_table,
-        Modulus<Data64> modulus, int shared_index, int N_power,
-        bool reduction_poly_check, int total_batch);
-
-    template __global__ void ForwardCoreLowRing<Data32>(
-        Data32* polynomial_in, Data32* polynomial_out,
-        const Root<Data32>* __restrict__ root_of_unity_table,
-        Modulus<Data32>* modulus, int shared_index, int N_power,
-        bool reduction_poly_check, int total_batch,
-        int mod_count);
-
-    template __global__ void ForwardCoreLowRing<Data64>(
-        Data64* polynomial_in, Data64* polynomial_out,
-        const Root<Data64>* __restrict__ root_of_unity_table,
-        Modulus<Data64>* modulus, int shared_index, int N_power,
-        bool reduction_poly_check, int total_batch,
-        int mod_count);
-
-    template __global__ void ForwardCoreLowRing<Data32s>(
-        Data32s* polynomial_in, Data32* polynomial_out,
-        const Root<Data32>* __restrict__ root_of_unity_table,
-        Modulus<Data32>* modulus, int shared_index, int N_power,
-        bool reduction_poly_check, int total_batch,
-        int mod_count);
-
-    template __global__ void ForwardCoreLowRing<Data64s>(
-        Data64s* polynomial_in, Data64* polynomial_out,
-        const Root<Data64>* __restrict__ root_of_unity_table,
-        Modulus<Data64>* modulus, int shared_index, int N_power,
-        bool reduction_poly_check, int total_batch,
-        int mod_count);
-
-    template __global__ void
-    ForwardCore<Data32>(Data32* polynomial_in, Data32* polynomial_out,
-                        const Root<Data32>* __restrict__ root_of_unity_table,
-                        Modulus<Data32> modulus, int shared_index, int logm,
-                        int outer_iteration_count, int N_power,
-                        bool not_last_kernel,
-                        bool reduction_poly_check);
-
-    template __global__ void
-    ForwardCore<Data64>(Data64* polynomial_in, Data64* polynomial_out,
-                        const Root<Data64>* __restrict__ root_of_unity_table,
-                        Modulus<Data64> modulus, int shared_index, int logm,
-                        int outer_iteration_count, int N_power,
-                        bool not_last_kernel,
-                        bool reduction_poly_check);
-
-    template __global__ void
-    ForwardCore<Data32s>(Data32s* polynomial_in, Data32* polynomial_out,
-                         const Root<Data32>* __restrict__ root_of_unity_table,
-                         Modulus<Data32> modulus, int shared_index, int logm,
-                         int outer_iteration_count, int N_power,
-                         bool not_last_kernel,
-                         bool reduction_poly_check);
-
-    template __global__ void
-    ForwardCore<Data64s>(Data64s* polynomial_in, Data64* polynomial_out,
-                         const Root<Data64>* __restrict__ root_of_unity_table,
-                         Modulus<Data64> modulus, int shared_index, int logm,
-                         int outer_iteration_count, int N_power,
-                         bool not_last_kernel,
-                         bool reduction_poly_check);
-
-    template __global__ void
-    ForwardCore<Data32>(Data32* polynomial_in, Data32* polynomial_out,
-                        const Root<Data32>* __restrict__ root_of_unity_table,
-                        Modulus<Data32>* modulus, int shared_index, int logm,
-                        int outer_iteration_count, int N_power,
-                        bool not_last_kernel,
-                        bool reduction_poly_check, int mod_count);
-
-    template __global__ void
-    ForwardCore<Data64>(Data64* polynomial_in, Data64* polynomial_out,
-                        const Root<Data64>* __restrict__ root_of_unity_table,
-                        Modulus<Data64>* modulus, int shared_index, int logm,
-                        int outer_iteration_count, int N_power,
-                        bool not_last_kernel,
-                        bool reduction_poly_check, int mod_count);
-
-    template __global__ void
-    ForwardCore<Data32s>(Data32s* polynomial_in, Data32* polynomial_out,
-                         const Root<Data32>* __restrict__ root_of_unity_table,
-                         Modulus<Data32>* modulus, int shared_index, int logm,
-                         int outer_iteration_count, int N_power,
-                         bool not_last_kernel,
-                         bool reduction_poly_check, int mod_count);
-
-    template __global__ void
-    ForwardCore<Data64s>(Data64s* polynomial_in, Data64* polynomial_out,
-                         const Root<Data64>* __restrict__ root_of_unity_table,
-                         Modulus<Data64>* modulus, int shared_index, int logm,
-                         int outer_iteration_count, int N_power,
-                         bool not_last_kernel,
-                         bool reduction_poly_check, int mod_count);
-
-    template __global__ void
-    ForwardCore_<Data32>(Data32* polynomial_in, Data32* polynomial_out,
-                         const Root<Data32>* __restrict__ root_of_unity_table,
-                         Modulus<Data32> modulus, int shared_index, int logm,
-                         int outer_iteration_count, int N_power,
-                         bool not_last_kernel,
-                         bool reduction_poly_check);
-
-    template __global__ void
-    ForwardCore_<Data64>(Data64* polynomial_in, Data64* polynomial_out,
-                         const Root<Data64>* __restrict__ root_of_unity_table,
-                         Modulus<Data64> modulus, int shared_index, int logm,
-                         int outer_iteration_count, int N_power,
-                         bool not_last_kernel,
-                         bool reduction_poly_check);
-
-    template __global__ void
-    ForwardCore_<Data32s>(Data32s* polynomial_in, Data32* polynomial_out,
-                          const Root<Data32>* __restrict__ root_of_unity_table,
-                          Modulus<Data32> modulus, int shared_index, int logm,
-                          int outer_iteration_count, int N_power,
-                          bool not_last_kernel,
-                          bool reduction_poly_check);
-
-    template __global__ void
-    ForwardCore_<Data64s>(Data64s* polynomial_in, Data64* polynomial_out,
-                          const Root<Data64>* __restrict__ root_of_unity_table,
-                          Modulus<Data64> modulus, int shared_index, int logm,
-                          int outer_iteration_count, int N_power,
-                          bool not_last_kernel,
-                          bool reduction_poly_check);
-
-    template __global__ void
-    ForwardCore_<Data32>(Data32* polynomial_in, Data32* polynomial_out,
-                         const Root<Data32>* __restrict__ root_of_unity_table,
-                         Modulus<Data32>* modulus, int shared_index, int logm,
-                         int outer_iteration_count, int N_power,
-                         bool not_last_kernel,
-                         bool reduction_poly_check, int mod_count);
-
-    template __global__ void
-    ForwardCore_<Data64>(Data64* polynomial_in, Data64* polynomial_out,
-                         const Root<Data64>* __restrict__ root_of_unity_table,
-                         Modulus<Data64>* modulus, int shared_index, int logm,
-                         int outer_iteration_count, int N_power,
-                         bool not_last_kernel,
-                         bool reduction_poly_check, int mod_count);
-
-    template __global__ void
-    ForwardCore_<Data32s>(Data32s* polynomial_in, Data32* polynomial_out,
-                          const Root<Data32>* __restrict__ root_of_unity_table,
-                          Modulus<Data32>* modulus, int shared_index, int logm,
-                          int outer_iteration_count, int N_power,
-                          bool not_last_kernel,
-                          bool reduction_poly_check, int mod_count);
-
-    template __global__ void
-    ForwardCore_<Data64s>(Data64s* polynomial_in, Data64* polynomial_out,
-                          const Root<Data64>* __restrict__ root_of_unity_table,
-                          Modulus<Data64>* modulus, int shared_index, int logm,
-                          int outer_iteration_count, int N_power,
-                          bool not_last_kernel,
-                          bool reduction_poly_check, int mod_count);
-
-    template __global__ void InverseCoreLowRing<Data32>(
-        Data32* polynomial_in, Data32* polynomial_out,
-        const Root<Data32>* __restrict__ inverse_root_of_unity_table,
-        Modulus<Data32> modulus, int shared_index, int N_power,
-        Ninverse<Data32> n_inverse, bool reduction_poly_check, int total_batch);
-
-    template __global__ void InverseCoreLowRing<Data64>(
-        Data64* polynomial_in, Data64* polynomial_out,
-        const Root<Data64>* __restrict__ inverse_root_of_unity_table,
-        Modulus<Data64> modulus, int shared_index, int N_power,
-        Ninverse<Data64> n_inverse, bool reduction_poly_check, int total_batch);
-
-    template __global__ void InverseCoreLowRing<Data32s>(
-        Data32* polynomial_in, Data32s* polynomial_out,
-        const Root<Data32>* __restrict__ inverse_root_of_unity_table,
-        Modulus<Data32> modulus, int shared_index, int N_power,
-        Ninverse<Data32> n_inverse, bool reduction_poly_check, int total_batch);
-
-    template __global__ void InverseCoreLowRing<Data64s>(
-        Data64* polynomial_in, Data64s* polynomial_out,
-        const Root<Data64>* __restrict__ inverse_root_of_unity_table,
-        Modulus<Data64> modulus, int shared_index, int N_power,
-        Ninverse<Data64> n_inverse, bool reduction_poly_check, int total_batch);
-
-    template __global__ void InverseCoreLowRing<Data32>(
-        Data32* polynomial_in, Data32* polynomial_out,
-        const Root<Data32>* __restrict__ inverse_root_of_unity_table,
-        Modulus<Data32>* modulus, int shared_index, int N_power,
-        Ninverse<Data32>* n_inverse, bool reduction_poly_check, int total_batch,
-        int mod_count);
-
-    template __global__ void InverseCoreLowRing<Data64>(
-        Data64* polynomial_in, Data64* polynomial_out,
-        const Root<Data64>* __restrict__ inverse_root_of_unity_table,
-        Modulus<Data64>* modulus, int shared_index, int N_power,
-        Ninverse<Data64>* n_inverse, bool reduction_poly_check, int total_batch,
-        int mod_count);
-
-    template __global__ void InverseCoreLowRing<Data32s>(
-        Data32* polynomial_in, Data32s* polynomial_out,
-        const Root<Data32>* __restrict__ inverse_root_of_unity_table,
-        Modulus<Data32>* modulus, int shared_index, int N_power,
-        Ninverse<Data32>* n_inverse, bool reduction_poly_check, int total_batch,
-        int mod_count);
-
-    template __global__ void InverseCoreLowRing<Data64s>(
-        Data64* polynomial_in, Data64s* polynomial_out,
-        const Root<Data64>* __restrict__ inverse_root_of_unity_table,
-        Modulus<Data64>* modulus, int shared_index, int N_power,
-        Ninverse<Data64>* n_inverse, bool reduction_poly_check, int total_batch,
-        int mod_count);
-
-    template __global__ void InverseCore<Data32>(
-        Data32* polynomial_in, Data32* polynomial_out,
-        const Root<Data32>* __restrict__ inverse_root_of_unity_table,
-        Modulus<Data32> modulus, int shared_index, int logm, int k,
-        int outer_iteration_count, int N_power, Ninverse<Data32> n_inverse,
-        bool last_kernel, bool reduction_poly_check);
-
-    template __global__ void InverseCore<Data64>(
-        Data64* polynomial_in, Data64* polynomial_out,
-        const Root<Data64>* __restrict__ inverse_root_of_unity_table,
-        Modulus<Data64> modulus, int shared_index, int logm, int k,
-        int outer_iteration_count, int N_power, Ninverse<Data64> n_inverse,
-        bool last_kernel, bool reduction_poly_check);
-
-    template __global__ void InverseCore<Data32s>(
-        Data32* polynomial_in, Data32s* polynomial_out,
-        const Root<Data32>* __restrict__ inverse_root_of_unity_table,
-        Modulus<Data32> modulus, int shared_index, int logm, int k,
-        int outer_iteration_count, int N_power, Ninverse<Data32> n_inverse,
-        bool last_kernel, bool reduction_poly_check);
-
-    template __global__ void InverseCore<Data64s>(
-        Data64* polynomial_in, Data64s* polynomial_out,
-        const Root<Data64>* __restrict__ inverse_root_of_unity_table,
-        Modulus<Data64> modulus, int shared_index, int logm, int k,
-        int outer_iteration_count, int N_power, Ninverse<Data64> n_inverse,
-        bool last_kernel, bool reduction_poly_check);
-
-    template __global__ void InverseCore<Data32>(
-        Data32* polynomial_in, Data32* polynomial_out,
-        const Root<Data32>* __restrict__ inverse_root_of_unity_table,
-        Modulus<Data32>* modulus, int shared_index, int logm, int k,
-        int outer_iteration_count, int N_power, Ninverse<Data32>* n_inverse,
-        bool last_kernel, bool reduction_poly_check, int mod_count);
-
-    template __global__ void InverseCore<Data64>(
-        Data64* polynomial_in, Data64* polynomial_out,
-        const Root<Data64>* __restrict__ inverse_root_of_unity_table,
-        Modulus<Data64>* modulus, int shared_index, int logm, int k,
-        int outer_iteration_count, int N_power, Ninverse<Data64>* n_inverse,
-        bool last_kernel, bool reduction_poly_check, int mod_count);
-
-    template __global__ void InverseCore<Data32s>(
-        Data32* polynomial_in, Data32s* polynomial_out,
-        const Root<Data32>* __restrict__ inverse_root_of_unity_table,
-        Modulus<Data32>* modulus, int shared_index, int logm, int k,
-        int outer_iteration_count, int N_power, Ninverse<Data32>* n_inverse,
-        bool last_kernel, bool reduction_poly_check, int mod_count);
-
-    template __global__ void InverseCore<Data64s>(
-        Data64* polynomial_in, Data64s* polynomial_out,
-        const Root<Data64>* __restrict__ inverse_root_of_unity_table,
-        Modulus<Data64>* modulus, int shared_index, int logm, int k,
-        int outer_iteration_count, int N_power, Ninverse<Data64>* n_inverse,
-        bool last_kernel, bool reduction_poly_check, int mod_count);
-
-    template __global__ void InverseCore_<Data32>(
-        Data32* polynomial_in, Data32* polynomial_out,
-        const Root<Data32>* __restrict__ inverse_root_of_unity_table,
-        Modulus<Data32> modulus, int shared_index, int logm, int k,
-        int outer_iteration_count, int N_power, Ninverse<Data32> n_inverse,
-        bool last_kernel, bool reduction_poly_check);
-
-    template __global__ void InverseCore_<Data64>(
-        Data64* polynomial_in, Data64* polynomial_out,
-        const Root<Data64>* __restrict__ inverse_root_of_unity_table,
-        Modulus<Data64> modulus, int shared_index, int logm, int k,
-        int outer_iteration_count, int N_power, Ninverse<Data64> n_inverse,
-        bool last_kernel, bool reduction_poly_check);
-
-    template __global__ void InverseCore_<Data32s>(
-        Data32* polynomial_in, Data32s* polynomial_out,
-        const Root<Data32>* __restrict__ inverse_root_of_unity_table,
-        Modulus<Data32> modulus, int shared_index, int logm, int k,
-        int outer_iteration_count, int N_power, Ninverse<Data32> n_inverse,
-        bool last_kernel, bool reduction_poly_check);
-
-    template __global__ void InverseCore_<Data64s>(
-        Data64* polynomial_in, Data64s* polynomial_out,
-        const Root<Data64>* __restrict__ inverse_root_of_unity_table,
-        Modulus<Data64> modulus, int shared_index, int logm, int k,
-        int outer_iteration_count, int N_power, Ninverse<Data64> n_inverse,
-        bool last_kernel, bool reduction_poly_check);
-
-    template __global__ void InverseCore_<Data32>(
-        Data32* polynomial_in, Data32* polynomial_out,
-        const Root<Data32>* __restrict__ inverse_root_of_unity_table,
-        Modulus<Data32>* modulus, int shared_index, int logm, int k,
-        int outer_iteration_count, int N_power, Ninverse<Data32>* n_inverse,
-        bool last_kernel, bool reduction_poly_check, int mod_count);
-
-    template __global__ void InverseCore_<Data64>(
-        Data64* polynomial_in, Data64* polynomial_out,
-        const Root<Data64>* __restrict__ inverse_root_of_unity_table,
-        Modulus<Data64>* modulus, int shared_index, int logm, int k,
-        int outer_iteration_count, int N_power, Ninverse<Data64>* n_inverse,
-        bool last_kernel, bool reduction_poly_check, int mod_count);
-
-    template __global__ void InverseCore_<Data32s>(
-        Data32* polynomial_in, Data32s* polynomial_out,
-        const Root<Data32>* __restrict__ inverse_root_of_unity_table,
-        Modulus<Data32>* modulus, int shared_index, int logm, int k,
-        int outer_iteration_count, int N_power, Ninverse<Data32>* n_inverse,
-        bool last_kernel, bool reduction_poly_check, int mod_count);
-
-    template __global__ void InverseCore_<Data64s>(
-        Data64* polynomial_in, Data64s* polynomial_out,
-        const Root<Data64>* __restrict__ inverse_root_of_unity_table,
-        Modulus<Data64>* modulus, int shared_index, int logm, int k,
-        int outer_iteration_count, int N_power, Ninverse<Data64>* n_inverse,
-        bool last_kernel, bool reduction_poly_check, int mod_count);
-
-    template __global__ void ForwardCoreTranspose<Data32>(
-        Data32* polynomial_in, Data32* polynomial_out,
-        const Root<Data32>* __restrict__ root_of_unity_table,
-        const Modulus<Data32> modulus, int log_row, int log_column,
-        bool reduction_poly_check);
-
-    template __global__ void ForwardCoreTranspose<Data64>(
-        Data64* polynomial_in, Data64* polynomial_out,
-        const Root<Data64>* __restrict__ root_of_unity_table,
-        const Modulus<Data64> modulus, int log_row, int log_column,
-        bool reduction_poly_check);
-
-    template __global__ void ForwardCoreTranspose<Data32s>(
-        Data32s* polynomial_in, Data32* polynomial_out,
-        const Root<Data32>* __restrict__ root_of_unity_table,
-        const Modulus<Data32> modulus, int log_row, int log_column,
-        bool reduction_poly_check);
-
-    template __global__ void ForwardCoreTranspose<Data64s>(
-        Data64s* polynomial_in, Data64* polynomial_out,
-        const Root<Data64>* __restrict__ root_of_unity_table,
-        const Modulus<Data64> modulus, int log_row, int log_column,
-        bool reduction_poly_check);
-
-    template __global__ void ForwardCoreTranspose<Data32>(
-        Data32* polynomial_in, Data32* polynomial_out,
-        const Root<Data32>* __restrict__ root_of_unity_table,
-        const Modulus<Data32>* modulus, int log_row, int log_column,
-        bool reduction_poly_check, int mod_count);
-
-    template __global__ void ForwardCoreTranspose<Data64>(
-        Data64* polynomial_in, Data64* polynomial_out,
-        const Root<Data64>* __restrict__ root_of_unity_table,
-        const Modulus<Data64>* modulus, int log_row, int log_column,
-        bool reduction_poly_check, int mod_count);
-
-    template __global__ void ForwardCoreTranspose<Data32s>(
-        Data32s* polynomial_in, Data32* polynomial_out,
-        const Root<Data32>* __restrict__ root_of_unity_table,
-        const Modulus<Data32>* modulus, int log_row, int log_column,
-        bool reduction_poly_check, int mod_count);
-
-    template __global__ void ForwardCoreTranspose<Data64s>(
-        Data64s* polynomial_in, Data64* polynomial_out,
-        const Root<Data64>* __restrict__ root_of_unity_table,
-        const Modulus<Data64>* modulus, int log_row, int log_column,
-        bool reduction_poly_check, int mod_count);
-
-    template __global__ void InverseCoreTranspose<Data32>(
-        Data32* polynomial_in, Data32* polynomial_out,
-        const Root<Data32>* __restrict__ inverse_root_of_unity_table,
-        Modulus<Data32> modulus, Ninverse<Data32> n_inverse, int log_row,
-        int log_column, bool reduction_poly_check);
-
-    template __global__ void InverseCoreTranspose<Data64>(
-        Data64* polynomial_in, Data64* polynomial_out,
-        const Root<Data64>* __restrict__ inverse_root_of_unity_table,
-        Modulus<Data64> modulus, Ninverse<Data64> n_inverse, int log_row,
-        int log_column, bool reduction_poly_check);
-
-    template __global__ void InverseCoreTranspose<Data32s>(
-        Data32* polynomial_in, Data32s* polynomial_out,
-        const Root<Data32>* __restrict__ inverse_root_of_unity_table,
-        Modulus<Data32> modulus, Ninverse<Data32> n_inverse, int log_row,
-        int log_column, bool reduction_poly_check);
-
-    template __global__ void InverseCoreTranspose<Data64s>(
-        Data64* polynomial_in, Data64s* polynomial_out,
-        const Root<Data64>* __restrict__ inverse_root_of_unity_table,
-        Modulus<Data64> modulus, Ninverse<Data64> n_inverse, int log_row,
-        int log_column, bool reduction_poly_check);
-
-    template __global__ void InverseCoreTranspose<Data32>(
-        Data32* polynomial_in, Data32* polynomial_out,
-        const Root<Data32>* __restrict__ inverse_root_of_unity_table,
-        Modulus<Data32>* modulus, Ninverse<Data32>* n_inverse, int log_row,
-        int log_column, bool reduction_poly_check, int mod_count);
-
-    template __global__ void InverseCoreTranspose<Data64>(
-        Data64* polynomial_in, Data64* polynomial_out,
-        const Root<Data64>* __restrict__ inverse_root_of_unity_table,
-        Modulus<Data64>* modulus, Ninverse<Data64>* n_inverse, int log_row,
-        int log_column, bool reduction_poly_check, int mod_count);
-
-    template __global__ void InverseCoreTranspose<Data32s>(
-        Data32* polynomial_in, Data32s* polynomial_out,
-        const Root<Data32>* __restrict__ inverse_root_of_unity_table,
-        Modulus<Data32>* modulus, Ninverse<Data32>* n_inverse, int log_row,
-        int log_column, bool reduction_poly_check, int mod_count);
-
-    template __global__ void InverseCoreTranspose<Data64s>(
-        Data64* polynomial_in, Data64s* polynomial_out,
-        const Root<Data64>* __restrict__ inverse_root_of_unity_table,
-        Modulus<Data64>* modulus, Ninverse<Data64>* n_inverse, int log_row,
-        int log_column, bool reduction_poly_check, int mod_count);
-
-    template __host__ void
-    GPU_NTT<Data32>(Data32* device_in, Data32* device_out,
-                    Root<Data32>* root_of_unity_table, Modulus<Data32> modulus,
-                    ntt_configuration<Data32> cfg, int batch_size);
-
-    template __host__ void
-    GPU_NTT<Data64>(Data64* device_in, Data64* device_out,
-                    Root<Data64>* root_of_unity_table, Modulus<Data64> modulus,
-                    ntt_configuration<Data64> cfg, int batch_size);
-
-    template __host__ void
-    GPU_NTT<Data32s>(Data32s* device_in, Data32* device_out,
-                     Root<Data32>* root_of_unity_table, Modulus<Data32> modulus,
-                     ntt_configuration<Data32> cfg, int batch_size);
-
-    template __host__ void
-    GPU_NTT<Data64s>(Data64s* device_in, Data64* device_out,
-                     Root<Data64>* root_of_unity_table, Modulus<Data64> modulus,
-                     ntt_configuration<Data64> cfg, int batch_size);
-
-    template __host__ void
-    GPU_INTT<Data32>(Data32* device_in, Data32* device_out,
-                     Root<Data32>* root_of_unity_table, Modulus<Data32> modulus,
-                     ntt_configuration<Data32> cfg, int batch_size);
-
-    template __host__ void
-    GPU_INTT<Data64>(Data64* device_in, Data64* device_out,
-                     Root<Data64>* root_of_unity_table, Modulus<Data64> modulus,
-                     ntt_configuration<Data64> cfg, int batch_size);
-
-    template __host__ void GPU_INTT<Data32s>(Data32* device_in,
-                                             Data32s* device_out,
-                                             Root<Data32>* root_of_unity_table,
-                                             Modulus<Data32> modulus,
-                                             ntt_configuration<Data32> cfg,
-                                             int batch_size);
-
-    template __host__ void GPU_INTT<Data64s>(Data64* device_in,
-                                             Data64s* device_out,
-                                             Root<Data64>* root_of_unity_table,
-                                             Modulus<Data64> modulus,
-                                             ntt_configuration<Data64> cfg,
-                                             int batch_size);
-
-    template __host__ void GPU_NTT_Inplace<Data32>(
-        Data32* device_inout, Root<Data32>* root_of_unity_table,
-        Modulus<Data32> modulus, ntt_configuration<Data32> cfg, int batch_size);
-
-    template __host__ void GPU_NTT_Inplace<Data64>(
-        Data64* device_inout, Root<Data64>* root_of_unity_table,
-        Modulus<Data64> modulus, ntt_configuration<Data64> cfg, int batch_size);
-
-    template __host__ void GPU_INTT_Inplace<Data32>(
-        Data32* device_inout, Root<Data32>* root_of_unity_table,
-        Modulus<Data32> modulus, ntt_configuration<Data32> cfg, int batch_size);
-
-    template __host__ void GPU_INTT_Inplace<Data64>(
-        Data64* device_inout, Root<Data64>* root_of_unity_table,
-        Modulus<Data64> modulus, ntt_configuration<Data64> cfg, int batch_size);
-
-    template __host__ void GPU_NTT<Data32>(Data32* device_in,
-                                           Data32* device_out,
-                                           Root<Data32>* root_of_unity_table,
-                                           Modulus<Data32>* modulus,
-                                           ntt_rns_configuration<Data32> cfg,
-                                           int batch_size, int mod_count);
-
-    template __host__ void GPU_NTT<Data64>(Data64* device_in,
-                                           Data64* device_out,
-                                           Root<Data64>* root_of_unity_table,
-                                           Modulus<Data64>* modulus,
-                                           ntt_rns_configuration<Data64> cfg,
-                                           int batch_size, int mod_count);
-
-    template __host__ void GPU_NTT<Data32s>(Data32s* device_in,
-                                            Data32* device_out,
-                                            Root<Data32>* root_of_unity_table,
-                                            Modulus<Data32>* modulus,
-                                            ntt_rns_configuration<Data32> cfg,
-                                            int batch_size, int mod_count);
-
-    template __host__ void GPU_NTT<Data64s>(Data64s* device_in,
-                                            Data64* device_out,
-                                            Root<Data64>* root_of_unity_table,
-                                            Modulus<Data64>* modulus,
-                                            ntt_rns_configuration<Data64> cfg,
-                                            int batch_size, int mod_count);
-
-    template __host__ void GPU_INTT<Data32>(Data32* device_in,
-                                            Data32* device_out,
-                                            Root<Data32>* root_of_unity_table,
-                                            Modulus<Data32>* modulus,
-                                            ntt_rns_configuration<Data32> cfg,
-                                            int batch_size, int mod_count);
-
-    template __host__ void GPU_INTT<Data64>(Data64* device_in,
-                                            Data64* device_out,
-                                            Root<Data64>* root_of_unity_table,
-                                            Modulus<Data64>* modulus,
-                                            ntt_rns_configuration<Data64> cfg,
-                                            int batch_size, int mod_count);
-
-    template __host__ void GPU_INTT<Data32s>(Data32* device_in,
-                                             Data32s* device_out,
-                                             Root<Data32>* root_of_unity_table,
-                                             Modulus<Data32>* modulus,
-                                             ntt_rns_configuration<Data32> cfg,
-                                             int batch_size, int mod_count);
-
-    template __host__ void GPU_INTT<Data64s>(Data64* device_in,
-                                             Data64s* device_out,
-                                             Root<Data64>* root_of_unity_table,
-                                             Modulus<Data64>* modulus,
-                                             ntt_rns_configuration<Data64> cfg,
-                                             int batch_size, int mod_count);
-
-    template __host__ void GPU_NTT_Inplace<Data32>(
-        Data32* device_inout, Root<Data32>* root_of_unity_table,
-        Modulus<Data32>* modulus, ntt_rns_configuration<Data32> cfg,
-        int batch_size, int mod_count);
-
-    template __host__ void GPU_NTT_Inplace<Data64>(
-        Data64* device_inout, Root<Data64>* root_of_unity_table,
-        Modulus<Data64>* modulus, ntt_rns_configuration<Data64> cfg,
-        int batch_size, int mod_count);
-
-    template __host__ void GPU_INTT_Inplace<Data32>(
-        Data32* device_inout, Root<Data32>* root_of_unity_table,
-        Modulus<Data32>* modulus, ntt_rns_configuration<Data32> cfg,
-        int batch_size, int mod_count);
-
-    template __host__ void GPU_INTT_Inplace<Data64>(
-        Data64* device_inout, Root<Data64>* root_of_unity_table,
-        Modulus<Data64>* modulus, ntt_rns_configuration<Data64> cfg,
-        int batch_size, int mod_count);
-
-    template __global__ void ForwardCoreModulusOrdered<Data32>(
-        Data32* polynomial_in, Data32* polynomial_out,
-        Root<Data32>* root_of_unity_table, Modulus<Data32>* modulus,
-        int shared_index, int logm, int outer_iteration_count, int N_power,
-        bool not_last_kernel, bool reduction_poly_check,
-        int mod_count, int* order);
-
-    template __global__ void ForwardCoreModulusOrdered_<Data32>(
-        Data32* polynomial_in, Data32* polynomial_out,
-        Root<Data32>* root_of_unity_table, Modulus<Data32>* modulus,
-        int shared_index, int logm, int outer_iteration_count, int N_power,
-        bool not_last_kernel, bool reduction_poly_check,
-        int mod_count, int* order);
-
-    template __global__ void ForwardCoreModulusOrdered<Data64>(
-        Data64* polynomial_in, Data64* polynomial_out,
-        Root<Data64>* root_of_unity_table, Modulus<Data64>* modulus,
-        int shared_index, int logm, int outer_iteration_count, int N_power,
-        bool not_last_kernel, bool reduction_poly_check,
-        int mod_count, int* order);
-
-    template __global__ void ForwardCoreModulusOrdered_<Data64>(
-        Data64* polynomial_in, Data64* polynomial_out,
-        Root<Data64>* root_of_unity_table, Modulus<Data64>* modulus,
-        int shared_index, int logm, int outer_iteration_count, int N_power,
-        bool not_last_kernel, bool reduction_poly_check,
-        int mod_count, int* order);
-
-    template __global__ void InverseCoreModulusOrdered<Data32>(
-        Data32* polynomial_in, Data32* polynomial_out,
-        Root<Data32>* inverse_root_of_unity_table, Modulus<Data32>* modulus,
-        int shared_index, int logm, int k, int outer_iteration_count,
-        int N_power, Ninverse<Data32>* n_inverse, bool last_kernel,
-        bool reduction_poly_check, int mod_count, int* order);
-
-    template __global__ void InverseCoreModulusOrdered_<Data32>(
-        Data32* polynomial_in, Data32* polynomial_out,
-        Root<Data32>* inverse_root_of_unity_table, Modulus<Data32>* modulus,
-        int shared_index, int logm, int k, int outer_iteration_count,
-        int N_power, Ninverse<Data32>* n_inverse, bool last_kernel,
-        bool reduction_poly_check, int mod_count, int* order);
-
-    template __global__ void InverseCoreModulusOrdered<Data64>(
-        Data64* polynomial_in, Data64* polynomial_out,
-        Root<Data64>* inverse_root_of_unity_table, Modulus<Data64>* modulus,
-        int shared_index, int logm, int k, int outer_iteration_count,
-        int N_power, Ninverse<Data64>* n_inverse, bool last_kernel,
-        bool reduction_poly_check, int mod_count, int* order);
-
-    template __global__ void InverseCoreModulusOrdered_<Data64>(
-        Data64* polynomial_in, Data64* polynomial_out,
-        Root<Data64>* inverse_root_of_unity_table, Modulus<Data64>* modulus,
-        int shared_index, int logm, int k, int outer_iteration_count,
-        int N_power, Ninverse<Data64>* n_inverse, bool last_kernel,
-        bool reduction_poly_check, int mod_count, int* order);
-
-    template __host__ void
-    GPU_NTT_Modulus_Ordered<Data32>(Data32* device_in, Data32* device_out,
-                                    Root<Data32>* root_of_unity_table,
-                                    Modulus<Data32>* modulus,
-                                    ntt_rns_configuration<Data32> cfg,
-                                    int batch_size, int mod_count, int* order);
-
-    template __host__ void GPU_NTT_Modulus_Ordered_Inplace<Data32>(
-        Data32* device_inout, Root<Data32>* root_of_unity_table,
-        Modulus<Data32>* modulus, ntt_rns_configuration<Data32> cfg,
-        int batch_size, int mod_count, int* order);
-
-    template __host__ void
-    GPU_NTT_Modulus_Ordered<Data64>(Data64* device_in, Data64* device_out,
-                                    Root<Data64>* root_of_unity_table,
-                                    Modulus<Data64>* modulus,
-                                    ntt_rns_configuration<Data64> cfg,
-                                    int batch_size, int mod_count, int* order);
-
-    template __host__ void GPU_NTT_Modulus_Ordered_Inplace<Data64>(
-        Data64* device_inout, Root<Data64>* root_of_unity_table,
-        Modulus<Data64>* modulus, ntt_rns_configuration<Data64> cfg,
-        int batch_size, int mod_count, int* order);
-
-    template __global__ void ForwardCorePolyOrdered<Data32>(
-        Data32* polynomial_in, Data32* polynomial_out,
-        Root<Data32>* root_of_unity_table, Modulus<Data32>* modulus,
-        int shared_index, int logm, int outer_iteration_count, int N_power,
-        bool not_last_kernel, bool reduction_poly_check,
-        int mod_count, int* order);
-
-    template __global__ void ForwardCorePolyOrdered_<Data32>(
-        Data32* polynomial_in, Data32* polynomial_out,
-        Root<Data32>* root_of_unity_table, Modulus<Data32>* modulus,
-        int shared_index, int logm, int outer_iteration_count, int N_power,
-        bool not_last_kernel, bool reduction_poly_check,
-        int mod_count, int* order);
-
-    template __global__ void ForwardCorePolyOrdered<Data64>(
-        Data64* polynomial_in, Data64* polynomial_out,
-        Root<Data64>* root_of_unity_table, Modulus<Data64>* modulus,
-        int shared_index, int logm, int outer_iteration_count, int N_power,
-        bool not_last_kernel, bool reduction_poly_check,
-        int mod_count, int* order);
-
-    template __global__ void ForwardCorePolyOrdered_<Data64>(
-        Data64* polynomial_in, Data64* polynomial_out,
-        Root<Data64>* root_of_unity_table, Modulus<Data64>* modulus,
-        int shared_index, int logm, int outer_iteration_count, int N_power,
-        bool not_last_kernel, bool reduction_poly_check,
-        int mod_count, int* order);
-
-    template __global__ void InverseCorePolyOrdered<Data32>(
-        Data32* polynomial_in, Data32* polynomial_out,
-        Root<Data32>* inverse_root_of_unity_table, Modulus<Data32>* modulus,
-        int shared_index, int logm, int k, int outer_iteration_count,
-        int N_power, Ninverse<Data32>* n_inverse, bool last_kernel,
-        bool reduction_poly_check, int mod_count, int* order);
-
-    template __global__ void InverseCorePolyOrdered_<Data32>(
-        Data32* polynomial_in, Data32* polynomial_out,
-        Root<Data32>* inverse_root_of_unity_table, Modulus<Data32>* modulus,
-        int shared_index, int logm, int k, int outer_iteration_count,
-        int N_power, Ninverse<Data32>* n_inverse, bool last_kernel,
-        bool reduction_poly_check, int mod_count, int* order);
-
-    template __global__ void InverseCorePolyOrdered<Data64>(
-        Data64* polynomial_in, Data64* polynomial_out,
-        Root<Data64>* inverse_root_of_unity_table, Modulus<Data64>* modulus,
-        int shared_index, int logm, int k, int outer_iteration_count,
-        int N_power, Ninverse<Data64>* n_inverse, bool last_kernel,
-        bool reduction_poly_check, int mod_count, int* order);
-
-    template __global__ void InverseCorePolyOrdered_<Data64>(
-        Data64* polynomial_in, Data64* polynomial_out,
-        Root<Data64>* inverse_root_of_unity_table, Modulus<Data64>* modulus,
-        int shared_index, int logm, int k, int outer_iteration_count,
-        int N_power, Ninverse<Data64>* n_inverse, bool last_kernel,
-        bool reduction_poly_check, int mod_count, int* order);
-
-    template __host__ void
-    GPU_NTT_Poly_Ordered<Data32>(Data32* device_in, Data32* device_out,
-                                 Root<Data32>* root_of_unity_table,
-                                 Modulus<Data32>* modulus,
-                                 ntt_rns_configuration<Data32> cfg,
-                                 int batch_size, int mod_count, int* order);
-
-    template __host__ void GPU_NTT_Poly_Ordered_Inplace<Data32>(
-        Data32* device_inout, Root<Data32>* root_of_unity_table,
-        Modulus<Data32>* modulus, ntt_rns_configuration<Data32> cfg,
-        int batch_size, int mod_count, int* order);
-
-    template __host__ void
-    GPU_NTT_Poly_Ordered<Data64>(Data64* device_in, Data64* device_out,
-                                 Root<Data64>* root_of_unity_table,
-                                 Modulus<Data64>* modulus,
-                                 ntt_rns_configuration<Data64> cfg,
-                                 int batch_size, int mod_count, int* order);
-
-    template __host__ void GPU_NTT_Poly_Ordered_Inplace<Data64>(
-        Data64* device_inout, Root<Data64>* root_of_unity_table,
-        Modulus<Data64>* modulus, ntt_rns_configuration<Data64> cfg,
-        int batch_size, int mod_count, int* order);
+    // Explicit instantiations. The kernels are declared in the public
+    // header, so every supported kernel and host function is
+    // instantiated here. Signed input (NTT) and output (INTT) are
+    // supported by the single modulus and RNS variants only.
+
+    template <typename T>
+    using UnsignedOf = typename std::make_unsigned<T>::type;
+
+#define GPUNTT_INSTANTIATE_ALL_TYPES(T)                                        \
+    template __global__ void ForwardCoreLowRing<T>(T*, UnsignedOf<T>*,         \
+        const Root<UnsignedOf<T>>* __restrict__, Modulus<UnsignedOf<T>>, int,  \
+        int, bool, int);                                                       \
+    template __global__ void ForwardCoreLowRing<T>(T*, UnsignedOf<T>*,         \
+        const Root<UnsignedOf<T>>* __restrict__, Modulus<UnsignedOf<T>>*, int, \
+        int, bool, int, int);                                                  \
+    template __global__ void ForwardCore<T>(T*, UnsignedOf<T>*,                \
+        const Root<UnsignedOf<T>>* __restrict__, Modulus<UnsignedOf<T>>, int,  \
+        int, int, int, bool, bool);                                            \
+    template __global__ void ForwardCore<T>(T*, UnsignedOf<T>*,                \
+        const Root<UnsignedOf<T>>* __restrict__, Modulus<UnsignedOf<T>>*, int, \
+        int, int, int, bool, bool, int);                                       \
+    template __global__ void ForwardCore_<T>(T*, UnsignedOf<T>*,               \
+        const Root<UnsignedOf<T>>* __restrict__, Modulus<UnsignedOf<T>>, int,  \
+        int, int, int, bool, bool);                                            \
+    template __global__ void ForwardCore_<T>(T*, UnsignedOf<T>*,               \
+        const Root<UnsignedOf<T>>* __restrict__, Modulus<UnsignedOf<T>>*, int, \
+        int, int, int, bool, bool, int);                                       \
+    template __global__ void InverseCoreLowRing<T>(UnsignedOf<T>*, T*,         \
+        const Root<UnsignedOf<T>>* __restrict__, Modulus<UnsignedOf<T>>, int,  \
+        int, Ninverse<UnsignedOf<T>>, bool, int);                              \
+    template __global__ void InverseCoreLowRing<T>(UnsignedOf<T>*, T*,         \
+        const Root<UnsignedOf<T>>* __restrict__, Modulus<UnsignedOf<T>>*, int, \
+        int, Ninverse<UnsignedOf<T>>*, bool, int, int);                        \
+    template __global__ void InverseCore<T>(UnsignedOf<T>*, T*,                \
+        const Root<UnsignedOf<T>>* __restrict__, Modulus<UnsignedOf<T>>, int,  \
+        int, int, int, int, Ninverse<UnsignedOf<T>>, bool, bool);              \
+    template __global__ void InverseCore<T>(UnsignedOf<T>*, T*,                \
+        const Root<UnsignedOf<T>>* __restrict__, Modulus<UnsignedOf<T>>*, int, \
+        int, int, int, int, Ninverse<UnsignedOf<T>>*, bool, bool, int);        \
+    template __global__ void InverseCore_<T>(UnsignedOf<T>*, T*,               \
+        const Root<UnsignedOf<T>>* __restrict__, Modulus<UnsignedOf<T>>, int,  \
+        int, int, int, int, Ninverse<UnsignedOf<T>>, bool, bool);              \
+    template __global__ void InverseCore_<T>(UnsignedOf<T>*, T*,               \
+        const Root<UnsignedOf<T>>* __restrict__, Modulus<UnsignedOf<T>>*, int, \
+        int, int, int, int, Ninverse<UnsignedOf<T>>*, bool, bool, int);        \
+    template __global__ void ForwardCoreTranspose<T>(T*, UnsignedOf<T>*,       \
+        const Root<UnsignedOf<T>>* __restrict__, const Modulus<UnsignedOf<T>>, \
+        int, int, bool);                                                       \
+    template __global__ void ForwardCoreTranspose<T>(T*, UnsignedOf<T>*,       \
+        const Root<UnsignedOf<T>>* __restrict__,                               \
+        const Modulus<UnsignedOf<T>>*, int, int, bool, int);                   \
+    template __global__ void InverseCoreTranspose<T>(UnsignedOf<T>*, T*,       \
+        const Root<UnsignedOf<T>>* __restrict__, Modulus<UnsignedOf<T>>,       \
+        Ninverse<UnsignedOf<T>>, int, int, bool);                              \
+    template __global__ void InverseCoreTranspose<T>(UnsignedOf<T>*, T*,       \
+        const Root<UnsignedOf<T>>* __restrict__, Modulus<UnsignedOf<T>>*,      \
+        Ninverse<UnsignedOf<T>>*, int, int, bool, int);                        \
+    template __host__ void GPU_NTT<T>(T*, UnsignedOf<T>*,                      \
+        Root<UnsignedOf<T>>*, Modulus<UnsignedOf<T>>,                          \
+        ntt_configuration<UnsignedOf<T>>, int);                                \
+    template __host__ void GPU_INTT<T>(UnsignedOf<T>*, T*,                     \
+        Root<UnsignedOf<T>>*, Modulus<UnsignedOf<T>>,                          \
+        ntt_configuration<UnsignedOf<T>>, int);                                \
+    template __host__ void GPU_NTT<T>(T*, UnsignedOf<T>*,                      \
+        Root<UnsignedOf<T>>*, Modulus<UnsignedOf<T>>*,                         \
+        ntt_rns_configuration<UnsignedOf<T>>, int, int);                       \
+    template __host__ void GPU_INTT<T>(UnsignedOf<T>*, T*,                     \
+        Root<UnsignedOf<T>>*, Modulus<UnsignedOf<T>>*,                         \
+        ntt_rns_configuration<UnsignedOf<T>>, int, int);
+
+#define GPUNTT_INSTANTIATE_UNSIGNED_TYPES(T)                                   \
+    template __host__ void GPU_NTT_Inplace<T>(T*, Root<T>*, Modulus<T>,        \
+        ntt_configuration<T>, int);                                            \
+    template __host__ void GPU_INTT_Inplace<T>(T*, Root<T>*, Modulus<T>,       \
+        ntt_configuration<T>, int);                                            \
+    template __host__ void GPU_NTT_Inplace<T>(T*, Root<T>*, Modulus<T>*,       \
+        ntt_rns_configuration<T>, int, int);                                   \
+    template __host__ void GPU_INTT_Inplace<T>(T*, Root<T>*, Modulus<T>*,      \
+        ntt_rns_configuration<T>, int, int);                                   \
+    template __global__ void ForwardCoreModulusOrdered<T>(T*, T*, Root<T>*,    \
+        Modulus<T>*, int, int, int, int, bool, bool, int, int*);               \
+    template __global__ void ForwardCoreModulusOrdered_<T>(T*, T*, Root<T>*,   \
+        Modulus<T>*, int, int, int, int, bool, bool, int, int*);               \
+    template __global__ void InverseCoreModulusOrdered<T>(T*, T*, Root<T>*,    \
+        Modulus<T>*, int, int, int, int, int, Ninverse<T>*, bool, bool, int,   \
+        int*);                                                                 \
+    template __global__ void InverseCoreModulusOrdered_<T>(T*, T*, Root<T>*,   \
+        Modulus<T>*, int, int, int, int, int, Ninverse<T>*, bool, bool, int,   \
+        int*);                                                                 \
+    template __host__ void GPU_NTT_Modulus_Ordered<T>(T*, T*, Root<T>*,        \
+        Modulus<T>*, ntt_rns_configuration<T>, int, int, int*);                \
+    template __host__ void GPU_NTT_Modulus_Ordered_Inplace<T>(T*, Root<T>*,    \
+        Modulus<T>*, ntt_rns_configuration<T>, int, int, int*);                \
+    template __global__ void ForwardCorePolyOrdered<T>(T*, T*, Root<T>*,       \
+        Modulus<T>*, int, int, int, int, bool, bool, int, int*);               \
+    template __global__ void ForwardCorePolyOrdered_<T>(T*, T*, Root<T>*,      \
+        Modulus<T>*, int, int, int, int, bool, bool, int, int*);               \
+    template __global__ void InverseCorePolyOrdered<T>(T*, T*, Root<T>*,       \
+        Modulus<T>*, int, int, int, int, int, Ninverse<T>*, bool, bool, int,   \
+        int*);                                                                 \
+    template __global__ void InverseCorePolyOrdered_<T>(T*, T*, Root<T>*,      \
+        Modulus<T>*, int, int, int, int, int, Ninverse<T>*, bool, bool, int,   \
+        int*);                                                                 \
+    template __host__ void GPU_NTT_Poly_Ordered<T>(T*, T*, Root<T>*,           \
+        Modulus<T>*, ntt_rns_configuration<T>, int, int, int*);                \
+    template __host__ void GPU_NTT_Poly_Ordered_Inplace<T>(T*, Root<T>*,       \
+        Modulus<T>*, ntt_rns_configuration<T>, int, int, int*);
+
+    GPUNTT_INSTANTIATE_ALL_TYPES(Data32)
+    GPUNTT_INSTANTIATE_ALL_TYPES(Data64)
+    GPUNTT_INSTANTIATE_ALL_TYPES(Data32s)
+    GPUNTT_INSTANTIATE_ALL_TYPES(Data64s)
+    GPUNTT_INSTANTIATE_UNSIGNED_TYPES(Data32)
+    GPUNTT_INSTANTIATE_UNSIGNED_TYPES(Data64)
+
+#undef GPUNTT_INSTANTIATE_ALL_TYPES
+#undef GPUNTT_INSTANTIATE_UNSIGNED_TYPES
 
 } // namespace gpuntt
