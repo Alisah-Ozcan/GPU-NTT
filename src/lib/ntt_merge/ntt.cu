@@ -363,16 +363,16 @@ namespace gpuntt
         const int row_base = idx_y << N_power;
         const int shared_address0 = row_base + idx_x;
         const int shared_address1 = shared_address0 + half_n;
-        location_t global_addresss =
+        location_t global_address =
             idx_x + (location_t) (batch_index_safe << N_power);
 
-        location_t omega_addresss = idx_x;
+        location_t omega_address = idx_x;
 
         // Load T from global & store to shared
         if constexpr (std::is_signed<T>::value)
         {
-            T input1_reg = polynomial_in[global_addresss];
-            T input2_reg = polynomial_in[global_addresss + half_n];
+            T input1_reg = polynomial_in[global_address];
+            T input2_reg = polynomial_in[global_address + half_n];
             shared_memory[shared_address0] =
                 OPERATOR_GPU<TU>::reduce(input1_reg, modulus_reg);
             shared_memory[shared_address1] =
@@ -380,16 +380,16 @@ namespace gpuntt
         }
         else
         {
-            shared_memory[shared_address0] = polynomial_in[global_addresss];
+            shared_memory[shared_address0] = polynomial_in[global_address];
             shared_memory[shared_address1] =
-                polynomial_in[global_addresss + half_n];
+                polynomial_in[global_address + half_n];
         }
 
-        int shared_addresss = idx_x;
+        int shared_address = idx_x;
 
         int t = 1 << t_;
         int in_shared_address =
-            ((shared_addresss >> t_) << t_) + shared_addresss;
+            ((shared_address >> t_) << t_) + shared_address;
         location_t current_root_index;
         __syncthreads();
 
@@ -399,12 +399,12 @@ namespace gpuntt
             int group_in_shared_address = in_shared_address + offset;
             if (reduction_poly_check)
             { // X_N_minus
-                current_root_index = (omega_addresss >> t_2) +
+                current_root_index = (omega_address >> t_2) +
                                      (location_t) (prime_index << N_power);
             }
             else
             { // X_N_plus
-                current_root_index = m + (omega_addresss >> t_2) +
+                current_root_index = m + (omega_address >> t_2) +
                                      (location_t) (prime_index << N_power);
             }
 
@@ -420,7 +420,7 @@ namespace gpuntt
             if (lp + 1 < (shared_index + 1))
             {
                 in_shared_address =
-                    ((shared_addresss >> t_) << t_) + shared_addresss;
+                    ((shared_address >> t_) << t_) + shared_address;
             }
             __syncthreads();
         }
@@ -429,8 +429,8 @@ namespace gpuntt
 
         if (active_batch)
         {
-            polynomial_out[global_addresss] = shared_memory[shared_address0];
-            polynomial_out[global_addresss + half_n] =
+            polynomial_out[global_address] = shared_memory[shared_address0];
+            polynomial_out[global_address + half_n] =
                 shared_memory[shared_address1];
         }
     }
@@ -470,20 +470,20 @@ namespace gpuntt
         const int row_base = idx_y << N_power;
         const int shared_address0 = row_base + idx_x;
         const int shared_address1 = shared_address0 + half_n;
-        location_t global_addresss =
+        location_t global_address =
             idx_x + (location_t) (batch_index_safe << N_power);
 
-        location_t omega_addresss = idx_x;
+        location_t omega_address = idx_x;
 
         // Load T from global & store to shared
-        shared_memory[shared_address0] = polynomial_in[global_addresss];
-        shared_memory[shared_address1] = polynomial_in[global_addresss + half_n];
+        shared_memory[shared_address0] = polynomial_in[global_address];
+        shared_memory[shared_address1] = polynomial_in[global_address + half_n];
 
-        int shared_addresss = idx_x;
+        int shared_address = idx_x;
 
         int t = 1 << t_;
         int in_shared_address =
-            ((shared_addresss >> t_) << t_) + shared_addresss;
+            ((shared_address >> t_) << t_) + shared_address;
         location_t current_root_index;
         __syncthreads();
 
@@ -493,12 +493,12 @@ namespace gpuntt
             int group_in_shared_address = in_shared_address + offset;
             if (reduction_poly_check)
             { // X_N_minus
-                current_root_index = (omega_addresss >> t_2) +
+                current_root_index = (omega_address >> t_2) +
                                      (location_t) (prime_index << N_power);
             }
             else
             { // X_N_plus
-                current_root_index = m + (omega_addresss >> t_2) +
+                current_root_index = m + (omega_address >> t_2) +
                                      (location_t) (prime_index << N_power);
             }
 
@@ -514,7 +514,7 @@ namespace gpuntt
             if (lp + 1 < loops)
             {
                 in_shared_address =
-                    ((shared_addresss >> t_) << t_) + shared_addresss;
+                    ((shared_address >> t_) << t_) + shared_address;
             }
             __syncthreads();
         }
@@ -530,15 +530,15 @@ namespace gpuntt
         {
             if constexpr (std::is_signed<T>::value)
             {
-                polynomial_out[global_addresss] =
+                polynomial_out[global_address] =
                     OPERATOR_GPU<TU>::centered_reduction(output1_reg, modulus_reg);
-                polynomial_out[global_addresss + half_n] =
+                polynomial_out[global_address + half_n] =
                     OPERATOR_GPU<TU>::centered_reduction(output2_reg, modulus_reg);
             }
             else
             {
-                polynomial_out[global_addresss] = output1_reg;
-                polynomial_out[global_addresss + half_n] = output2_reg;
+                polynomial_out[global_address] = output1_reg;
+                polynomial_out[global_address + half_n] = output2_reg;
             }
         }
     }
@@ -650,7 +650,7 @@ namespace gpuntt
         int t_ = shared_index;
         location_t m = (location_t) 1 << logm;
 
-        location_t global_addresss =
+        location_t global_address =
             idx_x +
             (location_t) (idx_y *
                           (offset / (1 << (outer_iteration_count - 1)))) +
@@ -658,35 +658,35 @@ namespace gpuntt
             (location_t) (2 * block_y * offset) +
             (location_t) (poly_index << N_power);
 
-        location_t omega_addresss =
+        location_t omega_address =
             idx_x +
             (location_t) (idx_y *
                           (offset / (1 << (outer_iteration_count - 1)))) +
             (location_t) (blockDim.x * block_x) +
             (location_t) (block_y * offset);
 
-        location_t shared_addresss = (idx_x + (idx_y * blockDim.x));
+        location_t shared_address = (idx_x + (idx_y * blockDim.x));
 
         // Load T from global & store to shared
         if constexpr (std::is_signed<T>::value)
         {
-            T input1_reg = polynomial_in[global_addresss];
-            T input2_reg = polynomial_in[global_addresss + offset];
-            shared_memory[shared_addresss] =
+            T input1_reg = polynomial_in[global_address];
+            T input2_reg = polynomial_in[global_address + offset];
+            shared_memory[shared_address] =
                 OPERATOR_GPU<TU>::reduce(input1_reg, modulus_reg);
-            shared_memory[shared_addresss + (blockDim.x * blockDim.y)] =
+            shared_memory[shared_address + (blockDim.x * blockDim.y)] =
                 OPERATOR_GPU<TU>::reduce(input2_reg, modulus_reg);
         }
         else
         {
-            shared_memory[shared_addresss] = polynomial_in[global_addresss];
-            shared_memory[shared_addresss + (blockDim.x * blockDim.y)] =
-                polynomial_in[global_addresss + offset];
+            shared_memory[shared_address] = polynomial_in[global_address];
+            shared_memory[shared_address + (blockDim.x * blockDim.y)] =
+                polynomial_in[global_address + offset];
         }
 
         int t = 1 << t_;
         int in_shared_address =
-            ((shared_addresss >> t_) << t_) + shared_addresss;
+            ((shared_address >> t_) << t_) + shared_address;
         location_t current_root_index;
         if (not_last_kernel)
         {
@@ -696,12 +696,12 @@ namespace gpuntt
                 __syncthreads();
                 if (reduction_poly_check)
                 { // X_N_minus
-                    current_root_index = (omega_addresss >> t_2) +
+                    current_root_index = (omega_address >> t_2) +
                                          (location_t) (prime_index << N_power);
                 }
                 else
                 { // X_N_plus
-                    current_root_index = m + (omega_addresss >> t_2) +
+                    current_root_index = m + (omega_address >> t_2) +
                                          (location_t) (prime_index << N_power);
                 }
                 CooleyTukeyUnit(shared_memory[in_shared_address],
@@ -715,7 +715,7 @@ namespace gpuntt
                 m <<= 1;
 
                 in_shared_address =
-                    ((shared_addresss >> t_) << t_) + shared_addresss;
+                    ((shared_address >> t_) << t_) + shared_address;
             }
             __syncthreads();
         }
@@ -727,12 +727,12 @@ namespace gpuntt
                 __syncthreads();
                 if (reduction_poly_check)
                 { // X_N_minus
-                    current_root_index = (omega_addresss >> t_2) +
+                    current_root_index = (omega_address >> t_2) +
                                          (location_t) (prime_index << N_power);
                 }
                 else
                 { // X_N_plus
-                    current_root_index = m + (omega_addresss >> t_2) +
+                    current_root_index = m + (omega_address >> t_2) +
                                          (location_t) (prime_index << N_power);
                 }
 
@@ -747,7 +747,7 @@ namespace gpuntt
                 m <<= 1;
 
                 in_shared_address =
-                    ((shared_addresss >> t_) << t_) + shared_addresss;
+                    ((shared_address >> t_) << t_) + shared_address;
             }
             __syncthreads();
 
@@ -756,12 +756,12 @@ namespace gpuntt
             {
                 if (reduction_poly_check)
                 { // X_N_minus
-                    current_root_index = (omega_addresss >> t_2) +
+                    current_root_index = (omega_address >> t_2) +
                                          (location_t) (prime_index << N_power);
                 }
                 else
                 { // X_N_plus
-                    current_root_index = m + (omega_addresss >> t_2) +
+                    current_root_index = m + (omega_address >> t_2) +
                                          (location_t) (prime_index << N_power);
                 }
                 CooleyTukeyUnit(shared_memory[in_shared_address],
@@ -775,14 +775,14 @@ namespace gpuntt
                 m <<= 1;
 
                 in_shared_address =
-                    ((shared_addresss >> t_) << t_) + shared_addresss;
+                    ((shared_address >> t_) << t_) + shared_address;
             }
             __syncthreads();
         }
 
-        polynomial_out[global_addresss] = shared_memory[shared_addresss];
-        polynomial_out[global_addresss + offset] =
-            shared_memory[shared_addresss + (blockDim.x * blockDim.y)];
+        polynomial_out[global_address] = shared_memory[shared_address];
+        polynomial_out[global_address + offset] =
+            shared_memory[shared_address + (blockDim.x * blockDim.y)];
     }
 
     template <bool SwapGridAxes, typename T, typename ModulusPolicy,
@@ -819,7 +819,7 @@ namespace gpuntt
         int loops = outer_iteration_count;
         location_t m = (location_t) 1 << logm;
 
-        location_t global_addresss =
+        location_t global_address =
             idx_x +
             (location_t) (idx_y *
                           (offset / (1 << (outer_iteration_count - 1)))) +
@@ -827,21 +827,21 @@ namespace gpuntt
             (location_t) (2 * block_y * offset) +
             (location_t) (poly_index << N_power);
 
-        location_t omega_addresss =
+        location_t omega_address =
             idx_x +
             (location_t) (idx_y *
                           (offset / (1 << (outer_iteration_count - 1)))) +
             (location_t) (blockDim.x * block_x) +
             (location_t) (block_y * offset);
-        location_t shared_addresss = (idx_x + (idx_y * blockDim.x));
+        location_t shared_address = (idx_x + (idx_y * blockDim.x));
 
-        shared_memory[shared_addresss] = polynomial_in[global_addresss];
-        shared_memory[shared_addresss + (blockDim.x * blockDim.y)] =
-            polynomial_in[global_addresss + offset];
+        shared_memory[shared_address] = polynomial_in[global_address];
+        shared_memory[shared_address + (blockDim.x * blockDim.y)] =
+            polynomial_in[global_address + offset];
 
         int t = 1 << t_;
         int in_shared_address =
-            ((shared_addresss >> t_) << t_) + shared_addresss;
+            ((shared_address >> t_) << t_) + shared_address;
         location_t current_root_index;
 #pragma unroll
         for (int lp = 0; lp < loops; lp++)
@@ -849,12 +849,12 @@ namespace gpuntt
             __syncthreads();
             if (reduction_poly_check)
             { // X_N_minus
-                current_root_index = (omega_addresss >> t_2) +
+                current_root_index = (omega_address >> t_2) +
                                      (location_t) (prime_index << N_power);
             }
             else
             { // X_N_plus
-                current_root_index = m + (omega_addresss >> t_2) +
+                current_root_index = m + (omega_address >> t_2) +
                                      (location_t) (prime_index << N_power);
             }
 
@@ -869,38 +869,38 @@ namespace gpuntt
             m >>= 1;
 
             in_shared_address =
-                ((shared_addresss >> t_) << t_) + shared_addresss;
+                ((shared_address >> t_) << t_) + shared_address;
         }
         __syncthreads();
 
         if (last_kernel)
         {
             TU output1_reg = OPERATOR_GPU<TU>::mult(
-                shared_memory[shared_addresss], n_inverse_reg, modulus_reg);
+                shared_memory[shared_address], n_inverse_reg, modulus_reg);
             TU output2_reg = OPERATOR_GPU<TU>::mult(
-                shared_memory[shared_addresss + (blockDim.x * blockDim.y)],
+                shared_memory[shared_address + (blockDim.x * blockDim.y)],
                 n_inverse_reg, modulus_reg);
 
             if constexpr (std::is_signed<T>::value)
             {
-                polynomial_out[global_addresss] =
+                polynomial_out[global_address] =
                     OPERATOR_GPU<TU>::centered_reduction(output1_reg,
                                                          modulus_reg);
-                polynomial_out[global_addresss + offset] =
+                polynomial_out[global_address + offset] =
                     OPERATOR_GPU<TU>::centered_reduction(output2_reg,
                                                          modulus_reg);
             }
             else
             {
-                polynomial_out[global_addresss] = output1_reg;
-                polynomial_out[global_addresss + offset] = output2_reg;
+                polynomial_out[global_address] = output1_reg;
+                polynomial_out[global_address + offset] = output2_reg;
             }
         }
         else
         {
-            polynomial_out[global_addresss] = shared_memory[shared_addresss];
-            polynomial_out[global_addresss + offset] =
-                shared_memory[shared_addresss + (blockDim.x * blockDim.y)];
+            polynomial_out[global_address] = shared_memory[shared_address];
+            polynomial_out[global_address + offset] =
+                shared_memory[shared_address + (blockDim.x * blockDim.y)];
         }
     }
 
@@ -1090,7 +1090,7 @@ namespace gpuntt
             }
         }
 
-        location_t global_addresss =
+        location_t global_address =
             (idx_y << log_column) + (blockDim.x * block_x) + idx_x;
         location_t global_offset = (blockDim.y << log_column);
 
@@ -1101,8 +1101,8 @@ namespace gpuntt
         const int transpose_block = idx_y + (idx_x * (2 * blockDim.y));
         if constexpr (std::is_signed<T>::value)
         {
-            T input1_reg = polynomial_in[global_addresss];
-            T input2_reg = polynomial_in[global_addresss + global_offset];
+            T input1_reg = polynomial_in[global_address];
+            T input2_reg = polynomial_in[global_address + global_offset];
             shared_memory[transpose_block] =
                 OPERATOR_GPU<TU>::reduce(input1_reg, modulus_thread);
             shared_memory[transpose_block + blockDim.y] =
@@ -1110,9 +1110,9 @@ namespace gpuntt
         }
         else
         {
-            shared_memory[transpose_block] = polynomial_in[global_addresss];
+            shared_memory[transpose_block] = polynomial_in[global_address];
             shared_memory[transpose_block + blockDim.y] =
-                polynomial_in[global_addresss + global_offset];
+                polynomial_in[global_address + global_offset];
         }
 
         const int block_thread_index = idx_x + (idx_y * blockDim.x);
@@ -1120,11 +1120,11 @@ namespace gpuntt
         const int ntt_block_index = block_thread_index >> t_;
         int offset = ntt_block_index << log_row;
 
-        int shared_addresss = ntt_thread_index;
-        int omega_addresss = ntt_thread_index;
+        int shared_address = ntt_thread_index;
+        int omega_address = ntt_thread_index;
         int t = 1 << t_;
         int in_shared_address =
-            ((shared_addresss >> t_) << t_) + shared_addresss;
+            ((shared_address >> t_) << t_) + shared_address;
         location_t current_root_index;
         __syncthreads();
 
@@ -1137,11 +1137,11 @@ namespace gpuntt
 
             if (reduction_poly_check)
             { // X_N_minus
-                current_root_index = (omega_addresss >> t_);
+                current_root_index = (omega_address >> t_);
             }
             else
             { // X_N_plus
-                current_root_index = m + (omega_addresss >> t_);
+                current_root_index = m + (omega_address >> t_);
             }
 
             Root<TU> root = root_shared_memory[current_root_index];
@@ -1155,7 +1155,7 @@ namespace gpuntt
             m <<= 1;
 
             in_shared_address =
-                ((shared_addresss >> t_) << t_) + shared_addresss;
+                ((shared_address >> t_) << t_) + shared_address;
             __syncthreads();
         }
 
@@ -1166,11 +1166,11 @@ namespace gpuntt
 
             if (reduction_poly_check)
             { // X_N_minus
-                current_root_index = (omega_addresss >> t_);
+                current_root_index = (omega_address >> t_);
             }
             else
             { // X_N_plus
-                current_root_index = m + (omega_addresss >> t_);
+                current_root_index = m + (omega_address >> t_);
             }
 
             Root<TU> root = root_shared_memory[current_root_index];
@@ -1184,13 +1184,13 @@ namespace gpuntt
             m <<= 1;
 
             in_shared_address =
-                ((shared_addresss >> t_) << t_) + shared_addresss;
+                ((shared_address >> t_) << t_) + shared_address;
         }
 
         __syncthreads();
 
-        polynomial_out[global_addresss] = shared_memory[transpose_block];
-        polynomial_out[global_addresss + global_offset] =
+        polynomial_out[global_address] = shared_memory[transpose_block];
+        polynomial_out[global_address + global_offset] =
             shared_memory[transpose_block + blockDim.y];
     }
 
@@ -1234,7 +1234,7 @@ namespace gpuntt
             }
         }
 
-        location_t global_addresss =
+        location_t global_address =
             (idx_y << log_column) + (blockDim.x * block_x) + idx_x;
         location_t global_offset = (blockDim.y << log_column);
 
@@ -1255,8 +1255,8 @@ namespace gpuntt
         const int transpose_block = idx_y + (idx_x * (2 * blockDim.y));
         if constexpr (std::is_signed<T>::value)
         {
-            T input1_reg = polynomial_in[global_addresss];
-            T input2_reg = polynomial_in[global_addresss + global_offset];
+            T input1_reg = polynomial_in[global_address];
+            T input2_reg = polynomial_in[global_address + global_offset];
             shared_memory[transpose_block] =
                 OPERATOR_GPU<TU>::reduce(input1_reg, load_modulus);
             shared_memory[transpose_block + blockDim.y] =
@@ -1264,16 +1264,16 @@ namespace gpuntt
         }
         else
         {
-            shared_memory[transpose_block] = polynomial_in[global_addresss];
+            shared_memory[transpose_block] = polynomial_in[global_address];
             shared_memory[transpose_block + blockDim.y] =
-                polynomial_in[global_addresss + global_offset];
+                polynomial_in[global_address + global_offset];
         }
 
-        int shared_addresss = ntt_thread_index;
-        int omega_addresss = ntt_thread_index;
+        int shared_address = ntt_thread_index;
+        int omega_address = ntt_thread_index;
         int t = 1 << t_;
         int in_shared_address =
-            ((shared_addresss >> t_) << t_) + shared_addresss;
+            ((shared_address >> t_) << t_) + shared_address;
         location_t current_root_index;
         __syncthreads();
 
@@ -1286,11 +1286,11 @@ namespace gpuntt
 
             if (reduction_poly_check)
             { // X_N_minus
-                current_root_index = (omega_addresss >> t_) + root_offset;
+                current_root_index = (omega_address >> t_) + root_offset;
             }
             else
             { // X_N_plus
-                current_root_index = m + (omega_addresss >> t_) + root_offset;
+                current_root_index = m + (omega_address >> t_) + root_offset;
             }
 
             Root<TU> root = root_shared_memory[current_root_index];
@@ -1304,7 +1304,7 @@ namespace gpuntt
             m <<= 1;
 
             in_shared_address =
-                ((shared_addresss >> t_) << t_) + shared_addresss;
+                ((shared_address >> t_) << t_) + shared_address;
             __syncthreads();
         }
 
@@ -1315,11 +1315,11 @@ namespace gpuntt
 
             if (reduction_poly_check)
             { // X_N_minus
-                current_root_index = (omega_addresss >> t_) + root_offset;
+                current_root_index = (omega_address >> t_) + root_offset;
             }
             else
             { // X_N_plus
-                current_root_index = m + (omega_addresss >> t_) + root_offset;
+                current_root_index = m + (omega_address >> t_) + root_offset;
             }
 
             Root<TU> root = root_shared_memory[current_root_index];
@@ -1333,13 +1333,13 @@ namespace gpuntt
             m <<= 1;
 
             in_shared_address =
-                ((shared_addresss >> t_) << t_) + shared_addresss;
+                ((shared_address >> t_) << t_) + shared_address;
         }
 
         __syncthreads();
 
-        polynomial_out[global_addresss] = shared_memory[transpose_block];
-        polynomial_out[global_addresss + global_offset] =
+        polynomial_out[global_address] = shared_memory[transpose_block];
+        polynomial_out[global_address + global_offset] =
             shared_memory[transpose_block + blockDim.y];
     }
 
@@ -1379,7 +1379,7 @@ namespace gpuntt
         const Modulus<TU> modulus_thread = modulus;
         const Ninverse<TU> n_inverse_thread = n_inverse;
 
-        location_t global_addresss =
+        location_t global_address =
             (idx_y << log_column) + (blockDim.x * block_x) + idx_x;
         location_t global_offset = (blockDim.y << log_column);
 
@@ -1389,9 +1389,9 @@ namespace gpuntt
 
         // Load T from global & store to shared
         const int transpose_block = idx_y + (idx_x * (2 * blockDim.y));
-        shared_memory[transpose_block] = polynomial_in[global_addresss];
+        shared_memory[transpose_block] = polynomial_in[global_address];
         shared_memory[transpose_block + blockDim.y] =
-            polynomial_in[global_addresss + global_offset];
+            polynomial_in[global_address + global_offset];
 
         int log_row_r = log_row - 1;
         const int block_thread_index = idx_x + (idx_y * blockDim.x);
@@ -1400,11 +1400,11 @@ namespace gpuntt
         const int ntt_block_index = block_thread_index >> log_row_r;
         int offset = ntt_block_index << log_row;
 
-        int omega_addresss = ntt_thread_index;
-        int shared_addresss = ntt_thread_index;
+        int omega_address = ntt_thread_index;
+        int shared_address = ntt_thread_index;
         int t = 1 << t_;
         int in_shared_address =
-            ((shared_addresss >> t_) << t_) + shared_addresss;
+            ((shared_address >> t_) << t_) + shared_address;
         location_t current_root_index;
         __syncthreads();
 
@@ -1415,11 +1415,11 @@ namespace gpuntt
 
             if (reduction_poly_check)
             { // X_N_minus
-                current_root_index = (omega_addresss >> t_);
+                current_root_index = (omega_address >> t_);
             }
             else
             { // X_N_plus
-                current_root_index = m + (omega_addresss >> t_);
+                current_root_index = m + (omega_address >> t_);
             }
 
             Root<TU> root = root_shared_memory[current_root_index];
@@ -1433,7 +1433,7 @@ namespace gpuntt
             m >>= 1;
 
             in_shared_address =
-                ((shared_addresss >> t_) << t_) + shared_addresss;
+                ((shared_address >> t_) << t_) + shared_address;
             __syncthreads();
         }
 
@@ -1445,17 +1445,17 @@ namespace gpuntt
 
         if constexpr (std::is_signed<T>::value)
         {
-            polynomial_out[global_addresss] =
+            polynomial_out[global_address] =
                 OPERATOR_GPU<TU>::centered_reduction(output1_reg,
                                                      modulus_thread);
-            polynomial_out[global_addresss + global_offset] =
+            polynomial_out[global_address + global_offset] =
                 OPERATOR_GPU<TU>::centered_reduction(output2_reg,
                                                      modulus_thread);
         }
         else
         {
-            polynomial_out[global_addresss] = output1_reg;
-            polynomial_out[global_addresss + global_offset] = output2_reg;
+            polynomial_out[global_address] = output1_reg;
+            polynomial_out[global_address + global_offset] = output2_reg;
         }
     }
 
@@ -1499,7 +1499,7 @@ namespace gpuntt
             }
         }
 
-        location_t global_addresss =
+        location_t global_address =
             (idx_y << log_column) + (blockDim.x * block_x) + idx_x;
         location_t global_offset = (blockDim.y << log_column);
 
@@ -1509,9 +1509,9 @@ namespace gpuntt
 
         // Load T from global & store to shared
         const int transpose_block = idx_y + (idx_x * (2 * blockDim.y));
-        shared_memory[transpose_block] = polynomial_in[global_addresss];
+        shared_memory[transpose_block] = polynomial_in[global_address];
         shared_memory[transpose_block + blockDim.y] =
-            polynomial_in[global_addresss + global_offset];
+            polynomial_in[global_address + global_offset];
 
         int log_row_r = log_row - 1;
         const int block_thread_index = idx_x + (idx_y * blockDim.x);
@@ -1527,11 +1527,11 @@ namespace gpuntt
         const Modulus<TU> store_modulus = modulus[store_mod_index];
         const Ninverse<TU> store_n_inverse = n_inverse[store_mod_index];
 
-        int omega_addresss = ntt_thread_index;
-        int shared_addresss = ntt_thread_index;
+        int omega_address = ntt_thread_index;
+        int shared_address = ntt_thread_index;
         int t = 1 << t_;
         int in_shared_address =
-            ((shared_addresss >> t_) << t_) + shared_addresss;
+            ((shared_address >> t_) << t_) + shared_address;
         location_t current_root_index;
         __syncthreads();
 
@@ -1542,11 +1542,11 @@ namespace gpuntt
 
             if (reduction_poly_check)
             { // X_N_minus
-                current_root_index = (omega_addresss >> t_) + root_offset;
+                current_root_index = (omega_address >> t_) + root_offset;
             }
             else
             { // X_N_plus
-                current_root_index = m + (omega_addresss >> t_) + root_offset;
+                current_root_index = m + (omega_address >> t_) + root_offset;
             }
 
             Root<TU> root = root_shared_memory[current_root_index];
@@ -1560,7 +1560,7 @@ namespace gpuntt
             m >>= 1;
 
             in_shared_address =
-                ((shared_addresss >> t_) << t_) + shared_addresss;
+                ((shared_address >> t_) << t_) + shared_address;
             __syncthreads();
         }
 
@@ -1573,17 +1573,17 @@ namespace gpuntt
 
         if constexpr (std::is_signed<T>::value)
         {
-            polynomial_out[global_addresss] =
+            polynomial_out[global_address] =
                 OPERATOR_GPU<TU>::centered_reduction(output1_reg,
                                                      store_modulus);
-            polynomial_out[global_addresss + global_offset] =
+            polynomial_out[global_address + global_offset] =
                 OPERATOR_GPU<TU>::centered_reduction(output2_reg,
                                                      store_modulus);
         }
         else
         {
-            polynomial_out[global_addresss] = output1_reg;
-            polynomial_out[global_addresss + global_offset] = output2_reg;
+            polynomial_out[global_address] = output1_reg;
+            polynomial_out[global_address + global_offset] = output2_reg;
         }
     }
 

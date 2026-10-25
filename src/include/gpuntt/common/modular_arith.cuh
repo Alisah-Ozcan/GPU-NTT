@@ -3,8 +3,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Developer: Alişah Özcan
 
-#ifndef MODULAR_ARITHMATIC_H
-#define MODULAR_ARITHMATIC_H
+#ifndef MODULAR_ARITHMETIC_H
+#define MODULAR_ARITHMETIC_H
 
 #include <math.h>
 #include <cinttypes>
@@ -509,4 +509,4 @@ namespace modular_operation_cpu = gpuntt::modular_operation_cpu;
 namespace modular_operation_gpu = gpuntt::modular_operation_gpu;
 #endif // GPUNTT_NO_GLOBAL_ALIASES
 
-#endif // MODULAR_ARITHMATIC_H
+#endif // MODULAR_ARITHMETIC_H
