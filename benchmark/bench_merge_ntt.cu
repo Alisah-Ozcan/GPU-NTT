@@ -326,7 +326,7 @@ namespace
 
 NVBENCH_BENCH_TYPES(merge_ntt, NVBENCH_TYPE_AXES(DataTypes))
     .set_type_axes_names({"Data"})
-    .add_int64_axis("LogN", nvbench::range(1, 24))
+    .add_int64_axis("LogN", nvbench::range(1, 28))
     .add_string_axis("Workload", {"single", "bulk"})
     .add_string_axis("Direction", {"forward", "inverse"})
     .add_string_axis("Poly", {"X^N-1", "X^N+1"})
@@ -336,7 +336,7 @@ NVBENCH_BENCH_TYPES(merge_ntt_variants, NVBENCH_TYPE_AXES(DataTypes))
     .set_type_axes_names({"Data"})
     .add_string_axis("Variant", {"rns", "signed", "signed_rns",
                                  "modulus_ordered", "poly_ordered"})
-    .add_int64_axis("LogN", {5, 9, 10, 12, 14, 16, 20, 24})
+    .add_int64_axis("LogN", {5, 9, 10, 12, 14, 16, 20, 24, 25, 26})
     .add_string_axis("Direction", {"forward", "inverse"})
     .set_timeout(1);
 

@@ -101,8 +101,8 @@ ctest --test-dir build --output-on-failure
 #### Benchmarking GPU NTT
 
 Benchmarks use [nvbench](https://github.com/NVIDIA/nvbench), which requires CMake >= 3.30.4. Every benchmark runs for both 32-bit and 64-bit data:
-- `merge_ntt`: single modulus NTT/INTT for `LogN` 1–24, one polynomial (`single`) or about 2^22 coefficients (`bulk`), X^N-1 and X^N+1.
-- `merge_ntt_variants`: RNS, signed input/output and modulus/poly ordered NTT.
+- `merge_ntt`: single modulus NTT/INTT for `LogN` 1–28, one polynomial (`single`) or about 2^22 coefficients (`bulk`; one polynomial from `LogN` 22), X^N-1 and X^N+1. Needs about 4 GB of GPU memory at `LogN` 28.
+- `merge_ntt_variants`: RNS, signed input/output and modulus/poly ordered NTT, `LogN` up to 26.
 - `merge_ntt_per_coefficient`: column-wise NTT/INTT with single modulus and RNS.
 
 Configure + build:
