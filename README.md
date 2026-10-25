@@ -95,6 +95,7 @@ ctest --test-dir build --output-on-failure
 ```
 
 - `-DGPUNTT_TEST_MAX_LOGN=<N>` sets the largest ring size covered (default `22`, up to `28` for 64-bit and `22` for 32-bit).
+- The `large` suite runs every variant at N = 2^25, where the kernels switch to a different grid mapping, independently of `GPUNTT_TEST_MAX_LOGN`. The CPU reference is too slow at this size, so it checks forward/inverse round trips and compares in-place with out-of-place results. It needs about 3 GB of GPU memory.
 - A single suite can be run directly: `./build/bin/test/merge_ntt_tests --bits 64 --suite rns --max-logn 16`
 
 #### Benchmarking GPU NTT

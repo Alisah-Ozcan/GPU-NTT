@@ -7,7 +7,8 @@
 //
 // Usage: merge_ntt_tests --bits <32|64> --suite <name|all> --max-logn <N>
 // Suites: single, pool_parameters, modulus, validation, rns, signed,
-//         per_coefficient, per_coefficient_rns, modulus_ordered, poly_ordered
+//         per_coefficient, per_coefficient_rns, modulus_ordered, poly_ordered,
+//         large
 
 #include <algorithm>
 #include <cstring>
@@ -77,6 +78,8 @@ namespace
                 return modulus_ordered();
             if (suite == "poly_ordered")
                 return poly_ordered();
+            if (suite == "large")
+                return large();
             if (suite == "all")
             {
                 int result = 0;
@@ -84,7 +87,7 @@ namespace
                      {"single", "pool_parameters", "modulus", "validation",
                       "rns", "signed",
                       "per_coefficient", "per_coefficient_rns",
-                      "modulus_ordered", "poly_ordered"})
+                      "modulus_ordered", "poly_ordered", "large"})
                 {
                     result |= run(s);
                 }
@@ -970,6 +973,209 @@ namespace
                             report.error(name, e.what());
                         }
                     }
+            return report.finish();
+        }
+
+        // N = 2^25, the smallest ring size that runs the _ kernel variants
+        // (swapped grid axes). The CPU reference is too slow at this size, so
+        // every variant is checked with a forward/inverse round trip, and the
+        // in-place results (same buffer as input and output) are compared
+        // with the out-of-place ones.
+        int large()
+        {
+            TestReport report(suite_name("large"));
+            const int logn = 25;
+            const int mod_count = 2;
+            const int batch = 2;
+            const size_t n = size_t(1) << logn;
+            const size_t total = batch * n;
+            const std::vector<int> modulus_order = {1, 0};
+            const std::vector<int> poly_order = {1, 0};
+
+            // Data32 has a single prime below 2^30 with a 2^26-th root of
+            // unity, so its RNS cases use that prime twice.
+            std::vector<PrimeField<T>> fields = make_fields<T>(
+                std::is_same<T, Data32>::value ? 1 : mod_count,
+                Modulus<T>::max_bit, logn + 1);
+            while (static_cast<int>(fields.size()) < mod_count)
+            {
+                fields.push_back(fields[0]);
+            }
+            T min_prime = fields[0].prime;
+            for (const auto& f : fields)
+            {
+                min_prime = std::min(min_prime, f.prime);
+            }
+
+            for (ReductionPolynomial poly : kPolys)
+            {
+                const std::string suffix =
+                    std::string(" logn=") + std::to_string(logn) +
+                    (poly == ReductionPolynomial::X_N_minus ? " X^N-1"
+                                                            : " X^N+1") +
+                    " batch=" + std::to_string(batch);
+                try
+                {
+                    std::vector<NTTParameters<T>> params;
+                    std::vector<Modulus<T>> moduli;
+                    std::vector<Ninverse<T>> n_inverse;
+                    for (const auto& f : fields)
+                    {
+                        params.push_back(f.parameters(logn, poly));
+                        moduli.push_back(params.back().modulus);
+                        n_inverse.push_back(params.back().n_inv);
+                    }
+                    DeviceBuffer<Modulus<T>> d_moduli(moduli);
+                    DeviceBuffer<Ninverse<T>> d_n_inverse(n_inverse);
+                    DeviceBuffer<int> d_modulus_order(modulus_order);
+                    DeviceBuffer<int> d_poly_order(poly_order);
+                    // The single modulus cases use the first table.
+                    DeviceBuffer<Root<T>> forward_rns(
+                        concat_root_tables(params, false, n));
+                    DeviceBuffer<Root<T>> inverse_rns(
+                        concat_root_tables(params, true, n));
+                    Root<T>* forward_single = forward_rns.get();
+                    Root<T>* inverse_single = inverse_rns.get();
+
+                    auto cfg = [&](type dir) {
+                        return ntt_configuration<T>{
+                            .n_power = logn,
+                            .ntt_type = dir,
+                            .ntt_layout = PerPolynomial,
+                            .reduction_poly = poly,
+                            .mod_inverse = params[0].n_inv,
+                            .stream = 0};
+                    };
+                    auto cfg_rns = [&](type dir) {
+                        return ntt_rns_configuration<T>{
+                            .n_power = logn,
+                            .ntt_type = dir,
+                            .ntt_layout = PerPolynomial,
+                            .reduction_poly = poly,
+                            .mod_inverse = d_n_inverse.get(),
+                            .stream = 0};
+                    };
+
+                    const std::vector<T> input =
+                        random_values<T>(rng_, total, min_prime);
+
+                    using Op = std::function<void(T*, T*)>;
+                    auto check = [&](const std::string& variant,
+                                     const Op& forward, const Op& inverse) {
+                        std::vector<T> transformed;
+                        {
+                            DeviceBuffer<T> in(input);
+                            DeviceBuffer<T> out(total);
+                            DeviceBuffer<T> back(total);
+                            forward(in.get(), out.get());
+                            inverse(out.get(), back.get());
+                            sync();
+                            transformed = out.download();
+                            report.check(variant + " round trip" + suffix,
+                                         back.download(), input);
+                        }
+                        DeviceBuffer<T> inout(input);
+                        forward(inout.get(), inout.get());
+                        sync();
+                        report.check(variant + " ntt in-place" + suffix,
+                                     inout.download(), transformed);
+                        inverse(inout.get(), inout.get());
+                        sync();
+                        report.check(variant + " intt in-place" + suffix,
+                                     inout.download(), input);
+                    };
+
+                    check(
+                        "single",
+                        [&](T* in, T* out) {
+                            GPU_NTT(in, out, forward_single,
+                                    params[0].modulus, cfg(FORWARD), batch);
+                        },
+                        [&](T* in, T* out) {
+                            GPU_INTT(in, out, inverse_single,
+                                     params[0].modulus, cfg(INVERSE), batch);
+                        });
+                    check(
+                        "rns",
+                        [&](T* in, T* out) {
+                            GPU_NTT(in, out, forward_rns.get(), d_moduli.get(),
+                                    cfg_rns(FORWARD), batch, mod_count);
+                        },
+                        [&](T* in, T* out) {
+                            GPU_INTT(in, out, inverse_rns.get(), d_moduli.get(),
+                                     cfg_rns(INVERSE), batch, mod_count);
+                        });
+                    check(
+                        "modulus_ordered",
+                        [&](T* in, T* out) {
+                            GPU_NTT_Modulus_Ordered(
+                                in, out, forward_rns.get(), d_moduli.get(),
+                                cfg_rns(FORWARD), batch, mod_count,
+                                d_modulus_order.get());
+                        },
+                        [&](T* in, T* out) {
+                            GPU_NTT_Modulus_Ordered(
+                                in, out, inverse_rns.get(), d_moduli.get(),
+                                cfg_rns(INVERSE), batch, mod_count,
+                                d_modulus_order.get());
+                        });
+                    check(
+                        "poly_ordered",
+                        [&](T* in, T* out) {
+                            GPU_NTT_Poly_Ordered(
+                                in, out, forward_rns.get(), d_moduli.get(),
+                                cfg_rns(FORWARD), batch, mod_count,
+                                d_poly_order.get());
+                        },
+                        [&](T* in, T* out) {
+                            GPU_NTT_Poly_Ordered(
+                                in, out, inverse_rns.get(), d_moduli.get(),
+                                cfg_rns(INVERSE), batch, mod_count,
+                                d_poly_order.get());
+                        });
+
+                    // Signed input to the NTT and signed output of the INTT.
+                    for (bool use_rns : {false, true})
+                    {
+                        const int count = use_rns ? mod_count : 1;
+                        std::vector<S> signed_input(total);
+                        for (size_t i = 0; i < total; i++)
+                        {
+                            signed_input[i] = to_centered(
+                                input[i], fields[(i / n) % count].prime);
+                        }
+                        DeviceBuffer<S> in(signed_input);
+                        DeviceBuffer<T> out(total);
+                        DeviceBuffer<S> back(total);
+                        if (use_rns)
+                        {
+                            GPU_NTT(in.get(), out.get(), forward_rns.get(),
+                                    d_moduli.get(), cfg_rns(FORWARD), batch,
+                                    mod_count);
+                            GPU_INTT(out.get(), back.get(), inverse_rns.get(),
+                                     d_moduli.get(), cfg_rns(INVERSE), batch,
+                                     mod_count);
+                        }
+                        else
+                        {
+                            GPU_NTT(in.get(), out.get(), forward_single,
+                                    params[0].modulus, cfg(FORWARD), batch);
+                            GPU_INTT(out.get(), back.get(),
+                                     inverse_single, params[0].modulus,
+                                     cfg(INVERSE), batch);
+                        }
+                        sync();
+                        report.check(std::string(use_rns ? "signed rns"
+                                                         : "signed single") +
+                                         " round trip" + suffix,
+                                     back.download(), signed_input);
+                    }
+                }
+                catch (const std::exception& e)
+                {
+                    report.error("large" + suffix, e.what());
+                }
+            }
             return report.finish();
         }
 
