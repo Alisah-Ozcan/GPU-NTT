@@ -63,8 +63,6 @@ namespace gpuntt
         omega = ntt_factors.omega;
         psi = ntt_factors.psi;
 
-        n_inverse_generator();
-
         root_of_unity =
             (poly_reduce_type == ReductionPolynomial::X_N_minus) ? omega : psi;
         inverse_root_of_unity = OPERATOR<T>::modinv(root_of_unity, modulus);
