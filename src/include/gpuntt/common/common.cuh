@@ -45,7 +45,7 @@ namespace gpuntt
         cudaError_t error = err;                                               \
         if (error != cudaSuccess)                                              \
         {                                                                      \
-            throw CudaException(__FILE__, __LINE__, error);                    \
+            throw ::gpuntt::CudaException(__FILE__, __LINE__, error);          \
         }                                                                      \
     } while (0)
 
