@@ -662,12 +662,105 @@ namespace gpuntt
         }
     }
 
-    template <typename T>
-    __global__ void ForwardCore(
+    // The multi-stage forward NTT kernels (ForwardCore, ForwardCore_ and the
+    // modulus ordered and poly ordered variants) share one body. They
+    // differ only in where a block takes its modulus from and which
+    // polynomial it transforms, selected at compile time by the policies
+    // below, and in SwapGridAxes: the _ variants swap the roles of blockIdx.x
+    // and blockIdx.y for large grids.
+
+    // Every polynomial uses the same modulus.
+    template <typename TU> struct SingleModulus
+    {
+        Modulus<TU> modulus;
+        Ninverse<TU> n_inverse;
+
+        __device__ __forceinline__ int prime_index(int) const { return 0; }
+
+        __device__ __forceinline__ Modulus<TU> get_modulus(int) const
+        {
+            return modulus;
+        }
+
+        __device__ __forceinline__ Ninverse<TU> get_n_inverse(int) const
+        {
+            return n_inverse;
+        }
+    };
+
+    // Polynomial z uses modulus z % mod_count.
+    template <typename TU> struct RnsModulus
+    {
+        const Modulus<TU>* modulus;
+        int mod_count;
+        const Ninverse<TU>* n_inverse;
+
+        __device__ __forceinline__ int prime_index(int poly) const
+        {
+            return poly % mod_count;
+        }
+
+        __device__ __forceinline__ Modulus<TU> get_modulus(int prime) const
+        {
+            return modulus[prime];
+        }
+
+        __device__ __forceinline__ Ninverse<TU> get_n_inverse(int prime) const
+        {
+            return n_inverse[prime];
+        }
+    };
+
+    // Polynomial z uses modulus order[z % mod_count].
+    template <typename TU> struct OrderedRnsModulus
+    {
+        const Modulus<TU>* modulus;
+        int mod_count;
+        const int* order;
+        const Ninverse<TU>* n_inverse;
+
+        __device__ __forceinline__ int prime_index(int poly) const
+        {
+            return order[poly % mod_count];
+        }
+
+        __device__ __forceinline__ Modulus<TU> get_modulus(int prime) const
+        {
+            return modulus[prime];
+        }
+
+        __device__ __forceinline__ Ninverse<TU> get_n_inverse(int prime) const
+        {
+            return n_inverse[prime];
+        }
+    };
+
+    // Block z transforms polynomial z.
+    struct SequentialPolys
+    {
+        __device__ __forceinline__ int poly_index(int block_z) const
+        {
+            return block_z;
+        }
+    };
+
+    // Block z transforms polynomial order[z].
+    struct OrderedPolys
+    {
+        const int* order;
+
+        __device__ __forceinline__ int poly_index(int block_z) const
+        {
+            return order[block_z];
+        }
+    };
+
+    template <bool SwapGridAxes, typename T, typename ModulusPolicy,
+              typename PolyPolicy>
+    __device__ __forceinline__ void ForwardCoreBody(
         T* polynomial_in, typename std::make_unsigned<T>::type* polynomial_out,
-        const Root<typename std::make_unsigned<
-            T>::type>* __restrict__ root_of_unity_table,
-        Modulus<typename std::make_unsigned<T>::type> modulus, int shared_index,
+        const Root<typename std::make_unsigned<T>::type>* root_of_unity_table,
+        ModulusPolicy modulus_policy, PolyPolicy poly_policy, int shared_index,
         int logm, int outer_iteration_count, int N_power,
         bool not_last_kernel, bool reduction_poly_check)
     {
@@ -675,15 +768,17 @@ namespace gpuntt
 
         const int idx_x = threadIdx.x;
         const int idx_y = threadIdx.y;
-        const int block_x = blockIdx.x;
-        const int block_y = blockIdx.y;
+        const int block_x = SwapGridAxes ? blockIdx.y : blockIdx.x;
+        const int block_y = SwapGridAxes ? blockIdx.x : blockIdx.y;
         const int block_z = blockIdx.z;
 
-        // extern __shared__ T shared_memory[];
+        const int prime_index = modulus_policy.prime_index(block_z);
+        const int poly_index = poly_policy.poly_index(block_z);
+
         extern __shared__ char shared_memory_typed[];
         TU* shared_memory = reinterpret_cast<TU*>(shared_memory_typed);
 
-        const Modulus<TU> modulus_reg = modulus;
+        const Modulus<TU> modulus_reg = modulus_policy.get_modulus(prime_index);
 
         int t_2 = N_power - logm - 1;
         location_t offset = 1 << (N_power - logm - 1);
@@ -696,7 +791,7 @@ namespace gpuntt
                           (offset / (1 << (outer_iteration_count - 1)))) +
             (location_t) (blockDim.x * block_x) +
             (location_t) (2 * block_y * offset) +
-            (location_t) (block_z << N_power);
+            (location_t) (poly_index << N_power);
 
         location_t omega_addresss =
             idx_x +
@@ -736,11 +831,13 @@ namespace gpuntt
                 __syncthreads();
                 if (reduction_poly_check)
                 { // X_N_minus
-                    current_root_index = (omega_addresss >> t_2);
+                    current_root_index = (omega_addresss >> t_2) +
+                                         (location_t) (prime_index << N_power);
                 }
                 else
                 { // X_N_plus
-                    current_root_index = m + (omega_addresss >> t_2);
+                    current_root_index = m + (omega_addresss >> t_2) +
+                                         (location_t) (prime_index << N_power);
                 }
                 CooleyTukeyUnit(shared_memory[in_shared_address],
                                 shared_memory[in_shared_address + t],
@@ -754,7 +851,6 @@ namespace gpuntt
 
                 in_shared_address =
                     ((shared_addresss >> t_) << t_) + shared_addresss;
-                //__syncthreads();
             }
             __syncthreads();
         }
@@ -766,11 +862,13 @@ namespace gpuntt
                 __syncthreads();
                 if (reduction_poly_check)
                 { // X_N_minus
-                    current_root_index = (omega_addresss >> t_2);
+                    current_root_index = (omega_addresss >> t_2) +
+                                         (location_t) (prime_index << N_power);
                 }
                 else
                 { // X_N_plus
-                    current_root_index = m + (omega_addresss >> t_2);
+                    current_root_index = m + (omega_addresss >> t_2) +
+                                         (location_t) (prime_index << N_power);
                 }
 
                 CooleyTukeyUnit(shared_memory[in_shared_address],
@@ -785,7 +883,6 @@ namespace gpuntt
 
                 in_shared_address =
                     ((shared_addresss >> t_) << t_) + shared_addresss;
-                //__syncthreads();
             }
             __syncthreads();
 
@@ -794,11 +891,13 @@ namespace gpuntt
             {
                 if (reduction_poly_check)
                 { // X_N_minus
-                    current_root_index = (omega_addresss >> t_2);
+                    current_root_index = (omega_addresss >> t_2) +
+                                         (location_t) (prime_index << N_power);
                 }
                 else
                 { // X_N_plus
-                    current_root_index = m + (omega_addresss >> t_2);
+                    current_root_index = m + (omega_addresss >> t_2) +
+                                         (location_t) (prime_index << N_power);
                 }
                 CooleyTukeyUnit(shared_memory[in_shared_address],
                                 shared_memory[in_shared_address + t],
@@ -819,6 +918,24 @@ namespace gpuntt
         polynomial_out[global_addresss] = shared_memory[shared_addresss];
         polynomial_out[global_addresss + offset] =
             shared_memory[shared_addresss + (blockDim.x * blockDim.y)];
+    }
+
+    template <typename T>
+    __global__ void ForwardCore(
+        T* polynomial_in, typename std::make_unsigned<T>::type* polynomial_out,
+        const Root<typename std::make_unsigned<
+            T>::type>* __restrict__ root_of_unity_table,
+        Modulus<typename std::make_unsigned<T>::type> modulus, int shared_index,
+        int logm, int outer_iteration_count, int N_power,
+        bool not_last_kernel, bool reduction_poly_check)
+    {
+        using TU = typename std::make_unsigned<T>::type;
+
+        ForwardCoreBody<false>(
+            polynomial_in, polynomial_out, root_of_unity_table,
+            SingleModulus<TU>{modulus}, SequentialPolys{},
+            shared_index, logm, outer_iteration_count, N_power,
+            not_last_kernel, reduction_poly_check);
     }
 
     template <typename T>
@@ -834,160 +951,11 @@ namespace gpuntt
     {
         using TU = typename std::make_unsigned<T>::type;
 
-        const int idx_x = threadIdx.x;
-        const int idx_y = threadIdx.y;
-        const int block_x = blockIdx.x;
-        const int block_y = blockIdx.y;
-        const int block_z = blockIdx.z;
-
-        const int mod_index = block_z % mod_count;
-
-        // extern __shared__ T shared_memory[];
-        extern __shared__ char shared_memory_typed[];
-        TU* shared_memory = reinterpret_cast<TU*>(shared_memory_typed);
-
-        const Modulus<TU> modulus_reg = modulus[mod_index];
-
-        int t_2 = N_power - logm - 1;
-        location_t offset = 1 << (N_power - logm - 1);
-        int t_ = shared_index;
-        location_t m = (location_t) 1 << logm;
-
-        location_t global_addresss =
-            idx_x +
-            (location_t) (idx_y *
-                          (offset / (1 << (outer_iteration_count - 1)))) +
-            (location_t) (blockDim.x * block_x) +
-            (location_t) (2 * block_y * offset) +
-            (location_t) (block_z << N_power);
-
-        location_t omega_addresss =
-            idx_x +
-            (location_t) (idx_y *
-                          (offset / (1 << (outer_iteration_count - 1)))) +
-            (location_t) (blockDim.x * block_x) +
-            (location_t) (block_y * offset);
-
-        location_t shared_addresss = (idx_x + (idx_y * blockDim.x));
-
-        // Load T from global & store to shared
-        if constexpr (std::is_signed<T>::value)
-        {
-            T input1_reg = polynomial_in[global_addresss];
-            T input2_reg = polynomial_in[global_addresss + offset];
-            shared_memory[shared_addresss] =
-                OPERATOR_GPU<TU>::reduce(input1_reg, modulus_reg);
-            shared_memory[shared_addresss + (blockDim.x * blockDim.y)] =
-                OPERATOR_GPU<TU>::reduce(input2_reg, modulus_reg);
-        }
-        else
-        {
-            shared_memory[shared_addresss] = polynomial_in[global_addresss];
-            shared_memory[shared_addresss + (blockDim.x * blockDim.y)] =
-                polynomial_in[global_addresss + offset];
-        }
-
-        int t = 1 << t_;
-        int in_shared_address =
-            ((shared_addresss >> t_) << t_) + shared_addresss;
-        location_t current_root_index;
-        if (not_last_kernel)
-        {
-#pragma unroll
-            for (int lp = 0; lp < outer_iteration_count; lp++)
-            {
-                __syncthreads();
-                if (reduction_poly_check)
-                { // X_N_minus
-                    current_root_index = (omega_addresss >> t_2) +
-                                         (location_t) (mod_index << N_power);
-                }
-                else
-                { // X_N_plus
-                    current_root_index = m + (omega_addresss >> t_2) +
-                                         (location_t) (mod_index << N_power);
-                }
-                CooleyTukeyUnit(shared_memory[in_shared_address],
-                                shared_memory[in_shared_address + t],
-                                root_of_unity_table[current_root_index],
-                                modulus_reg);
-
-                t = t >> 1;
-                t_2 -= 1;
-                t_ -= 1;
-                m <<= 1;
-
-                in_shared_address =
-                    ((shared_addresss >> t_) << t_) + shared_addresss;
-                //__syncthreads();
-            }
-            __syncthreads();
-        }
-        else
-        {
-#pragma unroll
-            for (int lp = 0; lp < (shared_index - 5); lp++) // 4 for 512 thread
-            {
-                __syncthreads();
-                if (reduction_poly_check)
-                { // X_N_minus
-                    current_root_index = (omega_addresss >> t_2) +
-                                         (location_t) (mod_index << N_power);
-                }
-                else
-                { // X_N_plus
-                    current_root_index = m + (omega_addresss >> t_2) +
-                                         (location_t) (mod_index << N_power);
-                }
-
-                CooleyTukeyUnit(shared_memory[in_shared_address],
-                                shared_memory[in_shared_address + t],
-                                root_of_unity_table[current_root_index],
-                                modulus_reg);
-
-                t = t >> 1;
-                t_2 -= 1;
-                t_ -= 1;
-                m <<= 1;
-
-                in_shared_address =
-                    ((shared_addresss >> t_) << t_) + shared_addresss;
-                //__syncthreads();
-            }
-            __syncthreads();
-
-#pragma unroll
-            for (int lp = 0; lp < 6; lp++)
-            {
-                if (reduction_poly_check)
-                { // X_N_minus
-                    current_root_index = (omega_addresss >> t_2) +
-                                         (location_t) (mod_index << N_power);
-                }
-                else
-                { // X_N_plus
-                    current_root_index = m + (omega_addresss >> t_2) +
-                                         (location_t) (mod_index << N_power);
-                }
-                CooleyTukeyUnit(shared_memory[in_shared_address],
-                                shared_memory[in_shared_address + t],
-                                root_of_unity_table[current_root_index],
-                                modulus_reg);
-
-                t = t >> 1;
-                t_2 -= 1;
-                t_ -= 1;
-                m <<= 1;
-
-                in_shared_address =
-                    ((shared_addresss >> t_) << t_) + shared_addresss;
-            }
-            __syncthreads();
-        }
-
-        polynomial_out[global_addresss] = shared_memory[shared_addresss];
-        polynomial_out[global_addresss + offset] =
-            shared_memory[shared_addresss + (blockDim.x * blockDim.y)];
+        ForwardCoreBody<false>(
+            polynomial_in, polynomial_out, root_of_unity_table,
+            RnsModulus<TU>{modulus, mod_count}, SequentialPolys{},
+            shared_index, logm, outer_iteration_count, N_power,
+            not_last_kernel, reduction_poly_check);
     }
 
     template <typename T>
@@ -1001,150 +969,11 @@ namespace gpuntt
     {
         using TU = typename std::make_unsigned<T>::type;
 
-        const int idx_x = threadIdx.x;
-        const int idx_y = threadIdx.y;
-        const int block_x = blockIdx.x;
-        const int block_y = blockIdx.y;
-        const int block_z = blockIdx.z;
-
-        // extern __shared__ T shared_memory[];
-        extern __shared__ char shared_memory_typed[];
-        TU* shared_memory = reinterpret_cast<TU*>(shared_memory_typed);
-
-        const Modulus<TU> modulus_reg = modulus;
-
-        int t_2 = N_power - logm - 1;
-        location_t offset = 1 << (N_power - logm - 1);
-        int t_ = shared_index;
-        location_t m = (location_t) 1 << logm;
-
-        location_t global_addresss =
-            idx_x +
-            (location_t) (idx_y *
-                          (offset / (1 << (outer_iteration_count - 1)))) +
-            (location_t) (blockDim.x * block_y) +
-            (location_t) (2 * block_x * offset) +
-            (location_t) (block_z << N_power);
-        location_t omega_addresss =
-            idx_x +
-            (location_t) (idx_y *
-                          (offset / (1 << (outer_iteration_count - 1)))) +
-            (location_t) (blockDim.x * block_y) +
-            (location_t) (block_x * offset);
-        location_t shared_addresss = (idx_x + (idx_y * blockDim.x));
-
-        // Load T from global & store to shared
-        if constexpr (std::is_signed<T>::value)
-        {
-            T input1_reg = polynomial_in[global_addresss];
-            T input2_reg = polynomial_in[global_addresss + offset];
-            shared_memory[shared_addresss] =
-                OPERATOR_GPU<TU>::reduce(input1_reg, modulus_reg);
-            shared_memory[shared_addresss + (blockDim.x * blockDim.y)] =
-                OPERATOR_GPU<TU>::reduce(input2_reg, modulus_reg);
-        }
-        else
-        {
-            shared_memory[shared_addresss] = polynomial_in[global_addresss];
-            shared_memory[shared_addresss + (blockDim.x * blockDim.y)] =
-                polynomial_in[global_addresss + offset];
-        }
-
-        int t = 1 << t_;
-        int in_shared_address =
-            ((shared_addresss >> t_) << t_) + shared_addresss;
-        location_t current_root_index;
-        if (not_last_kernel)
-        {
-#pragma unroll
-            for (int lp = 0; lp < outer_iteration_count; lp++)
-            {
-                __syncthreads();
-                if (reduction_poly_check)
-                { // X_N_minus
-                    current_root_index = (omega_addresss >> t_2);
-                }
-                else
-                { // X_N_plus
-                    current_root_index = m + (omega_addresss >> t_2);
-                }
-                CooleyTukeyUnit(shared_memory[in_shared_address],
-                                shared_memory[in_shared_address + t],
-                                root_of_unity_table[current_root_index],
-                                modulus_reg);
-
-                t = t >> 1;
-                t_2 -= 1;
-                t_ -= 1;
-                m <<= 1;
-
-                in_shared_address =
-                    ((shared_addresss >> t_) << t_) + shared_addresss;
-                //__syncthreads();
-            }
-            __syncthreads();
-        }
-        else
-        {
-#pragma unroll
-            for (int lp = 0; lp < (shared_index - 5); lp++)
-            {
-                __syncthreads();
-                if (reduction_poly_check)
-                { // X_N_minus
-                    current_root_index = (omega_addresss >> t_2);
-                }
-                else
-                { // X_N_plus
-                    current_root_index = m + (omega_addresss >> t_2);
-                }
-
-                CooleyTukeyUnit(shared_memory[in_shared_address],
-                                shared_memory[in_shared_address + t],
-                                root_of_unity_table[current_root_index],
-                                modulus_reg);
-
-                t = t >> 1;
-                t_2 -= 1;
-                t_ -= 1;
-                m <<= 1;
-
-                in_shared_address =
-                    ((shared_addresss >> t_) << t_) + shared_addresss;
-                //__syncthreads();
-            }
-            __syncthreads();
-
-#pragma unroll
-            for (int lp = 0; lp < 6; lp++)
-            {
-                if (reduction_poly_check)
-                { // X_N_minus
-                    current_root_index = (omega_addresss >> t_2);
-                }
-                else
-                { // X_N_plus
-                    current_root_index = m + (omega_addresss >> t_2);
-                }
-                CooleyTukeyUnit(shared_memory[in_shared_address],
-                                shared_memory[in_shared_address + t],
-                                root_of_unity_table[current_root_index],
-                                modulus_reg);
-
-                t = t >> 1;
-                t_2 -= 1;
-                t_ -= 1;
-                m <<= 1;
-
-                in_shared_address =
-                    ((shared_addresss >> t_) << t_) + shared_addresss;
-            }
-            __syncthreads();
-        }
-
-        polynomial_out[global_addresss] = shared_memory[shared_addresss];
-        polynomial_out[global_addresss + offset] =
-            shared_memory[shared_addresss + (blockDim.x * blockDim.y)];
+        ForwardCoreBody<true>(
+            polynomial_in, polynomial_out, root_of_unity_table,
+            SingleModulus<TU>{modulus}, SequentialPolys{},
+            shared_index, logm, outer_iteration_count, N_power,
+            not_last_kernel, reduction_poly_check);
     }
 
     template <typename T>
@@ -1160,157 +989,11 @@ namespace gpuntt
     {
         using TU = typename std::make_unsigned<T>::type;
 
-        const int idx_x = threadIdx.x;
-        const int idx_y = threadIdx.y;
-        const int block_x = blockIdx.x;
-        const int block_y = blockIdx.y;
-        const int block_z = blockIdx.z;
-
-        const int mod_index = block_z % mod_count;
-
-        // extern __shared__ T shared_memory[];
-        extern __shared__ char shared_memory_typed[];
-        TU* shared_memory = reinterpret_cast<TU*>(shared_memory_typed);
-
-        const Modulus<TU> modulus_reg = modulus[mod_index];
-
-        int t_2 = N_power - logm - 1;
-        location_t offset = 1 << (N_power - logm - 1);
-        int t_ = shared_index;
-        location_t m = (location_t) 1 << logm;
-
-        location_t global_addresss =
-            idx_x +
-            (location_t) (idx_y *
-                          (offset / (1 << (outer_iteration_count - 1)))) +
-            (location_t) (blockDim.x * block_y) +
-            (location_t) (2 * block_x * offset) +
-            (location_t) (block_z << N_power);
-        location_t omega_addresss =
-            idx_x +
-            (location_t) (idx_y *
-                          (offset / (1 << (outer_iteration_count - 1)))) +
-            (location_t) (blockDim.x * block_y) +
-            (location_t) (block_x * offset);
-        location_t shared_addresss = (idx_x + (idx_y * blockDim.x));
-
-        // Load T from global & store to shared
-        if constexpr (std::is_signed<T>::value)
-        {
-            T input1_reg = polynomial_in[global_addresss];
-            T input2_reg = polynomial_in[global_addresss + offset];
-            shared_memory[shared_addresss] =
-                OPERATOR_GPU<TU>::reduce(input1_reg, modulus_reg);
-            shared_memory[shared_addresss + (blockDim.x * blockDim.y)] =
-                OPERATOR_GPU<TU>::reduce(input2_reg, modulus_reg);
-        }
-        else
-        {
-            shared_memory[shared_addresss] = polynomial_in[global_addresss];
-            shared_memory[shared_addresss + (blockDim.x * blockDim.y)] =
-                polynomial_in[global_addresss + offset];
-        }
-
-        int t = 1 << t_;
-        int in_shared_address =
-            ((shared_addresss >> t_) << t_) + shared_addresss;
-        location_t current_root_index;
-        if (not_last_kernel)
-        {
-#pragma unroll
-            for (int lp = 0; lp < outer_iteration_count; lp++)
-            {
-                __syncthreads();
-                if (reduction_poly_check)
-                { // X_N_minus
-                    current_root_index = (omega_addresss >> t_2) +
-                                         (location_t) (mod_index << N_power);
-                }
-                else
-                { // X_N_plus
-                    current_root_index = m + (omega_addresss >> t_2) +
-                                         (location_t) (mod_index << N_power);
-                }
-                CooleyTukeyUnit(shared_memory[in_shared_address],
-                                shared_memory[in_shared_address + t],
-                                root_of_unity_table[current_root_index],
-                                modulus_reg);
-
-                t = t >> 1;
-                t_2 -= 1;
-                t_ -= 1;
-                m <<= 1;
-
-                in_shared_address =
-                    ((shared_addresss >> t_) << t_) + shared_addresss;
-                //__syncthreads();
-            }
-            __syncthreads();
-        }
-        else
-        {
-#pragma unroll
-            for (int lp = 0; lp < (shared_index - 5); lp++)
-            {
-                __syncthreads();
-                if (reduction_poly_check)
-                { // X_N_minus
-                    current_root_index = (omega_addresss >> t_2) +
-                                         (location_t) (mod_index << N_power);
-                }
-                else
-                { // X_N_plus
-                    current_root_index = m + (omega_addresss >> t_2) +
-                                         (location_t) (mod_index << N_power);
-                }
-                CooleyTukeyUnit(shared_memory[in_shared_address],
-                                shared_memory[in_shared_address + t],
-                                root_of_unity_table[current_root_index],
-                                modulus_reg);
-
-                t = t >> 1;
-                t_2 -= 1;
-                t_ -= 1;
-                m <<= 1;
-
-                in_shared_address =
-                    ((shared_addresss >> t_) << t_) + shared_addresss;
-                //__syncthreads();
-            }
-            __syncthreads();
-
-#pragma unroll
-            for (int lp = 0; lp < 6; lp++)
-            {
-                if (reduction_poly_check)
-                { // X_N_minus
-                    current_root_index = (omega_addresss >> t_2) +
-                                         (location_t) (mod_index << N_power);
-                }
-                else
-                { // X_N_plus
-                    current_root_index = m + (omega_addresss >> t_2) +
-                                         (location_t) (mod_index << N_power);
-                }
-                CooleyTukeyUnit(shared_memory[in_shared_address],
-                                shared_memory[in_shared_address + t],
-                                root_of_unity_table[current_root_index],
-                                modulus_reg);
-
-                t = t >> 1;
-                t_2 -= 1;
-                t_ -= 1;
-                m <<= 1;
-
-                in_shared_address =
-                    ((shared_addresss >> t_) << t_) + shared_addresss;
-            }
-            __syncthreads();
-        }
-
-        polynomial_out[global_addresss] = shared_memory[shared_addresss];
-        polynomial_out[global_addresss + offset] =
-            shared_memory[shared_addresss + (blockDim.x * blockDim.y)];
+        ForwardCoreBody<true>(
+            polynomial_in, polynomial_out, root_of_unity_table,
+            RnsModulus<TU>{modulus, mod_count}, SequentialPolys{},
+            shared_index, logm, outer_iteration_count, N_power,
+            not_last_kernel, reduction_poly_check);
     }
 
     template <typename T>
@@ -3385,147 +3068,11 @@ namespace gpuntt
         bool not_last_kernel, bool reduction_poly_check, int mod_count,
         int* order)
     {
-        const int idx_x = threadIdx.x;
-        const int idx_y = threadIdx.y;
-        const int block_x = blockIdx.x;
-        const int block_y = blockIdx.y;
-        const int block_z = blockIdx.z;
-
-        const int mod_index = block_z % mod_count;
-        const int prime_index = order[mod_index];
-
-        // extern __shared__ T shared_memory[];
-        extern __shared__ char shared_memory_typed[];
-        T* shared_memory = reinterpret_cast<T*>(shared_memory_typed);
-
-        int t_2 = N_power - logm - 1;
-        location_t offset = 1 << (N_power - logm - 1);
-        int t_ = shared_index;
-        location_t m = (location_t) 1 << logm;
-
-        location_t global_addresss =
-            idx_x +
-            (location_t) (idx_y *
-                          (offset / (1 << (outer_iteration_count - 1)))) +
-            (location_t) (blockDim.x * block_x) +
-            (location_t) (2 * block_y * offset) +
-            (location_t) (block_z << N_power);
-
-        location_t omega_addresss =
-            idx_x +
-            (location_t) (idx_y *
-                          (offset / (1 << (outer_iteration_count - 1)))) +
-            (location_t) (blockDim.x * block_x) +
-            (location_t) (block_y * offset);
-
-        location_t shared_addresss = (idx_x + (idx_y * blockDim.x));
-
-        // Load UInt64 from global & store to shared
-        shared_memory[shared_addresss] = polynomial_in[global_addresss];
-        shared_memory[shared_addresss + (blockDim.x * blockDim.y)] =
-            polynomial_in[global_addresss + offset];
-
-        int t = 1 << t_;
-        int in_shared_address =
-            ((shared_addresss >> t_) << t_) + shared_addresss;
-        location_t current_root_index;
-        if (not_last_kernel)
-        {
-#pragma unroll
-            for (int lp = 0; lp < outer_iteration_count; lp++)
-            {
-                __syncthreads();
-                if (reduction_poly_check)
-                { // X_N_minus
-                    current_root_index = (omega_addresss >> t_2) +
-                                         (location_t) (prime_index << N_power);
-                }
-                else
-                { // X_N_plus
-                    current_root_index = m + (omega_addresss >> t_2) +
-                                         (location_t) (prime_index << N_power);
-                }
-                CooleyTukeyUnit(shared_memory[in_shared_address],
-                                shared_memory[in_shared_address + t],
-                                root_of_unity_table[current_root_index],
-                                modulus[prime_index]);
-
-                t = t >> 1;
-                t_2 -= 1;
-                t_ -= 1;
-                m <<= 1;
-
-                in_shared_address =
-                    ((shared_addresss >> t_) << t_) + shared_addresss;
-                //__syncthreads();
-            }
-            __syncthreads();
-        }
-        else
-        {
-#pragma unroll
-            for (int lp = 0; lp < (shared_index - 5); lp++) // 4 for 512 thread
-            {
-                __syncthreads();
-                if (reduction_poly_check)
-                { // X_N_minus
-                    current_root_index = (omega_addresss >> t_2) +
-                                         (location_t) (prime_index << N_power);
-                }
-                else
-                { // X_N_plus
-                    current_root_index = m + (omega_addresss >> t_2) +
-                                         (location_t) (prime_index << N_power);
-                }
-
-                CooleyTukeyUnit(shared_memory[in_shared_address],
-                                shared_memory[in_shared_address + t],
-                                root_of_unity_table[current_root_index],
-                                modulus[prime_index]);
-
-                t = t >> 1;
-                t_2 -= 1;
-                t_ -= 1;
-                m <<= 1;
-
-                in_shared_address =
-                    ((shared_addresss >> t_) << t_) + shared_addresss;
-                //__syncthreads();
-            }
-            __syncthreads();
-
-#pragma unroll
-            for (int lp = 0; lp < 6; lp++)
-            {
-                if (reduction_poly_check)
-                { // X_N_minus
-                    current_root_index = (omega_addresss >> t_2) +
-                                         (location_t) (prime_index << N_power);
-                }
-                else
-                { // X_N_plus
-                    current_root_index = m + (omega_addresss >> t_2) +
-                                         (location_t) (prime_index << N_power);
-                }
-                CooleyTukeyUnit(shared_memory[in_shared_address],
-                                shared_memory[in_shared_address + t],
-                                root_of_unity_table[current_root_index],
-                                modulus[prime_index]);
-
-                t = t >> 1;
-                t_2 -= 1;
-                t_ -= 1;
-                m <<= 1;
-
-                in_shared_address =
-                    ((shared_addresss >> t_) << t_) + shared_addresss;
-            }
-            __syncthreads();
-        }
-
-        polynomial_out[global_addresss] = shared_memory[shared_addresss];
-        polynomial_out[global_addresss + offset] =
-            shared_memory[shared_addresss + (blockDim.x * blockDim.y)];
+        ForwardCoreBody<false>(
+            polynomial_in, polynomial_out, root_of_unity_table,
+            OrderedRnsModulus<T>{modulus, mod_count, order}, SequentialPolys{},
+            shared_index, logm, outer_iteration_count, N_power,
+            not_last_kernel, reduction_poly_check);
     }
 
     template <typename T>
@@ -3536,144 +3083,11 @@ namespace gpuntt
         bool not_last_kernel, bool reduction_poly_check, int mod_count,
         int* order)
     {
-        const int idx_x = threadIdx.x;
-        const int idx_y = threadIdx.y;
-        const int block_x = blockIdx.x;
-        const int block_y = blockIdx.y;
-        const int block_z = blockIdx.z;
-
-        const int mod_index = block_z % mod_count;
-        const int prime_index = order[mod_index];
-
-        // extern __shared__ T shared_memory[];
-        extern __shared__ char shared_memory_typed[];
-        T* shared_memory = reinterpret_cast<T*>(shared_memory_typed);
-
-        int t_2 = N_power - logm - 1;
-        location_t offset = 1 << (N_power - logm - 1);
-        int t_ = shared_index;
-        location_t m = (location_t) 1 << logm;
-
-        location_t global_addresss =
-            idx_x +
-            (location_t) (idx_y *
-                          (offset / (1 << (outer_iteration_count - 1)))) +
-            (location_t) (blockDim.x * block_y) +
-            (location_t) (2 * block_x * offset) +
-            (location_t) (block_z << N_power);
-        location_t omega_addresss =
-            idx_x +
-            (location_t) (idx_y *
-                          (offset / (1 << (outer_iteration_count - 1)))) +
-            (location_t) (blockDim.x * block_y) +
-            (location_t) (block_x * offset);
-        location_t shared_addresss = (idx_x + (idx_y * blockDim.x));
-
-        // Load UInt64 from global & store to shared
-        shared_memory[shared_addresss] = polynomial_in[global_addresss];
-        shared_memory[shared_addresss + (blockDim.x * blockDim.y)] =
-            polynomial_in[global_addresss + offset];
-
-        int t = 1 << t_;
-        int in_shared_address =
-            ((shared_addresss >> t_) << t_) + shared_addresss;
-        location_t current_root_index;
-        if (not_last_kernel)
-        {
-#pragma unroll
-            for (int lp = 0; lp < outer_iteration_count; lp++)
-            {
-                __syncthreads();
-                if (reduction_poly_check)
-                { // X_N_minus
-                    current_root_index = (omega_addresss >> t_2) +
-                                         (location_t) (prime_index << N_power);
-                }
-                else
-                { // X_N_plus
-                    current_root_index = m + (omega_addresss >> t_2) +
-                                         (location_t) (prime_index << N_power);
-                }
-                CooleyTukeyUnit(shared_memory[in_shared_address],
-                                shared_memory[in_shared_address + t],
-                                root_of_unity_table[current_root_index],
-                                modulus[prime_index]);
-
-                t = t >> 1;
-                t_2 -= 1;
-                t_ -= 1;
-                m <<= 1;
-
-                in_shared_address =
-                    ((shared_addresss >> t_) << t_) + shared_addresss;
-                //__syncthreads();
-            }
-            __syncthreads();
-        }
-        else
-        {
-#pragma unroll
-            for (int lp = 0; lp < (shared_index - 5); lp++)
-            {
-                __syncthreads();
-                if (reduction_poly_check)
-                { // X_N_minus
-                    current_root_index = (omega_addresss >> t_2) +
-                                         (location_t) (prime_index << N_power);
-                }
-                else
-                { // X_N_plus
-                    current_root_index = m + (omega_addresss >> t_2) +
-                                         (location_t) (prime_index << N_power);
-                }
-                CooleyTukeyUnit(shared_memory[in_shared_address],
-                                shared_memory[in_shared_address + t],
-                                root_of_unity_table[current_root_index],
-                                modulus[prime_index]);
-
-                t = t >> 1;
-                t_2 -= 1;
-                t_ -= 1;
-                m <<= 1;
-
-                in_shared_address =
-                    ((shared_addresss >> t_) << t_) + shared_addresss;
-                //__syncthreads();
-            }
-            __syncthreads();
-
-#pragma unroll
-            for (int lp = 0; lp < 6; lp++)
-            {
-                if (reduction_poly_check)
-                { // X_N_minus
-                    current_root_index = (omega_addresss >> t_2) +
-                                         (location_t) (prime_index << N_power);
-                }
-                else
-                { // X_N_plus
-                    current_root_index = m + (omega_addresss >> t_2) +
-                                         (location_t) (prime_index << N_power);
-                }
-                CooleyTukeyUnit(shared_memory[in_shared_address],
-                                shared_memory[in_shared_address + t],
-                                root_of_unity_table[current_root_index],
-                                modulus[prime_index]);
-
-                t = t >> 1;
-                t_2 -= 1;
-                t_ -= 1;
-                m <<= 1;
-
-                in_shared_address =
-                    ((shared_addresss >> t_) << t_) + shared_addresss;
-            }
-            __syncthreads();
-        }
-
-        polynomial_out[global_addresss] = shared_memory[shared_addresss];
-        polynomial_out[global_addresss + offset] =
-            shared_memory[shared_addresss + (blockDim.x * blockDim.y)];
+        ForwardCoreBody<true>(
+            polynomial_in, polynomial_out, root_of_unity_table,
+            OrderedRnsModulus<T>{modulus, mod_count, order}, SequentialPolys{},
+            shared_index, logm, outer_iteration_count, N_power,
+            not_last_kernel, reduction_poly_check);
     }
 
     template <typename T>
@@ -4067,147 +3481,11 @@ namespace gpuntt
                            bool not_last_kernel,
                            bool reduction_poly_check, int mod_count, int* order)
     {
-        const int idx_x = threadIdx.x;
-        const int idx_y = threadIdx.y;
-        const int block_x = blockIdx.x;
-        const int block_y = blockIdx.y;
-        const int block_z = blockIdx.z;
-
-        const int mod_index = block_z % mod_count;
-        const int input_index = order[block_z];
-
-        // extern __shared__ T shared_memory[];
-        extern __shared__ char shared_memory_typed[];
-        T* shared_memory = reinterpret_cast<T*>(shared_memory_typed);
-
-        int t_2 = N_power - logm - 1;
-        location_t offset = 1 << (N_power - logm - 1);
-        int t_ = shared_index;
-        location_t m = (location_t) 1 << logm;
-
-        location_t global_addresss =
-            idx_x +
-            (location_t) (idx_y *
-                          (offset / (1 << (outer_iteration_count - 1)))) +
-            (location_t) (blockDim.x * block_x) +
-            (location_t) (2 * block_y * offset) +
-            (location_t) (input_index << N_power);
-
-        location_t omega_addresss =
-            idx_x +
-            (location_t) (idx_y *
-                          (offset / (1 << (outer_iteration_count - 1)))) +
-            (location_t) (blockDim.x * block_x) +
-            (location_t) (block_y * offset);
-
-        location_t shared_addresss = (idx_x + (idx_y * blockDim.x));
-
-        // Load UInt64 from global & store to shared
-        shared_memory[shared_addresss] = polynomial_in[global_addresss];
-        shared_memory[shared_addresss + (blockDim.x * blockDim.y)] =
-            polynomial_in[global_addresss + offset];
-
-        int t = 1 << t_;
-        int in_shared_address =
-            ((shared_addresss >> t_) << t_) + shared_addresss;
-        location_t current_root_index;
-        if (not_last_kernel)
-        {
-#pragma unroll
-            for (int lp = 0; lp < outer_iteration_count; lp++)
-            {
-                __syncthreads();
-                if (reduction_poly_check)
-                { // X_N_minus
-                    current_root_index = (omega_addresss >> t_2) +
-                                         (location_t) (mod_index << N_power);
-                }
-                else
-                { // X_N_plus
-                    current_root_index = m + (omega_addresss >> t_2) +
-                                         (location_t) (mod_index << N_power);
-                }
-                CooleyTukeyUnit(shared_memory[in_shared_address],
-                                shared_memory[in_shared_address + t],
-                                root_of_unity_table[current_root_index],
-                                modulus[mod_index]);
-
-                t = t >> 1;
-                t_2 -= 1;
-                t_ -= 1;
-                m <<= 1;
-
-                in_shared_address =
-                    ((shared_addresss >> t_) << t_) + shared_addresss;
-                //__syncthreads();
-            }
-            __syncthreads();
-        }
-        else
-        {
-#pragma unroll
-            for (int lp = 0; lp < (shared_index - 5); lp++) // 4 for 512 thread
-            {
-                __syncthreads();
-                if (reduction_poly_check)
-                { // X_N_minus
-                    current_root_index = (omega_addresss >> t_2) +
-                                         (location_t) (mod_index << N_power);
-                }
-                else
-                { // X_N_plus
-                    current_root_index = m + (omega_addresss >> t_2) +
-                                         (location_t) (mod_index << N_power);
-                }
-
-                CooleyTukeyUnit(shared_memory[in_shared_address],
-                                shared_memory[in_shared_address + t],
-                                root_of_unity_table[current_root_index],
-                                modulus[mod_index]);
-
-                t = t >> 1;
-                t_2 -= 1;
-                t_ -= 1;
-                m <<= 1;
-
-                in_shared_address =
-                    ((shared_addresss >> t_) << t_) + shared_addresss;
-                //__syncthreads();
-            }
-            __syncthreads();
-
-#pragma unroll
-            for (int lp = 0; lp < 6; lp++)
-            {
-                if (reduction_poly_check)
-                { // X_N_minus
-                    current_root_index = (omega_addresss >> t_2) +
-                                         (location_t) (mod_index << N_power);
-                }
-                else
-                { // X_N_plus
-                    current_root_index = m + (omega_addresss >> t_2) +
-                                         (location_t) (mod_index << N_power);
-                }
-                CooleyTukeyUnit(shared_memory[in_shared_address],
-                                shared_memory[in_shared_address + t],
-                                root_of_unity_table[current_root_index],
-                                modulus[mod_index]);
-
-                t = t >> 1;
-                t_2 -= 1;
-                t_ -= 1;
-                m <<= 1;
-
-                in_shared_address =
-                    ((shared_addresss >> t_) << t_) + shared_addresss;
-            }
-            __syncthreads();
-        }
-
-        polynomial_out[global_addresss] = shared_memory[shared_addresss];
-        polynomial_out[global_addresss + offset] =
-            shared_memory[shared_addresss + (blockDim.x * blockDim.y)];
+        ForwardCoreBody<false>(
+            polynomial_in, polynomial_out, root_of_unity_table,
+            RnsModulus<T>{modulus, mod_count}, OrderedPolys{order},
+            shared_index, logm, outer_iteration_count, N_power,
+            not_last_kernel, reduction_poly_check);
     }
 
     template <typename T>
@@ -4218,144 +3496,11 @@ namespace gpuntt
         bool not_last_kernel, bool reduction_poly_check, int mod_count,
         int* order)
     {
-        const int idx_x = threadIdx.x;
-        const int idx_y = threadIdx.y;
-        const int block_x = blockIdx.x;
-        const int block_y = blockIdx.y;
-        const int block_z = blockIdx.z;
-
-        const int mod_index = block_z % mod_count;
-        const int input_index = order[block_z];
-
-        // extern __shared__ T shared_memory[];
-        extern __shared__ char shared_memory_typed[];
-        T* shared_memory = reinterpret_cast<T*>(shared_memory_typed);
-
-        int t_2 = N_power - logm - 1;
-        location_t offset = 1 << (N_power - logm - 1);
-        int t_ = shared_index;
-        location_t m = (location_t) 1 << logm;
-
-        location_t global_addresss =
-            idx_x +
-            (location_t) (idx_y *
-                          (offset / (1 << (outer_iteration_count - 1)))) +
-            (location_t) (blockDim.x * block_y) +
-            (location_t) (2 * block_x * offset) +
-            (location_t) (input_index << N_power);
-        location_t omega_addresss =
-            idx_x +
-            (location_t) (idx_y *
-                          (offset / (1 << (outer_iteration_count - 1)))) +
-            (location_t) (blockDim.x * block_y) +
-            (location_t) (block_x * offset);
-        location_t shared_addresss = (idx_x + (idx_y * blockDim.x));
-
-        // Load UInt64 from global & store to shared
-        shared_memory[shared_addresss] = polynomial_in[global_addresss];
-        shared_memory[shared_addresss + (blockDim.x * blockDim.y)] =
-            polynomial_in[global_addresss + offset];
-
-        int t = 1 << t_;
-        int in_shared_address =
-            ((shared_addresss >> t_) << t_) + shared_addresss;
-        location_t current_root_index;
-        if (not_last_kernel)
-        {
-#pragma unroll
-            for (int lp = 0; lp < outer_iteration_count; lp++)
-            {
-                __syncthreads();
-                if (reduction_poly_check)
-                { // X_N_minus
-                    current_root_index = (omega_addresss >> t_2) +
-                                         (location_t) (mod_index << N_power);
-                }
-                else
-                { // X_N_plus
-                    current_root_index = m + (omega_addresss >> t_2) +
-                                         (location_t) (mod_index << N_power);
-                }
-                CooleyTukeyUnit(shared_memory[in_shared_address],
-                                shared_memory[in_shared_address + t],
-                                root_of_unity_table[current_root_index],
-                                modulus[mod_index]);
-
-                t = t >> 1;
-                t_2 -= 1;
-                t_ -= 1;
-                m <<= 1;
-
-                in_shared_address =
-                    ((shared_addresss >> t_) << t_) + shared_addresss;
-                //__syncthreads();
-            }
-            __syncthreads();
-        }
-        else
-        {
-#pragma unroll
-            for (int lp = 0; lp < (shared_index - 5); lp++)
-            {
-                __syncthreads();
-                if (reduction_poly_check)
-                { // X_N_minus
-                    current_root_index = (omega_addresss >> t_2) +
-                                         (location_t) (mod_index << N_power);
-                }
-                else
-                { // X_N_plus
-                    current_root_index = m + (omega_addresss >> t_2) +
-                                         (location_t) (mod_index << N_power);
-                }
-                CooleyTukeyUnit(shared_memory[in_shared_address],
-                                shared_memory[in_shared_address + t],
-                                root_of_unity_table[current_root_index],
-                                modulus[mod_index]);
-
-                t = t >> 1;
-                t_2 -= 1;
-                t_ -= 1;
-                m <<= 1;
-
-                in_shared_address =
-                    ((shared_addresss >> t_) << t_) + shared_addresss;
-                //__syncthreads();
-            }
-            __syncthreads();
-
-#pragma unroll
-            for (int lp = 0; lp < 6; lp++)
-            {
-                if (reduction_poly_check)
-                { // X_N_minus
-                    current_root_index = (omega_addresss >> t_2) +
-                                         (location_t) (mod_index << N_power);
-                }
-                else
-                { // X_N_plus
-                    current_root_index = m + (omega_addresss >> t_2) +
-                                         (location_t) (mod_index << N_power);
-                }
-                CooleyTukeyUnit(shared_memory[in_shared_address],
-                                shared_memory[in_shared_address + t],
-                                root_of_unity_table[current_root_index],
-                                modulus[mod_index]);
-
-                t = t >> 1;
-                t_2 -= 1;
-                t_ -= 1;
-                m <<= 1;
-
-                in_shared_address =
-                    ((shared_addresss >> t_) << t_) + shared_addresss;
-            }
-            __syncthreads();
-        }
-
-        polynomial_out[global_addresss] = shared_memory[shared_addresss];
-        polynomial_out[global_addresss + offset] =
-            shared_memory[shared_addresss + (blockDim.x * blockDim.y)];
+        ForwardCoreBody<true>(
+            polynomial_in, polynomial_out, root_of_unity_table,
+            RnsModulus<T>{modulus, mod_count}, OrderedPolys{order},
+            shared_index, logm, outer_iteration_count, N_power,
+            not_last_kernel, reduction_poly_check);
     }
 
     template <typename T>
