@@ -1588,6 +1588,271 @@ namespace gpuntt
     }
 
     template <typename T>
+    std::vector<KernelConfig> forward_kernel_configs(int n_power)
+    {
+        return CreateForwardNTTKernel<T>()[n_power];
+    }
+
+    template <typename T>
+    std::vector<KernelConfig> inverse_kernel_configs(int n_power)
+    {
+        return CreateInverseNTTKernel<T>()[n_power];
+    }
+
+    // Launchers for the multi-stage kernel families. swapped selects the _
+    // variant, which swaps the roles of blockIdx.x and blockIdx.y.
+    struct MergeKernels
+    {
+        template <typename TIn, typename TOut, typename... Args>
+        static void forward(bool swapped, dim3 grid, dim3 block,
+                            size_t shared_memory, cudaStream_t stream,
+                            TIn* in, TOut* out, Args... args)
+        {
+            if (swapped)
+            {
+                ForwardCore_<<<grid, block, shared_memory, stream>>>(
+                    in, out, args...);
+            }
+            else
+            {
+                ForwardCore<<<grid, block, shared_memory, stream>>>(
+                    in, out, args...);
+            }
+        }
+
+        template <typename TIn, typename TOut, typename... Args>
+        static void inverse(bool swapped, dim3 grid, dim3 block,
+                            size_t shared_memory, cudaStream_t stream,
+                            TIn* in, TOut* out, Args... args)
+        {
+            if (swapped)
+            {
+                InverseCore_<<<grid, block, shared_memory, stream>>>(
+                    in, out, args...);
+            }
+            else
+            {
+                InverseCore<<<grid, block, shared_memory, stream>>>(
+                    in, out, args...);
+            }
+        }
+    };
+
+    struct ModulusOrderedKernels
+    {
+        template <typename TIn, typename TOut, typename... Args>
+        static void forward(bool swapped, dim3 grid, dim3 block,
+                            size_t shared_memory, cudaStream_t stream,
+                            TIn* in, TOut* out, Args... args)
+        {
+            if (swapped)
+            {
+                ForwardCoreModulusOrdered_<<<grid, block, shared_memory,
+                                             stream>>>(in, out, args...);
+            }
+            else
+            {
+                ForwardCoreModulusOrdered<<<grid, block, shared_memory,
+                                            stream>>>(in, out, args...);
+            }
+        }
+
+        template <typename TIn, typename TOut, typename... Args>
+        static void inverse(bool swapped, dim3 grid, dim3 block,
+                            size_t shared_memory, cudaStream_t stream,
+                            TIn* in, TOut* out, Args... args)
+        {
+            if (swapped)
+            {
+                InverseCoreModulusOrdered_<<<grid, block, shared_memory,
+                                             stream>>>(in, out, args...);
+            }
+            else
+            {
+                InverseCoreModulusOrdered<<<grid, block, shared_memory,
+                                            stream>>>(in, out, args...);
+            }
+        }
+    };
+
+    struct PolyOrderedKernels
+    {
+        template <typename TIn, typename TOut, typename... Args>
+        static void forward(bool swapped, dim3 grid, dim3 block,
+                            size_t shared_memory, cudaStream_t stream,
+                            TIn* in, TOut* out, Args... args)
+        {
+            if (swapped)
+            {
+                ForwardCorePolyOrdered_<<<grid, block, shared_memory,
+                                          stream>>>(in, out, args...);
+            }
+            else
+            {
+                ForwardCorePolyOrdered<<<grid, block, shared_memory,
+                                         stream>>>(in, out, args...);
+            }
+        }
+
+        template <typename TIn, typename TOut, typename... Args>
+        static void inverse(bool swapped, dim3 grid, dim3 block,
+                            size_t shared_memory, cudaStream_t stream,
+                            TIn* in, TOut* out, Args... args)
+        {
+            if (swapped)
+            {
+                InverseCorePolyOrdered_<<<grid, block, shared_memory,
+                                          stream>>>(in, out, args...);
+            }
+            else
+            {
+                InverseCorePolyOrdered<<<grid, block, shared_memory,
+                                         stream>>>(in, out, args...);
+            }
+        }
+    };
+
+    // Runs the multi-stage forward NTT kernels of one transform. Kernel i
+    // reads the output of kernel i - 1 (the first one reads device_in) and
+    // writes device_out. For log2(N) >= 25 the last kernel is the _ variant.
+    // extra holds the trailing kernel arguments of the family (mod_count,
+    // order).
+    template <typename Kernels, typename T, typename ModulusArg,
+              typename... Extra>
+    void forward_stages(
+        T* device_in, typename std::make_unsigned<T>::type* device_out,
+        Root<typename std::make_unsigned<T>::type>* root_of_unity_table,
+        ModulusArg modulus, int n_power, ReductionPolynomial reduction_poly,
+        int batch_size, cudaStream_t stream, Extra... extra)
+    {
+        using TU = typename std::make_unsigned<T>::type;
+
+        const std::vector<KernelConfig> kernels =
+            forward_kernel_configs<TU>(n_power);
+        const bool swap_last = (n_power >= 25);
+        const bool x_n_minus =
+            (reduction_poly == ReductionPolynomial::X_N_minus);
+
+        for (size_t i = 0; i < kernels.size(); i++)
+        {
+            const KernelConfig& k = kernels[i];
+            const dim3 grid(k.griddim_x, k.griddim_y, batch_size);
+            const dim3 block(k.blockdim_x, k.blockdim_y);
+            const bool swapped = swap_last && (i + 1 == kernels.size());
+            if (i == 0)
+            {
+                Kernels::forward(swapped, grid, block, k.shared_memory, stream,
+                                 device_in, device_out, root_of_unity_table,
+                                 modulus, k.shared_index, k.logm,
+                                 k.outer_iteration_count, n_power,
+                                 k.not_last_kernel, x_n_minus, extra...);
+            }
+            else
+            {
+                Kernels::forward(swapped, grid, block, k.shared_memory, stream,
+                                 device_out, device_out, root_of_unity_table,
+                                 modulus, k.shared_index, k.logm,
+                                 k.outer_iteration_count, n_power,
+                                 k.not_last_kernel, x_n_minus, extra...);
+            }
+            GPUNTT_CUDA_CHECK(cudaGetLastError());
+        }
+    }
+
+    // Inverse counterpart of forward_stages. Only the last kernel writes T
+    // (signed output); the others keep unsigned values in device_out. For
+    // log2(N) >= 25 the first kernel is the _ variant. The inverse kernel
+    // table stores the last_kernel flag in not_last_kernel.
+    template <typename Kernels, typename T, typename ModulusArg,
+              typename NinverseArg, typename... Extra>
+    void inverse_stages(
+        typename std::make_unsigned<T>::type* device_in, T* device_out,
+        Root<typename std::make_unsigned<T>::type>* root_of_unity_table,
+        ModulusArg modulus, NinverseArg n_inverse, int n_power,
+        ReductionPolynomial reduction_poly, int batch_size,
+        cudaStream_t stream, Extra... extra)
+    {
+        using TU = typename std::make_unsigned<T>::type;
+
+        TU* device_out_unsigned = reinterpret_cast<TU*>(device_out);
+        const std::vector<KernelConfig> kernels =
+            inverse_kernel_configs<TU>(n_power);
+        const bool swap_first = (n_power >= 25);
+        const bool x_n_minus =
+            (reduction_poly == ReductionPolynomial::X_N_minus);
+
+        for (size_t i = 0; i < kernels.size(); i++)
+        {
+            const KernelConfig& k = kernels[i];
+            const dim3 grid(k.griddim_x, k.griddim_y, batch_size);
+            const dim3 block(k.blockdim_x, k.blockdim_y);
+            const bool swapped = swap_first && (i == 0);
+            TU* in = (i == 0) ? device_in : device_out_unsigned;
+            if (i + 1 == kernels.size())
+            {
+                Kernels::inverse(swapped, grid, block, k.shared_memory, stream,
+                                 in, device_out, root_of_unity_table, modulus,
+                                 k.shared_index, k.logm, k.k,
+                                 k.outer_iteration_count, n_power, n_inverse,
+                                 k.not_last_kernel, x_n_minus, extra...);
+            }
+            else
+            {
+                Kernels::inverse(swapped, grid, block, k.shared_memory, stream,
+                                 in, device_out_unsigned, root_of_unity_table,
+                                 modulus, k.shared_index, k.logm, k.k,
+                                 k.outer_iteration_count, n_power, n_inverse,
+                                 k.not_last_kernel, x_n_minus, extra...);
+            }
+            GPUNTT_CUDA_CHECK(cudaGetLastError());
+        }
+    }
+
+    // Runs the low ring size forward kernel, which transforms several
+    // polynomials per block.
+    template <typename T, typename ModulusArg, typename... Extra>
+    void forward_low_ring(
+        T* device_in, typename std::make_unsigned<T>::type* device_out,
+        Root<typename std::make_unsigned<T>::type>* root_of_unity_table,
+        ModulusArg modulus, int n_power, ReductionPolynomial reduction_poly,
+        int batch_size, cudaStream_t stream, Extra... extra)
+    {
+        using TU = typename std::make_unsigned<T>::type;
+
+        const KernelConfig k = forward_kernel_configs<TU>(n_power)[0];
+        ForwardCoreLowRing<<<
+            dim3((batch_size + (k.blockdim_y - 1)) / k.blockdim_y, 1, 1),
+            dim3(k.blockdim_x, k.blockdim_y), k.shared_memory, stream>>>(
+            device_in, device_out, root_of_unity_table, modulus,
+            k.shared_index, n_power,
+            (reduction_poly == ReductionPolynomial::X_N_minus), batch_size,
+            extra...);
+        GPUNTT_CUDA_CHECK(cudaGetLastError());
+    }
+
+    template <typename T, typename ModulusArg, typename NinverseArg,
+              typename... Extra>
+    void inverse_low_ring(
+        typename std::make_unsigned<T>::type* device_in, T* device_out,
+        Root<typename std::make_unsigned<T>::type>* root_of_unity_table,
+        ModulusArg modulus, NinverseArg n_inverse, int n_power,
+        ReductionPolynomial reduction_poly, int batch_size,
+        cudaStream_t stream, Extra... extra)
+    {
+        using TU = typename std::make_unsigned<T>::type;
+
+        const KernelConfig k = inverse_kernel_configs<TU>(n_power)[0];
+        InverseCoreLowRing<<<
+            dim3((batch_size + (k.blockdim_y - 1)) / k.blockdim_y, 1, 1),
+            dim3(k.blockdim_x, k.blockdim_y), k.shared_memory, stream>>>(
+            device_in, device_out, root_of_unity_table, modulus,
+            k.shared_index, n_power, n_inverse,
+            (reduction_poly == ReductionPolynomial::X_N_minus), batch_size,
+            extra...);
+        GPUNTT_CUDA_CHECK(cudaGetLastError());
+    }
+
+    template <typename T>
     __host__ void
     GPU_NTT(T* device_in, typename std::make_unsigned<T>::type* device_out,
             Root<typename std::make_unsigned<T>::type>* root_of_unity_table,
@@ -1606,137 +1871,19 @@ namespace gpuntt
                     throw std::invalid_argument("Invalid n_power range!");
                 }
 
-                auto kernel_parameters = CreateForwardNTTKernel<
-                    typename std::make_unsigned<T>::type>();
-                bool low_ring_size = (cfg.n_power < 10) ? true : false;
-                bool standart_kernel = (cfg.n_power < 25) ? true : false;
-
-                if (low_ring_size)
+                if (cfg.n_power < 10)
                 {
-                    auto& current_kernel_params =
-                        kernel_parameters[cfg.n_power][0];
-                    ForwardCoreLowRing<<<
-                        dim3((batch_size +
-                              (current_kernel_params.blockdim_y - 1)) /
-                                 current_kernel_params.blockdim_y,
-                             1, 1),
-                        dim3(current_kernel_params.blockdim_x,
-                             current_kernel_params.blockdim_y),
-                        current_kernel_params.shared_memory, cfg.stream>>>(
+                    forward_low_ring(
                         device_in, device_out, root_of_unity_table, modulus,
-                        current_kernel_params.shared_index, cfg.n_power,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        batch_size);
-                    GPUNTT_CUDA_CHECK(cudaGetLastError());
+                        cfg.n_power, cfg.reduction_poly, batch_size,
+                        cfg.stream);
                 }
                 else
                 {
-                    if (standart_kernel)
-                    {
-                        auto& current_kernel_params =
-                            kernel_parameters[cfg.n_power][0];
-                        ForwardCore<<<
-                            dim3(current_kernel_params.griddim_x,
-                                 current_kernel_params.griddim_y, batch_size),
-                            dim3(current_kernel_params.blockdim_x,
-                                 current_kernel_params.blockdim_y),
-                            current_kernel_params.shared_memory, cfg.stream>>>(
-                            device_in, device_out, root_of_unity_table, modulus,
-                            current_kernel_params.shared_index,
-                            current_kernel_params.logm,
-                            current_kernel_params.outer_iteration_count,
-                            cfg.n_power,
-                            current_kernel_params.not_last_kernel,
-                            (cfg.reduction_poly ==
-                             ReductionPolynomial::X_N_minus));
-                        GPUNTT_CUDA_CHECK(cudaGetLastError());
-
-                        for (int i = 1;
-                             i < kernel_parameters[cfg.n_power].size(); i++)
-                        {
-                            auto& current_kernel_params =
-                                kernel_parameters[cfg.n_power][i];
-                            ForwardCore<<<dim3(current_kernel_params.griddim_x,
-                                               current_kernel_params.griddim_y,
-                                               batch_size),
-                                          dim3(
-                                              current_kernel_params.blockdim_x,
-                                              current_kernel_params.blockdim_y),
-                                          current_kernel_params.shared_memory,
-                                          cfg.stream>>>(
-                                device_out, device_out, root_of_unity_table,
-                                modulus, current_kernel_params.shared_index,
-                                current_kernel_params.logm,
-                                current_kernel_params.outer_iteration_count,
-                                cfg.n_power,
-                                current_kernel_params.not_last_kernel,
-                                (cfg.reduction_poly ==
-                                 ReductionPolynomial::X_N_minus));
-                            GPUNTT_CUDA_CHECK(cudaGetLastError());
-                        }
-                    }
-                    else
-                    {
-                        auto& current_kernel_params =
-                            kernel_parameters[cfg.n_power][0];
-                        ForwardCore<<<
-                            dim3(current_kernel_params.griddim_x,
-                                 current_kernel_params.griddim_y, batch_size),
-                            dim3(current_kernel_params.blockdim_x,
-                                 current_kernel_params.blockdim_y),
-                            current_kernel_params.shared_memory, cfg.stream>>>(
-                            device_in, device_out, root_of_unity_table, modulus,
-                            current_kernel_params.shared_index,
-                            current_kernel_params.logm,
-                            current_kernel_params.outer_iteration_count,
-                            cfg.n_power,
-                            current_kernel_params.not_last_kernel,
-                            (cfg.reduction_poly ==
-                             ReductionPolynomial::X_N_minus));
-                        GPUNTT_CUDA_CHECK(cudaGetLastError());
-
-                        for (int i = 1;
-                             i < kernel_parameters[cfg.n_power].size() - 1; i++)
-                        {
-                            auto& current_kernel_params =
-                                kernel_parameters[cfg.n_power][i];
-                            ForwardCore<<<dim3(current_kernel_params.griddim_x,
-                                               current_kernel_params.griddim_y,
-                                               batch_size),
-                                          dim3(
-                                              current_kernel_params.blockdim_x,
-                                              current_kernel_params.blockdim_y),
-                                          current_kernel_params.shared_memory,
-                                          cfg.stream>>>(
-                                device_out, device_out, root_of_unity_table,
-                                modulus, current_kernel_params.shared_index,
-                                current_kernel_params.logm,
-                                current_kernel_params.outer_iteration_count,
-                                cfg.n_power,
-                                current_kernel_params.not_last_kernel,
-                                (cfg.reduction_poly ==
-                                 ReductionPolynomial::X_N_minus));
-                            GPUNTT_CUDA_CHECK(cudaGetLastError());
-                        }
-                        current_kernel_params = kernel_parameters
-                            [cfg.n_power]
-                            [kernel_parameters[cfg.n_power].size() - 1];
-                        ForwardCore_<<<
-                            dim3(current_kernel_params.griddim_x,
-                                 current_kernel_params.griddim_y, batch_size),
-                            dim3(current_kernel_params.blockdim_x,
-                                 current_kernel_params.blockdim_y),
-                            current_kernel_params.shared_memory, cfg.stream>>>(
-                            device_out, device_out, root_of_unity_table,
-                            modulus, current_kernel_params.shared_index,
-                            current_kernel_params.logm,
-                            current_kernel_params.outer_iteration_count,
-                            cfg.n_power,
-                            current_kernel_params.not_last_kernel,
-                            (cfg.reduction_poly ==
-                             ReductionPolynomial::X_N_minus));
-                        GPUNTT_CUDA_CHECK(cudaGetLastError());
-                    }
+                    forward_stages<MergeKernels>(
+                        device_in, device_out, root_of_unity_table, modulus,
+                        cfg.n_power, cfg.reduction_poly, batch_size,
+                        cfg.stream);
                 }
             }
             break;
@@ -1796,260 +1943,19 @@ namespace gpuntt
                     throw std::invalid_argument("Invalid n_power range!");
                 }
 
-                auto kernel_parameters = CreateInverseNTTKernel<
-                    typename std::make_unsigned<T>::type>();
-                bool low_ring_size = (cfg.n_power < 11) ? true : false;
-                bool standart_kernel = (cfg.n_power < 25) ? true : false;
-
-                if (low_ring_size)
+                if (cfg.n_power < 11)
                 {
-                    auto& current_kernel_params =
-                        kernel_parameters[cfg.n_power][0];
-                    InverseCoreLowRing<<<
-                        dim3((batch_size +
-                              (current_kernel_params.blockdim_y - 1)) /
-                                 current_kernel_params.blockdim_y,
-                             1, 1),
-                        dim3(current_kernel_params.blockdim_x,
-                             current_kernel_params.blockdim_y),
-                        current_kernel_params.shared_memory, cfg.stream>>>(
+                    inverse_low_ring(
                         device_in, device_out, root_of_unity_table, modulus,
-                        current_kernel_params.shared_index, cfg.n_power,
-                        cfg.mod_inverse,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        batch_size);
-                    GPUNTT_CUDA_CHECK(cudaGetLastError());
+                        cfg.mod_inverse, cfg.n_power, cfg.reduction_poly,
+                        batch_size, cfg.stream);
                 }
                 else
                 {
-                    if (standart_kernel)
-                    {
-                        if constexpr (std::is_signed<T>::value)
-                        {
-                            typename std::make_unsigned<T>::type* device_in_ =
-                                device_in;
-                            for (int i = 0;
-                                 i < kernel_parameters[cfg.n_power].size() - 1;
-                                 i++)
-                            {
-                                auto& current_kernel_params =
-                                    kernel_parameters[cfg.n_power][i];
-                                InverseCore<<<
-                                    dim3(current_kernel_params.griddim_x,
-                                         current_kernel_params.griddim_y,
-                                         batch_size),
-                                    dim3(current_kernel_params.blockdim_x,
-                                         current_kernel_params.blockdim_y),
-                                    current_kernel_params.shared_memory,
-                                    cfg.stream>>>(
-                                    device_in_,
-                                    reinterpret_cast<
-                                        typename std::make_unsigned<T>::type*>(
-                                        device_out),
-                                    root_of_unity_table, modulus,
-                                    current_kernel_params.shared_index,
-                                    current_kernel_params.logm,
-                                    current_kernel_params.k,
-                                    current_kernel_params.outer_iteration_count,
-                                    cfg.n_power, cfg.mod_inverse,
-                                    current_kernel_params.not_last_kernel,
-                                    (cfg.reduction_poly ==
-                                     ReductionPolynomial::X_N_minus));
-                                GPUNTT_CUDA_CHECK(cudaGetLastError());
-                                device_in_ = reinterpret_cast<
-                                    typename std::make_unsigned<T>::type*>(
-                                    device_out);
-                            }
-
-                            auto& current_kernel_params = kernel_parameters
-                                [cfg.n_power]
-                                [kernel_parameters[cfg.n_power].size() - 1];
-                            InverseCore<<<dim3(current_kernel_params.griddim_x,
-                                               current_kernel_params.griddim_y,
-                                               batch_size),
-                                          dim3(
-                                              current_kernel_params.blockdim_x,
-                                              current_kernel_params.blockdim_y),
-                                          current_kernel_params.shared_memory,
-                                          cfg.stream>>>(
-                                reinterpret_cast<
-                                    typename std::make_unsigned<T>::type*>(
-                                    device_out),
-                                device_out, root_of_unity_table, modulus,
-                                current_kernel_params.shared_index,
-                                current_kernel_params.logm,
-                                current_kernel_params.k,
-                                current_kernel_params.outer_iteration_count,
-                                cfg.n_power, cfg.mod_inverse,
-                                current_kernel_params.not_last_kernel,
-                                (cfg.reduction_poly ==
-                                 ReductionPolynomial::X_N_minus));
-                            GPUNTT_CUDA_CHECK(cudaGetLastError());
-                        }
-                        else
-                        {
-                            T* device_in_ = device_in;
-                            for (int i = 0;
-                                 i < kernel_parameters[cfg.n_power].size(); i++)
-                            {
-                                auto& current_kernel_params =
-                                    kernel_parameters[cfg.n_power][i];
-                                InverseCore<<<
-                                    dim3(current_kernel_params.griddim_x,
-                                         current_kernel_params.griddim_y,
-                                         batch_size),
-                                    dim3(current_kernel_params.blockdim_x,
-                                         current_kernel_params.blockdim_y),
-                                    current_kernel_params.shared_memory,
-                                    cfg.stream>>>(
-                                    device_in_, device_out, root_of_unity_table,
-                                    modulus, current_kernel_params.shared_index,
-                                    current_kernel_params.logm,
-                                    current_kernel_params.k,
-                                    current_kernel_params.outer_iteration_count,
-                                    cfg.n_power, cfg.mod_inverse,
-                                    current_kernel_params.not_last_kernel,
-                                    (cfg.reduction_poly ==
-                                     ReductionPolynomial::X_N_minus));
-                                GPUNTT_CUDA_CHECK(cudaGetLastError());
-                                device_in_ = device_out;
-                            }
-                        }
-                    }
-                    else
-                    {
-                        if constexpr (std::is_signed<T>::value)
-                        {
-                            auto& current_kernel_params =
-                                kernel_parameters[cfg.n_power][0];
-                            InverseCore_<<<
-                                dim3(current_kernel_params.griddim_x,
-                                     current_kernel_params.griddim_y,
-                                     batch_size),
-                                dim3(current_kernel_params.blockdim_x,
-                                     current_kernel_params.blockdim_y),
-                                current_kernel_params.shared_memory,
-                                cfg.stream>>>(
-                                device_in,
-                                reinterpret_cast<
-                                    typename std::make_unsigned<T>::type*>(
-                                    device_out),
-                                root_of_unity_table, modulus,
-                                current_kernel_params.shared_index,
-                                current_kernel_params.logm,
-                                current_kernel_params.k,
-                                current_kernel_params.outer_iteration_count,
-                                cfg.n_power, cfg.mod_inverse,
-                                current_kernel_params.not_last_kernel,
-                                (cfg.reduction_poly ==
-                                 ReductionPolynomial::X_N_minus));
-                            GPUNTT_CUDA_CHECK(cudaGetLastError());
-                            for (int i = 1;
-                                 i < kernel_parameters[cfg.n_power].size() - 1;
-                                 i++)
-                            {
-                                auto& current_kernel_params =
-                                    kernel_parameters[cfg.n_power][i];
-                                InverseCore<<<
-                                    dim3(current_kernel_params.griddim_x,
-                                         current_kernel_params.griddim_y,
-                                         batch_size),
-                                    dim3(current_kernel_params.blockdim_x,
-                                         current_kernel_params.blockdim_y),
-                                    current_kernel_params.shared_memory,
-                                    cfg.stream>>>(
-                                    reinterpret_cast<
-                                        typename std::make_unsigned<T>::type*>(
-                                        device_out),
-                                    reinterpret_cast<
-                                        typename std::make_unsigned<T>::type*>(
-                                        device_out),
-                                    root_of_unity_table, modulus,
-                                    current_kernel_params.shared_index,
-                                    current_kernel_params.logm,
-                                    current_kernel_params.k,
-                                    current_kernel_params.outer_iteration_count,
-                                    cfg.n_power, cfg.mod_inverse,
-                                    current_kernel_params.not_last_kernel,
-                                    (cfg.reduction_poly ==
-                                     ReductionPolynomial::X_N_minus));
-                                GPUNTT_CUDA_CHECK(cudaGetLastError());
-                            }
-
-                            current_kernel_params = kernel_parameters
-                                [cfg.n_power]
-                                [kernel_parameters[cfg.n_power].size() - 1];
-                            InverseCore<<<dim3(current_kernel_params.griddim_x,
-                                               current_kernel_params.griddim_y,
-                                               batch_size),
-                                          dim3(
-                                              current_kernel_params.blockdim_x,
-                                              current_kernel_params.blockdim_y),
-                                          current_kernel_params.shared_memory,
-                                          cfg.stream>>>(
-                                reinterpret_cast<
-                                    typename std::make_unsigned<T>::type*>(
-                                    device_out),
-                                device_out, root_of_unity_table, modulus,
-                                current_kernel_params.shared_index,
-                                current_kernel_params.logm,
-                                current_kernel_params.k,
-                                current_kernel_params.outer_iteration_count,
-                                cfg.n_power, cfg.mod_inverse,
-                                current_kernel_params.not_last_kernel,
-                                (cfg.reduction_poly ==
-                                 ReductionPolynomial::X_N_minus));
-                            GPUNTT_CUDA_CHECK(cudaGetLastError());
-                        }
-                        else
-                        {
-                            auto& current_kernel_params =
-                                kernel_parameters[cfg.n_power][0];
-                            InverseCore_<<<
-                                dim3(current_kernel_params.griddim_x,
-                                     current_kernel_params.griddim_y,
-                                     batch_size),
-                                dim3(current_kernel_params.blockdim_x,
-                                     current_kernel_params.blockdim_y),
-                                current_kernel_params.shared_memory,
-                                cfg.stream>>>(
-                                device_in, device_out, root_of_unity_table,
-                                modulus, current_kernel_params.shared_index,
-                                current_kernel_params.logm,
-                                current_kernel_params.k,
-                                current_kernel_params.outer_iteration_count,
-                                cfg.n_power, cfg.mod_inverse,
-                                current_kernel_params.not_last_kernel,
-                                (cfg.reduction_poly ==
-                                 ReductionPolynomial::X_N_minus));
-                            GPUNTT_CUDA_CHECK(cudaGetLastError());
-
-                            for (int i = 1;
-                                 i < kernel_parameters[cfg.n_power].size(); i++)
-                            {
-                                auto& current_kernel_params =
-                                    kernel_parameters[cfg.n_power][i];
-                                InverseCore<<<
-                                    dim3(current_kernel_params.griddim_x,
-                                         current_kernel_params.griddim_y,
-                                         batch_size),
-                                    dim3(current_kernel_params.blockdim_x,
-                                         current_kernel_params.blockdim_y),
-                                    current_kernel_params.shared_memory,
-                                    cfg.stream>>>(
-                                    device_out, device_out, root_of_unity_table,
-                                    modulus, current_kernel_params.shared_index,
-                                    current_kernel_params.logm,
-                                    current_kernel_params.k,
-                                    current_kernel_params.outer_iteration_count,
-                                    cfg.n_power, cfg.mod_inverse,
-                                    current_kernel_params.not_last_kernel,
-                                    (cfg.reduction_poly ==
-                                     ReductionPolynomial::X_N_minus));
-                                GPUNTT_CUDA_CHECK(cudaGetLastError());
-                            }
-                        }
-                    }
+                    inverse_stages<MergeKernels>(
+                        device_in, device_out, root_of_unity_table, modulus,
+                        cfg.mod_inverse, cfg.n_power, cfg.reduction_poly,
+                        batch_size, cfg.stream);
                 }
             }
             break;
@@ -2109,142 +2015,19 @@ namespace gpuntt
                     throw std::invalid_argument("Invalid n_power range!");
                 }
 
-                auto kernel_parameters = CreateForwardNTTKernel<
-                    typename std::make_unsigned<T>::type>();
-                bool low_ring_size = (cfg.n_power < 10) ? true : false;
-                bool standart_kernel = (cfg.n_power < 25) ? true : false;
-
-                if (low_ring_size)
+                if (cfg.n_power < 10)
                 {
-                    auto& current_kernel_params =
-                        kernel_parameters[cfg.n_power][0];
-                    ForwardCoreLowRing<<<
-                        dim3((batch_size +
-                              (current_kernel_params.blockdim_y - 1)) /
-                                 current_kernel_params.blockdim_y,
-                             1, 1),
-                        dim3(current_kernel_params.blockdim_x,
-                             current_kernel_params.blockdim_y),
-                        current_kernel_params.shared_memory, cfg.stream>>>(
+                    forward_low_ring(
                         device_in, device_out, root_of_unity_table, modulus,
-                        current_kernel_params.shared_index, cfg.n_power,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        batch_size, mod_count);
-                    GPUNTT_CUDA_CHECK(cudaGetLastError());
+                        cfg.n_power, cfg.reduction_poly, batch_size,
+                        cfg.stream, mod_count);
                 }
                 else
                 {
-                    if (standart_kernel)
-                    {
-                        auto& current_kernel_params =
-                            kernel_parameters[cfg.n_power][0];
-                        ForwardCore<<<
-                            dim3(current_kernel_params.griddim_x,
-                                 current_kernel_params.griddim_y, batch_size),
-                            dim3(current_kernel_params.blockdim_x,
-                                 current_kernel_params.blockdim_y),
-                            current_kernel_params.shared_memory, cfg.stream>>>(
-                            device_in, device_out, root_of_unity_table, modulus,
-                            current_kernel_params.shared_index,
-                            current_kernel_params.logm,
-                            current_kernel_params.outer_iteration_count,
-                            cfg.n_power,
-                            current_kernel_params.not_last_kernel,
-                            (cfg.reduction_poly ==
-                             ReductionPolynomial::X_N_minus),
-                            mod_count);
-                        GPUNTT_CUDA_CHECK(cudaGetLastError());
-
-                        for (int i = 1;
-                             i < kernel_parameters[cfg.n_power].size(); i++)
-                        {
-                            auto& current_kernel_params =
-                                kernel_parameters[cfg.n_power][i];
-                            ForwardCore<<<dim3(current_kernel_params.griddim_x,
-                                               current_kernel_params.griddim_y,
-                                               batch_size),
-                                          dim3(
-                                              current_kernel_params.blockdim_x,
-                                              current_kernel_params.blockdim_y),
-                                          current_kernel_params.shared_memory,
-                                          cfg.stream>>>(
-                                device_out, device_out, root_of_unity_table,
-                                modulus, current_kernel_params.shared_index,
-                                current_kernel_params.logm,
-                                current_kernel_params.outer_iteration_count,
-                                cfg.n_power,
-                                current_kernel_params.not_last_kernel,
-                                (cfg.reduction_poly ==
-                                 ReductionPolynomial::X_N_minus),
-                                mod_count);
-                            GPUNTT_CUDA_CHECK(cudaGetLastError());
-                        }
-                    }
-                    else
-                    {
-                        auto& current_kernel_params =
-                            kernel_parameters[cfg.n_power][0];
-                        ForwardCore<<<
-                            dim3(current_kernel_params.griddim_x,
-                                 current_kernel_params.griddim_y, batch_size),
-                            dim3(current_kernel_params.blockdim_x,
-                                 current_kernel_params.blockdim_y),
-                            current_kernel_params.shared_memory, cfg.stream>>>(
-                            device_in, device_out, root_of_unity_table, modulus,
-                            current_kernel_params.shared_index,
-                            current_kernel_params.logm,
-                            current_kernel_params.outer_iteration_count,
-                            cfg.n_power,
-                            current_kernel_params.not_last_kernel,
-                            (cfg.reduction_poly ==
-                             ReductionPolynomial::X_N_minus),
-                            mod_count);
-                        GPUNTT_CUDA_CHECK(cudaGetLastError());
-
-                        for (int i = 1;
-                             i < kernel_parameters[cfg.n_power].size() - 1; i++)
-                        {
-                            auto& current_kernel_params =
-                                kernel_parameters[cfg.n_power][i];
-                            ForwardCore<<<dim3(current_kernel_params.griddim_x,
-                                               current_kernel_params.griddim_y,
-                                               batch_size),
-                                          dim3(
-                                              current_kernel_params.blockdim_x,
-                                              current_kernel_params.blockdim_y),
-                                          current_kernel_params.shared_memory,
-                                          cfg.stream>>>(
-                                device_out, device_out, root_of_unity_table,
-                                modulus, current_kernel_params.shared_index,
-                                current_kernel_params.logm,
-                                current_kernel_params.outer_iteration_count,
-                                cfg.n_power,
-                                current_kernel_params.not_last_kernel,
-                                (cfg.reduction_poly ==
-                                 ReductionPolynomial::X_N_minus),
-                                mod_count);
-                            GPUNTT_CUDA_CHECK(cudaGetLastError());
-                        }
-                        current_kernel_params = kernel_parameters
-                            [cfg.n_power]
-                            [kernel_parameters[cfg.n_power].size() - 1];
-                        ForwardCore_<<<
-                            dim3(current_kernel_params.griddim_x,
-                                 current_kernel_params.griddim_y, batch_size),
-                            dim3(current_kernel_params.blockdim_x,
-                                 current_kernel_params.blockdim_y),
-                            current_kernel_params.shared_memory, cfg.stream>>>(
-                            device_out, device_out, root_of_unity_table,
-                            modulus, current_kernel_params.shared_index,
-                            current_kernel_params.logm,
-                            current_kernel_params.outer_iteration_count,
-                            cfg.n_power,
-                            current_kernel_params.not_last_kernel,
-                            (cfg.reduction_poly ==
-                             ReductionPolynomial::X_N_minus),
-                            mod_count);
-                        GPUNTT_CUDA_CHECK(cudaGetLastError());
-                    }
+                    forward_stages<MergeKernels>(
+                        device_in, device_out, root_of_unity_table, modulus,
+                        cfg.n_power, cfg.reduction_poly, batch_size,
+                        cfg.stream, mod_count);
                 }
             }
             break;
@@ -2306,267 +2089,19 @@ namespace gpuntt
                     throw std::invalid_argument("Invalid n_power range!");
                 }
 
-                auto kernel_parameters = CreateInverseNTTKernel<
-                    typename std::make_unsigned<T>::type>();
-                bool low_ring_size = (cfg.n_power < 11) ? true : false;
-                bool standart_kernel = (cfg.n_power < 25) ? true : false;
-
-                if (low_ring_size)
+                if (cfg.n_power < 11)
                 {
-                    auto& current_kernel_params =
-                        kernel_parameters[cfg.n_power][0];
-                    InverseCoreLowRing<<<
-                        dim3((batch_size +
-                              (current_kernel_params.blockdim_y - 1)) /
-                                 current_kernel_params.blockdim_y,
-                             1, 1),
-                        dim3(current_kernel_params.blockdim_x,
-                             current_kernel_params.blockdim_y),
-                        current_kernel_params.shared_memory, cfg.stream>>>(
+                    inverse_low_ring(
                         device_in, device_out, root_of_unity_table, modulus,
-                        current_kernel_params.shared_index, cfg.n_power,
-                        cfg.mod_inverse,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        batch_size, mod_count);
-                    GPUNTT_CUDA_CHECK(cudaGetLastError());
+                        cfg.mod_inverse, cfg.n_power, cfg.reduction_poly,
+                        batch_size, cfg.stream, mod_count);
                 }
                 else
                 {
-                    if (standart_kernel)
-                    {
-                        if constexpr (std::is_signed<T>::value)
-                        {
-                            typename std::make_unsigned<T>::type* device_in_ =
-                                device_in;
-                            for (int i = 0;
-                                 i < kernel_parameters[cfg.n_power].size() - 1;
-                                 i++)
-                            {
-                                auto& current_kernel_params =
-                                    kernel_parameters[cfg.n_power][i];
-                                InverseCore<<<
-                                    dim3(current_kernel_params.griddim_x,
-                                         current_kernel_params.griddim_y,
-                                         batch_size),
-                                    dim3(current_kernel_params.blockdim_x,
-                                         current_kernel_params.blockdim_y),
-                                    current_kernel_params.shared_memory,
-                                    cfg.stream>>>(
-                                    device_in_,
-                                    reinterpret_cast<
-                                        typename std::make_unsigned<T>::type*>(
-                                        device_out),
-                                    root_of_unity_table, modulus,
-                                    current_kernel_params.shared_index,
-                                    current_kernel_params.logm,
-                                    current_kernel_params.k,
-                                    current_kernel_params.outer_iteration_count,
-                                    cfg.n_power, cfg.mod_inverse,
-                                    current_kernel_params.not_last_kernel,
-                                    (cfg.reduction_poly ==
-                                     ReductionPolynomial::X_N_minus),
-                                    mod_count);
-                                GPUNTT_CUDA_CHECK(cudaGetLastError());
-                                device_in_ = reinterpret_cast<
-                                    typename std::make_unsigned<T>::type*>(
-                                    device_out);
-                            }
-
-                            auto& current_kernel_params = kernel_parameters
-                                [cfg.n_power]
-                                [kernel_parameters[cfg.n_power].size() - 1];
-                            InverseCore<<<dim3(current_kernel_params.griddim_x,
-                                               current_kernel_params.griddim_y,
-                                               batch_size),
-                                          dim3(
-                                              current_kernel_params.blockdim_x,
-                                              current_kernel_params.blockdim_y),
-                                          current_kernel_params.shared_memory,
-                                          cfg.stream>>>(
-                                reinterpret_cast<
-                                    typename std::make_unsigned<T>::type*>(
-                                    device_out),
-                                device_out, root_of_unity_table, modulus,
-                                current_kernel_params.shared_index,
-                                current_kernel_params.logm,
-                                current_kernel_params.k,
-                                current_kernel_params.outer_iteration_count,
-                                cfg.n_power, cfg.mod_inverse,
-                                current_kernel_params.not_last_kernel,
-                                (cfg.reduction_poly ==
-                                 ReductionPolynomial::X_N_minus),
-                                mod_count);
-                            GPUNTT_CUDA_CHECK(cudaGetLastError());
-                        }
-                        else
-                        {
-                            T* device_in_ = device_in;
-                            for (int i = 0;
-                                 i < kernel_parameters[cfg.n_power].size(); i++)
-                            {
-                                auto& current_kernel_params =
-                                    kernel_parameters[cfg.n_power][i];
-                                InverseCore<<<
-                                    dim3(current_kernel_params.griddim_x,
-                                         current_kernel_params.griddim_y,
-                                         batch_size),
-                                    dim3(current_kernel_params.blockdim_x,
-                                         current_kernel_params.blockdim_y),
-                                    current_kernel_params.shared_memory,
-                                    cfg.stream>>>(
-                                    device_in_, device_out, root_of_unity_table,
-                                    modulus, current_kernel_params.shared_index,
-                                    current_kernel_params.logm,
-                                    current_kernel_params.k,
-                                    current_kernel_params.outer_iteration_count,
-                                    cfg.n_power, cfg.mod_inverse,
-                                    current_kernel_params.not_last_kernel,
-                                    (cfg.reduction_poly ==
-                                     ReductionPolynomial::X_N_minus),
-                                    mod_count);
-                                GPUNTT_CUDA_CHECK(cudaGetLastError());
-                                device_in_ = device_out;
-                            }
-                        }
-                    }
-                    else
-                    {
-                        if constexpr (std::is_signed<T>::value)
-                        {
-                            auto& current_kernel_params =
-                                kernel_parameters[cfg.n_power][0];
-                            InverseCore_<<<
-                                dim3(current_kernel_params.griddim_x,
-                                     current_kernel_params.griddim_y,
-                                     batch_size),
-                                dim3(current_kernel_params.blockdim_x,
-                                     current_kernel_params.blockdim_y),
-                                current_kernel_params.shared_memory,
-                                cfg.stream>>>(
-                                device_in,
-                                reinterpret_cast<
-                                    typename std::make_unsigned<T>::type*>(
-                                    device_out),
-                                root_of_unity_table, modulus,
-                                current_kernel_params.shared_index,
-                                current_kernel_params.logm,
-                                current_kernel_params.k,
-                                current_kernel_params.outer_iteration_count,
-                                cfg.n_power, cfg.mod_inverse,
-                                current_kernel_params.not_last_kernel,
-                                (cfg.reduction_poly ==
-                                 ReductionPolynomial::X_N_minus),
-                                mod_count);
-                            GPUNTT_CUDA_CHECK(cudaGetLastError());
-                            for (int i = 1;
-                                 i < kernel_parameters[cfg.n_power].size() - 1;
-                                 i++)
-                            {
-                                auto& current_kernel_params =
-                                    kernel_parameters[cfg.n_power][i];
-                                InverseCore<<<
-                                    dim3(current_kernel_params.griddim_x,
-                                         current_kernel_params.griddim_y,
-                                         batch_size),
-                                    dim3(current_kernel_params.blockdim_x,
-                                         current_kernel_params.blockdim_y),
-                                    current_kernel_params.shared_memory,
-                                    cfg.stream>>>(
-                                    reinterpret_cast<
-                                        typename std::make_unsigned<T>::type*>(
-                                        device_out),
-                                    reinterpret_cast<
-                                        typename std::make_unsigned<T>::type*>(
-                                        device_out),
-                                    root_of_unity_table, modulus,
-                                    current_kernel_params.shared_index,
-                                    current_kernel_params.logm,
-                                    current_kernel_params.k,
-                                    current_kernel_params.outer_iteration_count,
-                                    cfg.n_power, cfg.mod_inverse,
-                                    current_kernel_params.not_last_kernel,
-                                    (cfg.reduction_poly ==
-                                     ReductionPolynomial::X_N_minus),
-                                    mod_count);
-                                GPUNTT_CUDA_CHECK(cudaGetLastError());
-                            }
-
-                            current_kernel_params = kernel_parameters
-                                [cfg.n_power]
-                                [kernel_parameters[cfg.n_power].size() - 1];
-                            InverseCore<<<dim3(current_kernel_params.griddim_x,
-                                               current_kernel_params.griddim_y,
-                                               batch_size),
-                                          dim3(
-                                              current_kernel_params.blockdim_x,
-                                              current_kernel_params.blockdim_y),
-                                          current_kernel_params.shared_memory,
-                                          cfg.stream>>>(
-                                reinterpret_cast<
-                                    typename std::make_unsigned<T>::type*>(
-                                    device_out),
-                                device_out, root_of_unity_table, modulus,
-                                current_kernel_params.shared_index,
-                                current_kernel_params.logm,
-                                current_kernel_params.k,
-                                current_kernel_params.outer_iteration_count,
-                                cfg.n_power, cfg.mod_inverse,
-                                current_kernel_params.not_last_kernel,
-                                (cfg.reduction_poly ==
-                                 ReductionPolynomial::X_N_minus),
-                                mod_count);
-                            GPUNTT_CUDA_CHECK(cudaGetLastError());
-                        }
-                        else
-                        {
-                            auto& current_kernel_params =
-                                kernel_parameters[cfg.n_power][0];
-                            InverseCore_<<<
-                                dim3(current_kernel_params.griddim_x,
-                                     current_kernel_params.griddim_y,
-                                     batch_size),
-                                dim3(current_kernel_params.blockdim_x,
-                                     current_kernel_params.blockdim_y),
-                                current_kernel_params.shared_memory,
-                                cfg.stream>>>(
-                                device_in, device_out, root_of_unity_table,
-                                modulus, current_kernel_params.shared_index,
-                                current_kernel_params.logm,
-                                current_kernel_params.k,
-                                current_kernel_params.outer_iteration_count,
-                                cfg.n_power, cfg.mod_inverse,
-                                current_kernel_params.not_last_kernel,
-                                (cfg.reduction_poly ==
-                                 ReductionPolynomial::X_N_minus),
-                                mod_count);
-                            GPUNTT_CUDA_CHECK(cudaGetLastError());
-                            for (int i = 1;
-                                 i < kernel_parameters[cfg.n_power].size(); i++)
-                            {
-                                auto& current_kernel_params =
-                                    kernel_parameters[cfg.n_power][i];
-                                InverseCore<<<
-                                    dim3(current_kernel_params.griddim_x,
-                                         current_kernel_params.griddim_y,
-                                         batch_size),
-                                    dim3(current_kernel_params.blockdim_x,
-                                         current_kernel_params.blockdim_y),
-                                    current_kernel_params.shared_memory,
-                                    cfg.stream>>>(
-                                    device_out, device_out, root_of_unity_table,
-                                    modulus, current_kernel_params.shared_index,
-                                    current_kernel_params.logm,
-                                    current_kernel_params.k,
-                                    current_kernel_params.outer_iteration_count,
-                                    cfg.n_power, cfg.mod_inverse,
-                                    current_kernel_params.not_last_kernel,
-                                    (cfg.reduction_poly ==
-                                     ReductionPolynomial::X_N_minus),
-                                    mod_count);
-                                GPUNTT_CUDA_CHECK(cudaGetLastError());
-                            }
-                        }
-                    }
+                    inverse_stages<MergeKernels>(
+                        device_in, device_out, root_of_unity_table, modulus,
+                        cfg.mod_inverse, cfg.n_power, cfg.reduction_poly,
+                        batch_size, cfg.stream, mod_count);
                 }
             }
             break;
@@ -2728,156 +2263,19 @@ namespace gpuntt
             throw std::invalid_argument("Invalid n_power range!");
         }
 
-        auto kernel_parameters = (cfg.ntt_type == FORWARD)
-                                     ? CreateForwardNTTKernel<T>()
-                                     : CreateInverseNTTKernel<T>();
-        bool standart_kernel = (cfg.n_power < 25) ? true : false;
-        T* device_in_ = device_in;
-
         switch (cfg.ntt_type)
         {
             case FORWARD:
-                if (standart_kernel)
-                {
-                    for (int i = 0; i < kernel_parameters[cfg.n_power].size();
-                         i++)
-                    {
-                        auto& current_kernel_params =
-                            kernel_parameters[cfg.n_power][i];
-                        ForwardCoreModulusOrdered<<<
-                            dim3(current_kernel_params.griddim_x,
-                                 current_kernel_params.griddim_y, batch_size),
-                            dim3(current_kernel_params.blockdim_x,
-                                 current_kernel_params.blockdim_y),
-                            current_kernel_params.shared_memory, cfg.stream>>>(
-                            device_in_, device_out, root_of_unity_table,
-                            modulus, current_kernel_params.shared_index,
-                            current_kernel_params.logm,
-                            current_kernel_params.outer_iteration_count,
-                            cfg.n_power,
-                            current_kernel_params.not_last_kernel,
-                            (cfg.reduction_poly ==
-                             ReductionPolynomial::X_N_minus),
-                            mod_count, order);
-                        GPUNTT_CUDA_CHECK(cudaGetLastError());
-                        device_in_ = device_out;
-                    }
-                }
-                else
-                {
-                    for (int i = 0;
-                         i < kernel_parameters[cfg.n_power].size() - 1; i++)
-                    {
-                        auto& current_kernel_params =
-                            kernel_parameters[cfg.n_power][i];
-                        ForwardCoreModulusOrdered<<<
-                            dim3(current_kernel_params.griddim_x,
-                                 current_kernel_params.griddim_y, batch_size),
-                            dim3(current_kernel_params.blockdim_x,
-                                 current_kernel_params.blockdim_y),
-                            current_kernel_params.shared_memory, cfg.stream>>>(
-                            device_in_, device_out, root_of_unity_table,
-                            modulus, current_kernel_params.shared_index,
-                            current_kernel_params.logm,
-                            current_kernel_params.outer_iteration_count,
-                            cfg.n_power,
-                            current_kernel_params.not_last_kernel,
-                            (cfg.reduction_poly ==
-                             ReductionPolynomial::X_N_minus),
-                            mod_count, order);
-                        GPUNTT_CUDA_CHECK(cudaGetLastError());
-                        device_in_ = device_out;
-                    }
-                    auto& current_kernel_params = kernel_parameters
-                        [cfg.n_power]
-                        [kernel_parameters[cfg.n_power].size() - 1];
-                    ForwardCoreModulusOrdered_<<<
-                        dim3(current_kernel_params.griddim_x,
-                             current_kernel_params.griddim_y, batch_size),
-                        dim3(current_kernel_params.blockdim_x,
-                             current_kernel_params.blockdim_y),
-                        current_kernel_params.shared_memory, cfg.stream>>>(
-                        device_in_, device_out, root_of_unity_table, modulus,
-                        current_kernel_params.shared_index,
-                        current_kernel_params.logm,
-                        current_kernel_params.outer_iteration_count,
-                        cfg.n_power,
-                        current_kernel_params.not_last_kernel,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    GPUNTT_CUDA_CHECK(cudaGetLastError());
-                }
+                forward_stages<ModulusOrderedKernels>(
+                    device_in, device_out, root_of_unity_table, modulus,
+                    cfg.n_power, cfg.reduction_poly, batch_size, cfg.stream,
+                    mod_count, order);
                 break;
             case INVERSE:
-                if (standart_kernel)
-                {
-                    for (int i = 0; i < kernel_parameters[cfg.n_power].size();
-                         i++)
-                    {
-                        auto& current_kernel_params =
-                            kernel_parameters[cfg.n_power][i];
-                        InverseCoreModulusOrdered<<<
-                            dim3(current_kernel_params.griddim_x,
-                                 current_kernel_params.griddim_y, batch_size),
-                            dim3(current_kernel_params.blockdim_x,
-                                 current_kernel_params.blockdim_y),
-                            current_kernel_params.shared_memory, cfg.stream>>>(
-                            device_in_, device_out, root_of_unity_table,
-                            modulus, current_kernel_params.shared_index,
-                            current_kernel_params.logm, current_kernel_params.k,
-                            current_kernel_params.outer_iteration_count,
-                            cfg.n_power, cfg.mod_inverse,
-                            current_kernel_params.not_last_kernel,
-                            (cfg.reduction_poly ==
-                             ReductionPolynomial::X_N_minus),
-                            mod_count, order);
-                        GPUNTT_CUDA_CHECK(cudaGetLastError());
-                        device_in_ = device_out;
-                    }
-                }
-                else
-                {
-                    auto& current_kernel_params =
-                        kernel_parameters[cfg.n_power][0];
-                    InverseCoreModulusOrdered_<<<
-                        dim3(current_kernel_params.griddim_x,
-                             current_kernel_params.griddim_y, batch_size),
-                        dim3(current_kernel_params.blockdim_x,
-                             current_kernel_params.blockdim_y),
-                        current_kernel_params.shared_memory, cfg.stream>>>(
-                        device_in_, device_out, root_of_unity_table, modulus,
-                        current_kernel_params.shared_index,
-                        current_kernel_params.logm, current_kernel_params.k,
-                        current_kernel_params.outer_iteration_count,
-                        cfg.n_power, cfg.mod_inverse,
-                        current_kernel_params.not_last_kernel,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    GPUNTT_CUDA_CHECK(cudaGetLastError());
-                    device_in_ = device_out;
-                    for (int i = 1; i < kernel_parameters[cfg.n_power].size();
-                         i++)
-                    {
-                        auto& current_kernel_params =
-                            kernel_parameters[cfg.n_power][i];
-                        InverseCoreModulusOrdered<<<
-                            dim3(current_kernel_params.griddim_x,
-                                 current_kernel_params.griddim_y, batch_size),
-                            dim3(current_kernel_params.blockdim_x,
-                                 current_kernel_params.blockdim_y),
-                            current_kernel_params.shared_memory, cfg.stream>>>(
-                            device_in_, device_out, root_of_unity_table,
-                            modulus, current_kernel_params.shared_index,
-                            current_kernel_params.logm, current_kernel_params.k,
-                            current_kernel_params.outer_iteration_count,
-                            cfg.n_power, cfg.mod_inverse,
-                            current_kernel_params.not_last_kernel,
-                            (cfg.reduction_poly ==
-                             ReductionPolynomial::X_N_minus),
-                            mod_count, order);
-                        GPUNTT_CUDA_CHECK(cudaGetLastError());
-                    }
-                }
+                inverse_stages<ModulusOrderedKernels>(
+                    device_in, device_out, root_of_unity_table, modulus,
+                    cfg.mod_inverse, cfg.n_power, cfg.reduction_poly,
+                    batch_size, cfg.stream, mod_count, order);
                 break;
             default:
                 throw std::invalid_argument("Invalid ntt_type!");
@@ -2974,157 +2372,19 @@ namespace gpuntt
             throw std::invalid_argument("Invalid n_power range!");
         }
 
-        auto kernel_parameters = (cfg.ntt_type == FORWARD)
-                                     ? CreateForwardNTTKernel<T>()
-                                     : CreateInverseNTTKernel<T>();
-        bool standart_kernel = (cfg.n_power < 25) ? true : false;
-        T* device_in_ = device_in;
-
         switch (cfg.ntt_type)
         {
             case FORWARD:
-                if (standart_kernel)
-                {
-                    for (int i = 0; i < kernel_parameters[cfg.n_power].size();
-                         i++)
-                    {
-                        auto& current_kernel_params =
-                            kernel_parameters[cfg.n_power][i];
-                        ForwardCorePolyOrdered<<<
-                            dim3(current_kernel_params.griddim_x,
-                                 current_kernel_params.griddim_y, batch_size),
-                            dim3(current_kernel_params.blockdim_x,
-                                 current_kernel_params.blockdim_y),
-                            current_kernel_params.shared_memory, cfg.stream>>>(
-                            device_in_, device_out, root_of_unity_table,
-                            modulus, current_kernel_params.shared_index,
-                            current_kernel_params.logm,
-                            current_kernel_params.outer_iteration_count,
-                            cfg.n_power,
-                            current_kernel_params.not_last_kernel,
-                            (cfg.reduction_poly ==
-                             ReductionPolynomial::X_N_minus),
-                            mod_count, order);
-                        GPUNTT_CUDA_CHECK(cudaGetLastError());
-                        device_in_ = device_out;
-                    }
-                }
-                else
-                {
-                    for (int i = 0;
-                         i < kernel_parameters[cfg.n_power].size() - 1; i++)
-                    {
-                        auto& current_kernel_params =
-                            kernel_parameters[cfg.n_power][i];
-                        ForwardCorePolyOrdered<<<
-                            dim3(current_kernel_params.griddim_x,
-                                 current_kernel_params.griddim_y, batch_size),
-                            dim3(current_kernel_params.blockdim_x,
-                                 current_kernel_params.blockdim_y),
-                            current_kernel_params.shared_memory, cfg.stream>>>(
-                            device_in_, device_out, root_of_unity_table,
-                            modulus, current_kernel_params.shared_index,
-                            current_kernel_params.logm,
-                            current_kernel_params.outer_iteration_count,
-                            cfg.n_power,
-                            current_kernel_params.not_last_kernel,
-                            (cfg.reduction_poly ==
-                             ReductionPolynomial::X_N_minus),
-                            mod_count, order);
-                        GPUNTT_CUDA_CHECK(cudaGetLastError());
-                        device_in_ = device_out;
-                    }
-                    auto& current_kernel_params = kernel_parameters
-                        [cfg.n_power]
-                        [kernel_parameters[cfg.n_power].size() - 1];
-                    ForwardCorePolyOrdered_<<<
-                        dim3(current_kernel_params.griddim_x,
-                             current_kernel_params.griddim_y, batch_size),
-                        dim3(current_kernel_params.blockdim_x,
-                             current_kernel_params.blockdim_y),
-                        current_kernel_params.shared_memory, cfg.stream>>>(
-                        device_in_, device_out, root_of_unity_table, modulus,
-                        current_kernel_params.shared_index,
-                        current_kernel_params.logm,
-                        current_kernel_params.outer_iteration_count,
-                        cfg.n_power,
-                        current_kernel_params.not_last_kernel,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    GPUNTT_CUDA_CHECK(cudaGetLastError());
-                }
+                forward_stages<PolyOrderedKernels>(
+                    device_in, device_out, root_of_unity_table, modulus,
+                    cfg.n_power, cfg.reduction_poly, batch_size, cfg.stream,
+                    mod_count, order);
                 break;
             case INVERSE:
-                if (standart_kernel)
-                {
-                    for (int i = 0; i < kernel_parameters[cfg.n_power].size();
-                         i++)
-                    {
-                        auto& current_kernel_params =
-                            kernel_parameters[cfg.n_power][i];
-                        InverseCorePolyOrdered<<<
-                            dim3(current_kernel_params.griddim_x,
-                                 current_kernel_params.griddim_y, batch_size),
-                            dim3(current_kernel_params.blockdim_x,
-                                 current_kernel_params.blockdim_y),
-                            current_kernel_params.shared_memory, cfg.stream>>>(
-                            device_in_, device_out, root_of_unity_table,
-                            modulus, current_kernel_params.shared_index,
-                            current_kernel_params.logm, current_kernel_params.k,
-                            current_kernel_params.outer_iteration_count,
-                            cfg.n_power, cfg.mod_inverse,
-                            current_kernel_params.not_last_kernel,
-                            (cfg.reduction_poly ==
-                             ReductionPolynomial::X_N_minus),
-                            mod_count, order);
-                        GPUNTT_CUDA_CHECK(cudaGetLastError());
-                        device_in_ = device_out;
-                    }
-                }
-                else
-                {
-                    auto& current_kernel_params =
-                        kernel_parameters[cfg.n_power][0];
-                    InverseCorePolyOrdered_<<<
-                        dim3(current_kernel_params.griddim_x,
-                             current_kernel_params.griddim_y, batch_size),
-                        dim3(current_kernel_params.blockdim_x,
-                             current_kernel_params.blockdim_y),
-                        current_kernel_params.shared_memory, cfg.stream>>>(
-                        device_in_, device_out, root_of_unity_table, modulus,
-                        current_kernel_params.shared_index,
-                        current_kernel_params.logm, current_kernel_params.k,
-                        current_kernel_params.outer_iteration_count,
-                        cfg.n_power, cfg.mod_inverse,
-                        current_kernel_params.not_last_kernel,
-                        (cfg.reduction_poly == ReductionPolynomial::X_N_minus),
-                        mod_count, order);
-                    GPUNTT_CUDA_CHECK(cudaGetLastError());
-                    device_in_ = device_out;
-                    for (int i = 1; i < kernel_parameters[cfg.n_power].size();
-                         i++)
-                    {
-                        auto& current_kernel_params =
-                            kernel_parameters[cfg.n_power][i];
-                        InverseCorePolyOrdered<<<
-                            dim3(current_kernel_params.griddim_x,
-                                 current_kernel_params.griddim_y, batch_size),
-                            dim3(current_kernel_params.blockdim_x,
-                                 current_kernel_params.blockdim_y),
-                            current_kernel_params.shared_memory, cfg.stream>>>(
-                            device_in_, device_out, root_of_unity_table,
-                            modulus, current_kernel_params.shared_index,
-                            current_kernel_params.logm, current_kernel_params.k,
-                            current_kernel_params.outer_iteration_count,
-                            cfg.n_power, cfg.mod_inverse,
-                            current_kernel_params.not_last_kernel,
-                            (cfg.reduction_poly ==
-                             ReductionPolynomial::X_N_minus),
-                            mod_count, order);
-                        GPUNTT_CUDA_CHECK(cudaGetLastError());
-                    }
-                }
-
+                inverse_stages<PolyOrderedKernels>(
+                    device_in, device_out, root_of_unity_table, modulus,
+                    cfg.mod_inverse, cfg.n_power, cfg.reduction_poly,
+                    batch_size, cfg.stream, mod_count, order);
                 break;
             default:
                 throw std::invalid_argument("Invalid ntt_type!");
