@@ -693,22 +693,35 @@ namespace gpuntt
     }
 
     // The multi-stage NTT kernels (ForwardCore, InverseCore, their _ variants
-    // and the modulus ordered and poly ordered variants) share one body. They
-    // differ only in the modulus and polynomial policies and in
-    // SwapGridAxes: the _ variants swap the roles of blockIdx.x and
-    // blockIdx.y for large grids.
+    // and the modulus ordered and poly ordered variants) run one stage of a
+    // transform that spans several kernels; each stage is split into load,
+    // execute and store steps. The variants differ only in the modulus and
+    // polynomial policies and in SwapGridAxes: the _ variants swap the roles
+    // of blockIdx.x and blockIdx.y for large grids.
 
-    template <bool SwapGridAxes, typename T, typename ModulusPolicy,
-              typename PolyPolicy>
-    __device__ __forceinline__ void ForwardCoreBody(
-        T* polynomial_in, typename std::make_unsigned<T>::type* polynomial_out,
-        const Root<typename std::make_unsigned<T>::type>* root_of_unity_table,
-        ModulusPolicy modulus_policy, PolyPolicy poly_policy, int shared_index,
-        int logm, int outer_iteration_count, int N_power, bool not_last_kernel,
-        bool reduction_poly_check)
+    // Per-thread state of one stage: thread (x, y) owns the shared memory
+    // entries shared_address and shared_address + blockDim.x * blockDim.y,
+    // read from and written to global_address and global_address + offset.
+    template <typename TU> struct StageThread
     {
-        using TU = typename std::make_unsigned<T>::type;
+        int prime_index;
+        Modulus<TU> modulus;
+        Ninverse<TU> n_inverse;
+        location_t offset;
+        location_t global_address;
+        location_t omega_address;
+        location_t shared_address;
+    };
 
+    // The distance between the two coefficients of a thread is
+    // 2^(N_power - level - 1), with level = logm for the forward and k for
+    // the inverse transform. n_inverse is only read when WithNinverse is set.
+    template <bool SwapGridAxes, bool WithNinverse, typename TU,
+              typename ModulusPolicy, typename PolyPolicy>
+    __device__ __forceinline__ StageThread<TU>
+    StageThreadState(ModulusPolicy modulus_policy, PolyPolicy poly_policy,
+                     int level, int outer_iteration_count, int N_power)
+    {
         const int idx_x = threadIdx.x;
         const int idx_y = threadIdx.y;
         const int block_x = SwapGridAxes ? blockIdx.y : blockIdx.x;
@@ -718,17 +731,16 @@ namespace gpuntt
         const int prime_index = modulus_policy.prime_index(block_z);
         const int poly_index = poly_policy.poly_index(block_z);
 
-        extern __shared__ char shared_memory_typed[];
-        TU* shared_memory = reinterpret_cast<TU*>(shared_memory_typed);
+        const Modulus<TU> modulus = modulus_policy.get_modulus(prime_index);
+        Ninverse<TU> n_inverse = 0;
+        if constexpr (WithNinverse)
+        {
+            n_inverse = modulus_policy.get_n_inverse(prime_index);
+        }
 
-        const Modulus<TU> modulus_reg = modulus_policy.get_modulus(prime_index);
+        const location_t offset = 1 << (N_power - level - 1);
 
-        int t_2 = N_power - logm - 1;
-        location_t offset = 1 << (N_power - logm - 1);
-        int t_ = shared_index;
-        location_t m = (location_t) 1 << logm;
-
-        location_t global_address =
+        const location_t global_address =
             idx_x +
             (location_t) (idx_y *
                           (offset / (1 << (outer_iteration_count - 1)))) +
@@ -736,31 +748,65 @@ namespace gpuntt
             (location_t) (2 * block_y * offset) +
             (location_t) (poly_index << N_power);
 
-        location_t omega_address =
+        const location_t omega_address =
             idx_x +
             (location_t) (idx_y *
                           (offset / (1 << (outer_iteration_count - 1)))) +
             (location_t) (blockDim.x * block_x) +
             (location_t) (block_y * offset);
 
-        location_t shared_address = (idx_x + (idx_y * blockDim.x));
+        const location_t shared_address = (idx_x + (idx_y * blockDim.x));
 
-        // Load T from global & store to shared
+        // Modulus has no device default constructor, so the state is built
+        // in one aggregate initialization.
+        return StageThread<TU>{prime_index,   modulus,        n_inverse,
+                               offset,        global_address, omega_address,
+                               shared_address};
+    }
+
+    // Copies the thread's two coefficients to shared memory; signed input is
+    // reduced to [0, q).
+    template <typename T>
+    __device__ __forceinline__ void
+    StageLoad(const StageThread<typename std::make_unsigned<T>::type>& thread,
+              typename std::make_unsigned<T>::type* shared_memory,
+              T* polynomial_in)
+    {
+        using TU = typename std::make_unsigned<T>::type;
+
         if constexpr (std::is_signed<T>::value)
         {
-            T input1_reg = polynomial_in[global_address];
-            T input2_reg = polynomial_in[global_address + offset];
-            shared_memory[shared_address] =
-                OPERATOR_GPU<TU>::reduce(input1_reg, modulus_reg);
-            shared_memory[shared_address + (blockDim.x * blockDim.y)] =
-                OPERATOR_GPU<TU>::reduce(input2_reg, modulus_reg);
+            T input1_reg = polynomial_in[thread.global_address];
+            T input2_reg = polynomial_in[thread.global_address + thread.offset];
+            shared_memory[thread.shared_address] =
+                OPERATOR_GPU<TU>::reduce(input1_reg, thread.modulus);
+            shared_memory[thread.shared_address + (blockDim.x * blockDim.y)] =
+                OPERATOR_GPU<TU>::reduce(input2_reg, thread.modulus);
         }
         else
         {
-            shared_memory[shared_address] = polynomial_in[global_address];
-            shared_memory[shared_address + (blockDim.x * blockDim.y)] =
-                polynomial_in[global_address + offset];
+            shared_memory[thread.shared_address] =
+                polynomial_in[thread.global_address];
+            shared_memory[thread.shared_address + (blockDim.x * blockDim.y)] =
+                polynomial_in[thread.global_address + thread.offset];
         }
+    }
+
+    // Forward butterflies of one stage in shared memory. Ends with a block
+    // barrier, so the result can be read by any thread of the block.
+    template <typename TU>
+    __device__ __forceinline__ void
+    ForwardStageExecute(const StageThread<TU>& thread, TU* shared_memory,
+                        const Root<TU>* root_of_unity_table, int shared_index,
+                        int logm, int outer_iteration_count, int N_power,
+                        bool not_last_kernel, bool reduction_poly_check)
+    {
+        const location_t shared_address = thread.shared_address;
+        const location_t omega_address = thread.omega_address;
+
+        int t_2 = N_power - logm - 1;
+        int t_ = shared_index;
+        location_t m = (location_t) 1 << logm;
 
         int t = 1 << t_;
         int in_shared_address = ((shared_address >> t_) << t_) + shared_address;
@@ -773,18 +819,20 @@ namespace gpuntt
                 __syncthreads();
                 if (reduction_poly_check)
                 { // X_N_minus
-                    current_root_index = (omega_address >> t_2) +
-                                         (location_t) (prime_index << N_power);
+                    current_root_index =
+                        (omega_address >> t_2) +
+                        (location_t) (thread.prime_index << N_power);
                 }
                 else
                 { // X_N_plus
-                    current_root_index = m + (omega_address >> t_2) +
-                                         (location_t) (prime_index << N_power);
+                    current_root_index =
+                        m + (omega_address >> t_2) +
+                        (location_t) (thread.prime_index << N_power);
                 }
                 CooleyTukeyUnit(shared_memory[in_shared_address],
                                 shared_memory[in_shared_address + t],
                                 root_of_unity_table[current_root_index],
-                                modulus_reg);
+                                thread.modulus);
 
                 t = t >> 1;
                 t_2 -= 1;
@@ -804,19 +852,21 @@ namespace gpuntt
                 __syncthreads();
                 if (reduction_poly_check)
                 { // X_N_minus
-                    current_root_index = (omega_address >> t_2) +
-                                         (location_t) (prime_index << N_power);
+                    current_root_index =
+                        (omega_address >> t_2) +
+                        (location_t) (thread.prime_index << N_power);
                 }
                 else
                 { // X_N_plus
-                    current_root_index = m + (omega_address >> t_2) +
-                                         (location_t) (prime_index << N_power);
+                    current_root_index =
+                        m + (omega_address >> t_2) +
+                        (location_t) (thread.prime_index << N_power);
                 }
 
                 CooleyTukeyUnit(shared_memory[in_shared_address],
                                 shared_memory[in_shared_address + t],
                                 root_of_unity_table[current_root_index],
-                                modulus_reg);
+                                thread.modulus);
 
                 t = t >> 1;
                 t_2 -= 1;
@@ -833,18 +883,20 @@ namespace gpuntt
             {
                 if (reduction_poly_check)
                 { // X_N_minus
-                    current_root_index = (omega_address >> t_2) +
-                                         (location_t) (prime_index << N_power);
+                    current_root_index =
+                        (omega_address >> t_2) +
+                        (location_t) (thread.prime_index << N_power);
                 }
                 else
                 { // X_N_plus
-                    current_root_index = m + (omega_address >> t_2) +
-                                         (location_t) (prime_index << N_power);
+                    current_root_index =
+                        m + (omega_address >> t_2) +
+                        (location_t) (thread.prime_index << N_power);
                 }
                 CooleyTukeyUnit(shared_memory[in_shared_address],
                                 shared_memory[in_shared_address + t],
                                 root_of_unity_table[current_root_index],
-                                modulus_reg);
+                                thread.modulus);
 
                 t = t >> 1;
                 t_2 -= 1;
@@ -856,10 +908,143 @@ namespace gpuntt
             }
             __syncthreads();
         }
+    }
 
-        polynomial_out[global_address] = shared_memory[shared_address];
-        polynomial_out[global_address + offset] =
-            shared_memory[shared_address + (blockDim.x * blockDim.y)];
+    // Inverse butterflies of one stage in shared memory, without the scaling
+    // by N^-1 (done by InverseStageStore in the last stage). Ends with a
+    // block barrier.
+    template <typename TU>
+    __device__ __forceinline__ void
+    InverseStageExecute(const StageThread<TU>& thread, TU* shared_memory,
+                        const Root<TU>* inverse_root_of_unity_table,
+                        int shared_index, int logm, int outer_iteration_count,
+                        int N_power, bool reduction_poly_check)
+    {
+        const location_t shared_address = thread.shared_address;
+        const location_t omega_address = thread.omega_address;
+
+        int t_2 = N_power - logm - 1;
+        int t_ = (shared_index + 1) - outer_iteration_count;
+        int loops = outer_iteration_count;
+        location_t m = (location_t) 1 << logm;
+
+        int t = 1 << t_;
+        int in_shared_address = ((shared_address >> t_) << t_) + shared_address;
+        location_t current_root_index;
+#pragma unroll
+        for (int lp = 0; lp < loops; lp++)
+        {
+            __syncthreads();
+            if (reduction_poly_check)
+            { // X_N_minus
+                current_root_index =
+                    (omega_address >> t_2) +
+                    (location_t) (thread.prime_index << N_power);
+            }
+            else
+            { // X_N_plus
+                current_root_index =
+                    m + (omega_address >> t_2) +
+                    (location_t) (thread.prime_index << N_power);
+            }
+
+            GentlemanSandeUnit(shared_memory[in_shared_address],
+                               shared_memory[in_shared_address + t],
+                               inverse_root_of_unity_table[current_root_index],
+                               thread.modulus);
+
+            t = t << 1;
+            t_2 += 1;
+            t_ += 1;
+            m >>= 1;
+
+            in_shared_address = ((shared_address >> t_) << t_) + shared_address;
+        }
+        __syncthreads();
+    }
+
+    // Copies the thread's two coefficients back to global memory.
+    template <typename TU>
+    __device__ __forceinline__ void
+    ForwardStageStore(const StageThread<TU>& thread, TU* shared_memory,
+                      TU* polynomial_out)
+    {
+        polynomial_out[thread.global_address] =
+            shared_memory[thread.shared_address];
+        polynomial_out[thread.global_address + thread.offset] =
+            shared_memory[thread.shared_address + (blockDim.x * blockDim.y)];
+    }
+
+    // Copies the thread's two coefficients back to global memory. In the
+    // last stage they are scaled by N^-1 and signed output is mapped to the
+    // centered range.
+    template <typename T>
+    __device__ __forceinline__ void InverseStageStore(
+        const StageThread<typename std::make_unsigned<T>::type>& thread,
+        typename std::make_unsigned<T>::type* shared_memory, T* polynomial_out,
+        bool last_kernel)
+    {
+        using TU = typename std::make_unsigned<T>::type;
+
+        if (last_kernel)
+        {
+            TU output1_reg =
+                OPERATOR_GPU<TU>::mult(shared_memory[thread.shared_address],
+                                       thread.n_inverse, thread.modulus);
+            TU output2_reg =
+                OPERATOR_GPU<TU>::mult(shared_memory[thread.shared_address +
+                                                     (blockDim.x * blockDim.y)],
+                                       thread.n_inverse, thread.modulus);
+
+            if constexpr (std::is_signed<T>::value)
+            {
+                polynomial_out[thread.global_address] =
+                    OPERATOR_GPU<TU>::centered_reduction(output1_reg,
+                                                         thread.modulus);
+                polynomial_out[thread.global_address + thread.offset] =
+                    OPERATOR_GPU<TU>::centered_reduction(output2_reg,
+                                                         thread.modulus);
+            }
+            else
+            {
+                polynomial_out[thread.global_address] = output1_reg;
+                polynomial_out[thread.global_address + thread.offset] =
+                    output2_reg;
+            }
+        }
+        else
+        {
+            polynomial_out[thread.global_address] =
+                shared_memory[thread.shared_address];
+            polynomial_out[thread.global_address + thread.offset] =
+                shared_memory[thread.shared_address +
+                              (blockDim.x * blockDim.y)];
+        }
+    }
+
+    template <bool SwapGridAxes, typename T, typename ModulusPolicy,
+              typename PolyPolicy>
+    __device__ __forceinline__ void ForwardCoreBody(
+        T* polynomial_in, typename std::make_unsigned<T>::type* polynomial_out,
+        const Root<typename std::make_unsigned<T>::type>* root_of_unity_table,
+        ModulusPolicy modulus_policy, PolyPolicy poly_policy, int shared_index,
+        int logm, int outer_iteration_count, int N_power, bool not_last_kernel,
+        bool reduction_poly_check)
+    {
+        using TU = typename std::make_unsigned<T>::type;
+
+        extern __shared__ char shared_memory_typed[];
+        TU* shared_memory = reinterpret_cast<TU*>(shared_memory_typed);
+
+        const StageThread<TU> thread =
+            StageThreadState<SwapGridAxes, false, TU>(
+                modulus_policy, poly_policy, logm, outer_iteration_count,
+                N_power);
+        StageLoad(thread, shared_memory, polynomial_in);
+        ForwardStageExecute(thread, shared_memory, root_of_unity_table,
+                            shared_index, logm, outer_iteration_count, N_power,
+                            not_last_kernel, reduction_poly_check);
+        ForwardStageStore(thread, shared_memory, polynomial_out);
     }
 
     template <bool SwapGridAxes, typename T, typename ModulusPolicy,
@@ -874,109 +1059,16 @@ namespace gpuntt
     {
         using TU = typename std::make_unsigned<T>::type;
 
-        const int idx_x = threadIdx.x;
-        const int idx_y = threadIdx.y;
-        const int block_x = SwapGridAxes ? blockIdx.y : blockIdx.x;
-        const int block_y = SwapGridAxes ? blockIdx.x : blockIdx.y;
-        const int block_z = blockIdx.z;
-
-        const int prime_index = modulus_policy.prime_index(block_z);
-        const int poly_index = poly_policy.poly_index(block_z);
-
         extern __shared__ char shared_memory_typed[];
         TU* shared_memory = reinterpret_cast<TU*>(shared_memory_typed);
 
-        const Modulus<TU> modulus_reg = modulus_policy.get_modulus(prime_index);
-        const Ninverse<TU> n_inverse_reg =
-            modulus_policy.get_n_inverse(prime_index);
-
-        int t_2 = N_power - logm - 1;
-        location_t offset = 1 << (N_power - k - 1);
-        int t_ = (shared_index + 1) - outer_iteration_count;
-        int loops = outer_iteration_count;
-        location_t m = (location_t) 1 << logm;
-
-        location_t global_address =
-            idx_x +
-            (location_t) (idx_y *
-                          (offset / (1 << (outer_iteration_count - 1)))) +
-            (location_t) (blockDim.x * block_x) +
-            (location_t) (2 * block_y * offset) +
-            (location_t) (poly_index << N_power);
-
-        location_t omega_address =
-            idx_x +
-            (location_t) (idx_y *
-                          (offset / (1 << (outer_iteration_count - 1)))) +
-            (location_t) (blockDim.x * block_x) +
-            (location_t) (block_y * offset);
-        location_t shared_address = (idx_x + (idx_y * blockDim.x));
-
-        shared_memory[shared_address] = polynomial_in[global_address];
-        shared_memory[shared_address + (blockDim.x * blockDim.y)] =
-            polynomial_in[global_address + offset];
-
-        int t = 1 << t_;
-        int in_shared_address = ((shared_address >> t_) << t_) + shared_address;
-        location_t current_root_index;
-#pragma unroll
-        for (int lp = 0; lp < loops; lp++)
-        {
-            __syncthreads();
-            if (reduction_poly_check)
-            { // X_N_minus
-                current_root_index = (omega_address >> t_2) +
-                                     (location_t) (prime_index << N_power);
-            }
-            else
-            { // X_N_plus
-                current_root_index = m + (omega_address >> t_2) +
-                                     (location_t) (prime_index << N_power);
-            }
-
-            GentlemanSandeUnit(shared_memory[in_shared_address],
-                               shared_memory[in_shared_address + t],
-                               inverse_root_of_unity_table[current_root_index],
-                               modulus_reg);
-
-            t = t << 1;
-            t_2 += 1;
-            t_ += 1;
-            m >>= 1;
-
-            in_shared_address = ((shared_address >> t_) << t_) + shared_address;
-        }
-        __syncthreads();
-
-        if (last_kernel)
-        {
-            TU output1_reg = OPERATOR_GPU<TU>::mult(
-                shared_memory[shared_address], n_inverse_reg, modulus_reg);
-            TU output2_reg = OPERATOR_GPU<TU>::mult(
-                shared_memory[shared_address + (blockDim.x * blockDim.y)],
-                n_inverse_reg, modulus_reg);
-
-            if constexpr (std::is_signed<T>::value)
-            {
-                polynomial_out[global_address] =
-                    OPERATOR_GPU<TU>::centered_reduction(output1_reg,
-                                                         modulus_reg);
-                polynomial_out[global_address + offset] =
-                    OPERATOR_GPU<TU>::centered_reduction(output2_reg,
-                                                         modulus_reg);
-            }
-            else
-            {
-                polynomial_out[global_address] = output1_reg;
-                polynomial_out[global_address + offset] = output2_reg;
-            }
-        }
-        else
-        {
-            polynomial_out[global_address] = shared_memory[shared_address];
-            polynomial_out[global_address + offset] =
-                shared_memory[shared_address + (blockDim.x * blockDim.y)];
-        }
+        const StageThread<TU> thread = StageThreadState<SwapGridAxes, true, TU>(
+            modulus_policy, poly_policy, k, outer_iteration_count, N_power);
+        StageLoad(thread, shared_memory, polynomial_in);
+        InverseStageExecute(thread, shared_memory, inverse_root_of_unity_table,
+                            shared_index, logm, outer_iteration_count, N_power,
+                            reduction_poly_check);
+        InverseStageStore(thread, shared_memory, polynomial_out, last_kernel);
     }
 
     template <typename T>
