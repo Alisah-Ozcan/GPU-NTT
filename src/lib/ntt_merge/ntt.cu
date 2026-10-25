@@ -1587,16 +1587,19 @@ namespace gpuntt
         }
     }
 
+    // The tables are built once, on first use, and only read afterwards.
     template <typename T>
-    std::vector<KernelConfig> forward_kernel_configs(int n_power)
+    const std::vector<KernelConfig>& forward_kernel_configs(int n_power)
     {
-        return CreateForwardNTTKernel<T>()[n_power];
+        static const auto table = CreateForwardNTTKernel<T>();
+        return table.at(n_power);
     }
 
     template <typename T>
-    std::vector<KernelConfig> inverse_kernel_configs(int n_power)
+    const std::vector<KernelConfig>& inverse_kernel_configs(int n_power)
     {
-        return CreateInverseNTTKernel<T>()[n_power];
+        static const auto table = CreateInverseNTTKernel<T>();
+        return table.at(n_power);
     }
 
     // Launchers for the multi-stage kernel families. swapped selects the _
@@ -1727,7 +1730,7 @@ namespace gpuntt
     {
         using TU = typename std::make_unsigned<T>::type;
 
-        const std::vector<KernelConfig> kernels =
+        const std::vector<KernelConfig>& kernels =
             forward_kernel_configs<TU>(n_power);
         const bool swap_last = (n_power >= 25);
         const bool x_n_minus =
@@ -1775,7 +1778,7 @@ namespace gpuntt
         using TU = typename std::make_unsigned<T>::type;
 
         TU* device_out_unsigned = reinterpret_cast<TU*>(device_out);
-        const std::vector<KernelConfig> kernels =
+        const std::vector<KernelConfig>& kernels =
             inverse_kernel_configs<TU>(n_power);
         const bool swap_first = (n_power >= 25);
         const bool x_n_minus =
@@ -1819,7 +1822,7 @@ namespace gpuntt
     {
         using TU = typename std::make_unsigned<T>::type;
 
-        const KernelConfig k = forward_kernel_configs<TU>(n_power)[0];
+        const KernelConfig& k = forward_kernel_configs<TU>(n_power)[0];
         ForwardCoreLowRing<<<
             dim3((batch_size + (k.blockdim_y - 1)) / k.blockdim_y, 1, 1),
             dim3(k.blockdim_x, k.blockdim_y), k.shared_memory, stream>>>(
@@ -1841,7 +1844,7 @@ namespace gpuntt
     {
         using TU = typename std::make_unsigned<T>::type;
 
-        const KernelConfig k = inverse_kernel_configs<TU>(n_power)[0];
+        const KernelConfig& k = inverse_kernel_configs<TU>(n_power)[0];
         InverseCoreLowRing<<<
             dim3((batch_size + (k.blockdim_y - 1)) / k.blockdim_y, 1, 1),
             dim3(k.blockdim_x, k.blockdim_y), k.shared_memory, stream>>>(
