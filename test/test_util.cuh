@@ -123,7 +123,6 @@ namespace gpuntt_test
     std::vector<PrimeField<T>> make_fields(int count, int max_bits,
                                            int two_adicity)
     {
-
         std::vector<PrimeField<T>> fields;
         const T step = T(1) << two_adicity;
         for (T k = ((T(1) << max_bits) - 1) / step;
@@ -182,8 +181,7 @@ namespace gpuntt_test
 
         void upload(const std::vector<T>& host)
         {
-            GPUNTT_CUDA_CHECK(cudaMemcpy(ptr_, host.data(),
-                                         count_ * sizeof(T),
+            GPUNTT_CUDA_CHECK(cudaMemcpy(ptr_, host.data(), count_ * sizeof(T),
                                          cudaMemcpyHostToDevice));
         }
 
@@ -235,8 +233,7 @@ namespace gpuntt_test
                 parameters[m].gpu_root_of_unity_table_generator(
                     inverse ? parameters[m].inverse_root_of_unity_table
                             : parameters[m].forward_root_of_unity_table);
-            std::copy(single.begin(), single.end(),
-                      table.begin() + m * stride);
+            std::copy(single.begin(), single.end(), table.begin() + m * stride);
         }
         return table;
     }

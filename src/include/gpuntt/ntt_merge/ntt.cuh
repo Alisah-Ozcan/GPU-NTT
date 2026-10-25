@@ -75,70 +75,67 @@ namespace gpuntt
 
     // It provides multiple NTT operation with using single prime.
     template <typename T>
+    __global__ void ForwardCoreLowRing(
+        T* polynomial_in, typename std::make_unsigned<T>::type* polynomial_out,
+        const Root<typename std::make_unsigned<
+            T>::type>* __restrict__ root_of_unity_table,
+        Modulus<typename std::make_unsigned<T>::type> modulus, int shared_index,
+        int N_power, bool reduction_poly_check, int total_batch);
+
+    // It provides multiple NTT operation with using single prime.
+    template <typename T>
     __global__ void
     ForwardCoreLowRing(T* polynomial_in,
                        typename std::make_unsigned<T>::type* polynomial_out,
                        const Root<typename std::make_unsigned<
                            T>::type>* __restrict__ root_of_unity_table,
-                       Modulus<typename std::make_unsigned<T>::type> modulus,
-                       int shared_index, int N_power,
-                       bool reduction_poly_check, int total_batch);
+                       Modulus<typename std::make_unsigned<T>::type>* modulus,
+                       int shared_index, int N_power, bool reduction_poly_check,
+                       int total_batch, int mod_count);
 
     // It provides multiple NTT operation with using single prime.
-    template <typename T>
-    __global__ void ForwardCoreLowRing(
-        T* polynomial_in, typename std::make_unsigned<T>::type* polynomial_out,
-        const Root<typename std::make_unsigned<
-            T>::type>* __restrict__ root_of_unity_table,
-        Modulus<typename std::make_unsigned<T>::type>* modulus,
-        int shared_index, int N_power,
-        bool reduction_poly_check, int total_batch, int mod_count);
-
-    // It provides multiple NTT operation with using single prime.
-    template <typename T>
-    __global__ void ForwardCore(
-        T* polynomial_in, typename std::make_unsigned<T>::type* polynomial_out,
-        const Root<typename std::make_unsigned<
-            T>::type>* __restrict__ root_of_unity_table,
-        Modulus<typename std::make_unsigned<T>::type> modulus, int shared_index,
-        int logm, int outer_iteration_count, int N_power,
-        bool not_last_kernel, bool reduction_poly_check);
-
-    // It provides multiple NTT operation with using multiple prime for
-    // RNS(Residue Number System).
     template <typename T>
     __global__ void
     ForwardCore(T* polynomial_in,
                 typename std::make_unsigned<T>::type* polynomial_out,
                 const Root<typename std::make_unsigned<
                     T>::type>* __restrict__ root_of_unity_table,
-                Modulus<typename std::make_unsigned<T>::type>* modulus,
+                Modulus<typename std::make_unsigned<T>::type> modulus,
                 int shared_index, int logm, int outer_iteration_count,
-                int N_power, bool not_last_kernel,
-                bool reduction_poly_check, int mod_count);
-
-    // It provides multiple NTT operation with using single prime.
-    template <typename T>
-    __global__ void ForwardCore_(
-        T* polynomial_in, typename std::make_unsigned<T>::type* polynomial_out,
-        const Root<typename std::make_unsigned<
-            T>::type>* __restrict__ root_of_unity_table,
-        Modulus<typename std::make_unsigned<T>::type> modulus, int shared_index,
-        int logm, int outer_iteration_count, int N_power,
-        bool not_last_kernel, bool reduction_poly_check);
+                int N_power, bool not_last_kernel, bool reduction_poly_check);
 
     // It provides multiple NTT operation with using multiple prime for
     // RNS(Residue Number System).
+    template <typename T>
+    __global__ void ForwardCore(
+        T* polynomial_in, typename std::make_unsigned<T>::type* polynomial_out,
+        const Root<typename std::make_unsigned<
+            T>::type>* __restrict__ root_of_unity_table,
+        Modulus<typename std::make_unsigned<T>::type>* modulus,
+        int shared_index, int logm, int outer_iteration_count, int N_power,
+        bool not_last_kernel, bool reduction_poly_check, int mod_count);
+
+    // It provides multiple NTT operation with using single prime.
     template <typename T>
     __global__ void
     ForwardCore_(T* polynomial_in,
                  typename std::make_unsigned<T>::type* polynomial_out,
                  const Root<typename std::make_unsigned<
                      T>::type>* __restrict__ root_of_unity_table,
-                 Modulus<typename std::make_unsigned<T>::type>* modulus,
+                 Modulus<typename std::make_unsigned<T>::type> modulus,
                  int shared_index, int logm, int outer_iteration_count,
-                 int N_power, bool not_last_kernel,
-                 bool reduction_poly_check, int mod_count);
+                 int N_power, bool not_last_kernel, bool reduction_poly_check);
+
+    // It provides multiple NTT operation with using multiple prime for
+    // RNS(Residue Number System).
+    template <typename T>
+    __global__ void ForwardCore_(
+        T* polynomial_in, typename std::make_unsigned<T>::type* polynomial_out,
+        const Root<typename std::make_unsigned<
+            T>::type>* __restrict__ root_of_unity_table,
+        Modulus<typename std::make_unsigned<T>::type>* modulus,
+        int shared_index, int logm, int outer_iteration_count, int N_power,
+        bool not_last_kernel, bool reduction_poly_check, int mod_count);
 
     // It provides multiple NTT operation with using single prime.
     template <typename T>
@@ -413,9 +410,8 @@ namespace gpuntt
     __global__ void ForwardCoreModulusOrdered(
         T* polynomial_in, T* polynomial_out, Root<T>* root_of_unity_table,
         Modulus<T>* modulus, int shared_index, int logm,
-        int outer_iteration_count, int N_power,
-        bool not_last_kernel, bool reduction_poly_check, int mod_count,
-        int* order);
+        int outer_iteration_count, int N_power, bool not_last_kernel,
+        bool reduction_poly_check, int mod_count, int* order);
 
     // It provides multiple NTT operation with using multiple prime for RNS with
     // cetain modulus order.
@@ -423,9 +419,8 @@ namespace gpuntt
     __global__ void ForwardCoreModulusOrdered_(
         T* polynomial_in, T* polynomial_out, Root<T>* root_of_unity_table,
         Modulus<T>* modulus, int shared_index, int logm,
-        int outer_iteration_count, int N_power,
-        bool not_last_kernel, bool reduction_poly_check, int mod_count,
-        int* order);
+        int outer_iteration_count, int N_power, bool not_last_kernel,
+        bool reduction_poly_check, int mod_count, int* order);
 
     // It provides multiple NTT operation with using multiple prime for RNS with
     // cetain modulus order.
@@ -499,9 +494,8 @@ namespace gpuntt
     __global__ void ForwardCorePolyOrdered(
         T* polynomial_in, T* polynomial_out, Root<T>* root_of_unity_table,
         Modulus<T>* modulus, int shared_index, int logm,
-        int outer_iteration_count, int N_power,
-        bool not_last_kernel, bool reduction_poly_check, int mod_count,
-        int* order);
+        int outer_iteration_count, int N_power, bool not_last_kernel,
+        bool reduction_poly_check, int mod_count, int* order);
 
     // It provides multiple NTT operation with using multiple prime for RNS with
     // cetain modulus order.
@@ -509,9 +503,8 @@ namespace gpuntt
     __global__ void ForwardCorePolyOrdered_(
         T* polynomial_in, T* polynomial_out, Root<T>* root_of_unity_table,
         Modulus<T>* modulus, int shared_index, int logm,
-        int outer_iteration_count, int N_power,
-        bool not_last_kernel, bool reduction_poly_check, int mod_count,
-        int* order);
+        int outer_iteration_count, int N_power, bool not_last_kernel,
+        bool reduction_poly_check, int mod_count, int* order);
 
     // It provides multiple NTT operation with using multiple prime for RNS with
     // cetain modulus order.

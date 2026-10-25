@@ -202,13 +202,13 @@ namespace
                                         ReductionPolynomial::X_N_plus,
                                     .mod_inverse = static_cast<T>(12345),
                                     .stream = stream.get()};
-        ntt_rns_configuration<T> cfg_rns = {
-            .n_power = logn,
-            .ntt_type = dir,
-            .ntt_layout = PerPolynomial,
-            .reduction_poly = ReductionPolynomial::X_N_plus,
-            .mod_inverse = ptr(n_inverse),
-            .stream = stream.get()};
+        ntt_rns_configuration<T> cfg_rns = {.n_power = logn,
+                                            .ntt_type = dir,
+                                            .ntt_layout = PerPolynomial,
+                                            .reduction_poly =
+                                                ReductionPolynomial::X_N_plus,
+                                            .mod_inverse = ptr(n_inverse),
+                                            .stream = stream.get()};
 
         if (variant == "signed" || variant == "signed_rns")
         {
@@ -271,8 +271,7 @@ namespace
 
     // Column-wise NTT/INTT (X^N + 1, about 2^22 coefficients).
     template <typename T>
-    void merge_ntt_per_coefficient(nvbench::state& state,
-                                   nvbench::type_list<T>)
+    void merge_ntt_per_coefficient(nvbench::state& state, nvbench::type_list<T>)
     {
         const int logn = static_cast<int>(state.get_int64("LogN"));
         const size_t n = size_t(1) << logn;
@@ -298,13 +297,13 @@ namespace
                                         ReductionPolynomial::X_N_plus,
                                     .mod_inverse = static_cast<T>(12345),
                                     .stream = stream.get()};
-        ntt_rns_configuration<T> cfg_rns = {
-            .n_power = logn,
-            .ntt_type = dir,
-            .ntt_layout = PerCoefficient,
-            .reduction_poly = ReductionPolynomial::X_N_plus,
-            .mod_inverse = ptr(n_inverse),
-            .stream = stream.get()};
+        ntt_rns_configuration<T> cfg_rns = {.n_power = logn,
+                                            .ntt_type = dir,
+                                            .ntt_layout = PerCoefficient,
+                                            .reduction_poly =
+                                                ReductionPolynomial::X_N_plus,
+                                            .mod_inverse = ptr(n_inverse),
+                                            .stream = stream.get()};
 
         state.exec(
             [&](nvbench::launch&)

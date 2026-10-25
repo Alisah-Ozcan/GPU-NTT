@@ -36,7 +36,8 @@ namespace gpuntt
 
         // Largest modulus size supported by the GPU Barrett reduction. Larger
         // moduli give wrong results on the GPU, so they are rejected.
-        static constexpr int max_bit = std::is_same<T1, Data32>::value ? 30 : 61;
+        static constexpr int max_bit =
+            std::is_same<T1, Data32>::value ? 30 : 61;
 
         // Constructor to initialize the Modulus
         __host__ Modulus(T1 mod) : value(mod)
@@ -70,8 +71,9 @@ namespace gpuntt
 
         __host__ T1 mu_generator() const
         {
-            using T2 = typename std::conditional<std::is_same<T1, Data32>::value,
-                                                 Data64, __uint128_t>::type;
+            using T2 =
+                typename std::conditional<std::is_same<T1, Data32>::value,
+                                          Data64, __uint128_t>::type;
             T2 mu_ = static_cast<T2>(1) << ((2 * bit) + 1);
             mu_ = mu_ / value;
             return static_cast<T1>(mu_);
@@ -122,15 +124,16 @@ namespace gpuntt
                 r = r * static_cast<T2>(modulus.value);
                 mult = mult - r;
                 T1 result = static_cast<T1>(
-                    mult &
-                    (std::is_same<T1, Data32>::value ? UINT32_MAX : UINT64_MAX));
+                    mult & (std::is_same<T1, Data32>::value ? UINT32_MAX
+                                                            : UINT64_MAX));
                 return (result >= modulus.value) ? (result - modulus.value)
                                                  : result;
             }
 
             // Modular Exponentiation
             // result = (base ^ exponent) % modulus
-            static __host__ T1 exp(T1 base, T1 exponent, const Modulus<T1>& modulus)
+            static __host__ T1 exp(T1 base, T1 exponent,
+                                   const Modulus<T1>& modulus)
             {
                 T1 result = 1;
                 if (exponent == 0)
@@ -158,7 +161,8 @@ namespace gpuntt
             }
 
             // Modular Reduction
-            static __host__ T1 reduce(const T1& input1, const Modulus<T1>& modulus)
+            static __host__ T1 reduce(const T1& input1,
+                                      const Modulus<T1>& modulus)
             {
                 using T2 =
                     typename std::conditional<std::is_same<T1, Data32>::value,
@@ -170,8 +174,8 @@ namespace gpuntt
                 r = r * static_cast<T2>(modulus.value);
                 mult = mult - r;
                 T1 result = static_cast<T1>(
-                    mult &
-                    (std::is_same<T1, Data32>::value ? UINT32_MAX : UINT64_MAX));
+                    mult & (std::is_same<T1, Data32>::value ? UINT32_MAX
+                                                            : UINT64_MAX));
                 return (result >= modulus.value) ? (result - modulus.value)
                                                  : result;
             }
@@ -186,8 +190,8 @@ namespace gpuntt
     typedef OPERATOR<Data64> OPERATOR64;
 
     template <typename T>
-    using Root = typename std::conditional<std::is_same<T, Data32>::value, Root32,
-                                           Root64>::type;
+    using Root = typename std::conditional<std::is_same<T, Data32>::value,
+                                           Root32, Root64>::type;
 
     template <typename T>
     using Ninverse = typename std::conditional<std::is_same<T, Data32>::value,
@@ -219,7 +223,8 @@ namespace gpuntt
                     value.y = 0;
                 }
 
-                __device__ __forceinline__ void operator=(const uint128_t& input)
+                __device__ __forceinline__ void
+                operator=(const uint128_t& input)
                 {
                     value.x = input.value.x;
                     value.y = input.value.y;
@@ -331,9 +336,8 @@ namespace gpuntt
 
             // Modular Multiplication
             // result = (input1 * input2) % modulus
-            static __device__ __forceinline__ T1 mult(const T1& input1,
-                                                      const T1& input2,
-                                                      const Modulus<T1>& modulus)
+            static __device__ __forceinline__ T1
+            mult(const T1& input1, const T1& input2, const Modulus<T1>& modulus)
             {
                 if constexpr (std::is_same<T1, Data32>::value)
                 {
@@ -362,8 +366,8 @@ namespace gpuntt
 
             // Barrett Reduction
             // result = input1 % modulus
-            static __device__ __forceinline__ T1 reduce(const T1& input,
-                                                        const Modulus<T1>& modulus)
+            static __device__ __forceinline__ T1
+            reduce(const T1& input, const Modulus<T1>& modulus)
             {
                 if constexpr (std::is_same<T1, Data32>::value)
                 {
@@ -390,7 +394,8 @@ namespace gpuntt
                 }
             }
 
-            // Converts a potentially negative signed input into [0, modulus) range.
+            // Converts a potentially negative signed input into [0, modulus)
+            // range.
             static __device__ __forceinline__ T1
             reduce(const typename std::make_signed<T1>::type& input,
                    const Modulus<T1>& modulus)
@@ -408,8 +413,9 @@ namespace gpuntt
 
             // Converts an unsigned input in [0, modulus) into a centered range
             // [−modulus/2, modulus/2).
-            static __device__ __forceinline__ typename std::make_signed<T1>::type
-            centered_reduction(const T1& input, const Modulus<T1>& modulus)
+            static __device__ __forceinline__
+                typename std::make_signed<T1>::type
+                centered_reduction(const T1& input, const Modulus<T1>& modulus)
             {
                 using SignedT = typename std::make_signed<T1>::type;
 
@@ -441,8 +447,8 @@ namespace gpuntt
 
             // Forced Reduction
             // result = input1 % modulus
-            static __device__ __forceinline__ T1 reduce(T1* input1,
-                                                        const Modulus<T1>& modulus)
+            static __device__ __forceinline__ T1
+            reduce(T1* input1, const Modulus<T1>& modulus)
             {
                 if constexpr (std::is_same<T1, Data32>::value)
                 {

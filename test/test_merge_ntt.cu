@@ -42,7 +42,10 @@ namespace
         return std::max(batch, at_least);
     }
 
-    void sync() { GPUNTT_CUDA_CHECK(cudaDeviceSynchronize()); }
+    void sync()
+    {
+        GPUNTT_CUDA_CHECK(cudaDeviceSynchronize());
+    }
 
     template <typename T> class MergeNTTTests
     {
@@ -85,8 +88,7 @@ namespace
                 int result = 0;
                 for (const char* s :
                      {"single", "pool_parameters", "modulus", "validation",
-                      "rns", "signed",
-                      "per_coefficient", "per_coefficient_rns",
+                      "rns", "signed", "per_coefficient", "per_coefficient_rns",
                       "modulus_ordered", "poly_ordered", "large"})
                 {
                     result |= run(s);
@@ -150,9 +152,9 @@ namespace
         }
 
         // Coefficient i of polynomial j is at i * batch + j.
-        static std::vector<T> reference_per_coefficient(
-            const std::vector<T>& input, int logn, int batch, type dir,
-            const CpuOf& cpu_of)
+        static std::vector<T>
+        reference_per_coefficient(const std::vector<T>& input, int logn,
+                                  int batch, type dir, const CpuOf& cpu_of)
         {
             const size_t n = size_t(1) << logn;
             std::vector<T> output(input.size());
@@ -254,7 +256,8 @@ namespace
                 for (ReductionPolynomial poly : kPolys)
                     for (type dir : kDirections)
                     {
-                        NTTParameters<T> params = fields_[0].parameters(logn, poly);
+                        NTTParameters<T> params =
+                            fields_[0].parameters(logn, poly);
                         single_case(report, params, "single", dir);
                     }
             return report.finish();
@@ -287,7 +290,8 @@ namespace
                                   "out-of-range ring size was not rejected");
                 }
 
-            for (int logn = 1; logn <= std::min(max_logn_, pool_max_logn); logn++)
+            for (int logn = 1; logn <= std::min(max_logn_, pool_max_logn);
+                 logn++)
                 for (ReductionPolynomial poly : kPolys)
                     for (type dir : kDirections)
                     {
@@ -353,11 +357,11 @@ namespace
                 const Modulus<T> m(value);
                 const T mu =
                     static_cast<T>((Wide<T>(1) << (2 * bits + 1)) / value);
-                report.expect(
-                    m.bit == bits && m.mu == mu, name,
-                    "got bit=" + std::to_string(m.bit) +
-                        " mu=" + std::to_string(m.mu) + ", expected bit=" +
-                        std::to_string(bits) + " mu=" + std::to_string(mu));
+                report.expect(m.bit == bits && m.mu == mu, name,
+                              "got bit=" + std::to_string(m.bit) +
+                                  " mu=" + std::to_string(m.mu) +
+                                  ", expected bit=" + std::to_string(bits) +
+                                  " mu=" + std::to_string(mu));
             }
 
             auto largest = make_fields<T>(1, max_bits, is32 ? 23 : 20);
@@ -379,8 +383,9 @@ namespace
         {
             TestReport report(suite_name("validation"));
             const Modulus<T> modulus(fields_[0].prime);
-            auto expect_rejected = [&](const std::string& name,
-                                       const std::function<void()>& call) {
+            auto expect_rejected =
+                [&](const std::string& name, const std::function<void()>& call)
+            {
                 bool rejected = false;
                 try
                 {
@@ -438,36 +443,48 @@ namespace
                     const std::string suffix =
                         (dir == FORWARD ? " ntt " : " intt ") + c.name;
 
-                    expect_rejected("single" + suffix, [&] {
-                        if (dir == FORWARD)
-                            GPU_NTT(null_data, null_data, null_roots, modulus,
-                                    cfg, c.batch);
-                        else
-                            GPU_INTT(null_data, null_data, null_roots, modulus,
-                                     cfg, c.batch);
-                    });
-                    expect_rejected("rns" + suffix, [&] {
-                        if (dir == FORWARD)
-                            GPU_NTT(null_data, null_data, null_roots,
-                                    null_moduli, cfg_rns, c.batch, 1);
-                        else
-                            GPU_INTT(null_data, null_data, null_roots,
-                                     null_moduli, cfg_rns, c.batch, 1);
-                    });
+                    expect_rejected(
+                        "single" + suffix,
+                        [&]
+                        {
+                            if (dir == FORWARD)
+                                GPU_NTT(null_data, null_data, null_roots,
+                                        modulus, cfg, c.batch);
+                            else
+                                GPU_INTT(null_data, null_data, null_roots,
+                                         modulus, cfg, c.batch);
+                        });
+                    expect_rejected(
+                        "rns" + suffix,
+                        [&]
+                        {
+                            if (dir == FORWARD)
+                                GPU_NTT(null_data, null_data, null_roots,
+                                        null_moduli, cfg_rns, c.batch, 1);
+                            else
+                                GPU_INTT(null_data, null_data, null_roots,
+                                         null_moduli, cfg_rns, c.batch, 1);
+                        });
                     if (c.layout == PerPolynomial)
                     {
-                        expect_rejected("modulus_ordered" + suffix, [&] {
-                            GPU_NTT_Modulus_Ordered(null_data, null_data,
-                                                    null_roots, null_moduli,
-                                                    cfg_rns, c.batch, 1,
-                                                    null_order);
-                        });
-                        expect_rejected("poly_ordered" + suffix, [&] {
-                            GPU_NTT_Poly_Ordered(null_data, null_data,
-                                                 null_roots, null_moduli,
-                                                 cfg_rns, c.batch, 1,
-                                                 null_order);
-                        });
+                        expect_rejected("modulus_ordered" + suffix,
+                                        [&]
+                                        {
+                                            GPU_NTT_Modulus_Ordered(
+                                                null_data, null_data,
+                                                null_roots, null_moduli,
+                                                cfg_rns, c.batch, 1,
+                                                null_order);
+                                        });
+                        expect_rejected("poly_ordered" + suffix,
+                                        [&]
+                                        {
+                                            GPU_NTT_Poly_Ordered(
+                                                null_data, null_data,
+                                                null_roots, null_moduli,
+                                                cfg_rns, c.batch, 1,
+                                                null_order);
+                                        });
                     }
                 }
             return report.finish();
@@ -486,13 +503,15 @@ namespace
                         const size_t total = batch * n;
                         auto params = parameters(mod_count, logn, poly);
                         auto cpus = cpu_references(params);
-                        auto cpu_of = [&](int j) -> NTTCPU<T>& {
-                            return cpus[j % mod_count];
-                        };
+                        auto cpu_of = [&](int j) -> NTTCPU<T>&
+                        { return cpus[j % mod_count]; };
 
                         std::vector<T> input = random_input(
-                            total, n, [&](int j) { return fields_[j % mod_count].prime; });
-                        std::vector<T> expected = reference(input, logn, dir, cpu_of);
+                            total, n,
+                            [&](int j)
+                            { return fields_[j % mod_count].prime; });
+                        std::vector<T> expected =
+                            reference(input, logn, dir, cpu_of);
 
                         const std::string name =
                             case_name("rns", dir, logn, poly, batch);
@@ -568,16 +587,19 @@ namespace
                             const size_t total = batch * n;
                             auto params = parameters(count, logn, poly);
                             auto cpus = cpu_references(params);
-                            auto prime_of = [&](int j) { return fields_[j % count].prime; };
+                            auto prime_of = [&](int j)
+                            { return fields_[j % count].prime; };
 
-                            std::vector<T> input = random_input(total, n, prime_of);
-                            std::vector<T> expected = reference(
-                                input, logn, dir,
-                                [&](int j) -> NTTCPU<T>& { return cpus[j % count]; });
+                            std::vector<T> input =
+                                random_input(total, n, prime_of);
+                            std::vector<T> expected =
+                                reference(input, logn, dir,
+                                          [&](int j) -> NTTCPU<T>&
+                                          { return cpus[j % count]; });
 
                             const std::string name = case_name(
-                                use_rns ? "signed rns" : "signed single", dir, logn,
-                                poly, batch);
+                                use_rns ? "signed rns" : "signed single", dir,
+                                logn, poly, batch);
                             try
                             {
                                 std::vector<Modulus<T>> moduli;
@@ -588,9 +610,10 @@ namespace
                                     n_inverse.push_back(p.n_inv);
                                 }
                                 DeviceBuffer<Modulus<T>> d_moduli(moduli);
-                                DeviceBuffer<Ninverse<T>> d_n_inverse(n_inverse);
-                                DeviceBuffer<Root<T>> roots(
-                                    concat_root_tables(params, dir == INVERSE, n));
+                                DeviceBuffer<Ninverse<T>> d_n_inverse(
+                                    n_inverse);
+                                DeviceBuffer<Root<T>> roots(concat_root_tables(
+                                    params, dir == INVERSE, n));
 
                                 ntt_configuration<T> cfg = {
                                     .n_power = logn,
@@ -612,20 +635,22 @@ namespace
                                     std::vector<S> signed_input(total);
                                     for (size_t i = 0; i < total; i++)
                                     {
-                                        signed_input[i] =
-                                            to_centered(input[i], prime_of(i / n));
+                                        signed_input[i] = to_centered(
+                                            input[i], prime_of(i / n));
                                     }
                                     DeviceBuffer<S> in(signed_input);
                                     DeviceBuffer<T> out(total);
                                     if (use_rns)
-                                        GPU_NTT(in.get(), out.get(), roots.get(),
-                                                d_moduli.get(), cfg_rns, batch,
-                                                mod_count);
+                                        GPU_NTT(in.get(), out.get(),
+                                                roots.get(), d_moduli.get(),
+                                                cfg_rns, batch, mod_count);
                                     else
-                                        GPU_NTT(in.get(), out.get(), roots.get(),
-                                                params[0].modulus, cfg, batch);
+                                        GPU_NTT(in.get(), out.get(),
+                                                roots.get(), params[0].modulus,
+                                                cfg, batch);
                                     sync();
-                                    report.check(name, out.download(), expected);
+                                    report.check(name, out.download(),
+                                                 expected);
                                 }
                                 else
                                 {
@@ -638,12 +663,13 @@ namespace
                                     DeviceBuffer<T> in(input);
                                     DeviceBuffer<S> out(total);
                                     if (use_rns)
-                                        GPU_INTT(in.get(), out.get(), roots.get(),
-                                                 d_moduli.get(), cfg_rns, batch,
-                                                 mod_count);
+                                        GPU_INTT(in.get(), out.get(),
+                                                 roots.get(), d_moduli.get(),
+                                                 cfg_rns, batch, mod_count);
                                     else
-                                        GPU_INTT(in.get(), out.get(), roots.get(),
-                                                 params[0].modulus, cfg, batch);
+                                        GPU_INTT(in.get(), out.get(),
+                                                 roots.get(), params[0].modulus,
+                                                 cfg, batch);
                                     sync();
                                     report.check(name, out.download(),
                                                  signed_expected);
@@ -661,161 +687,158 @@ namespace
         // is transformed with modulus j % mod_count.
         int per_coefficient(bool use_rns)
         {
-            TestReport report(
-                suite_name(use_rns ? "per_coefficient_rns" : "per_coefficient"));
+            TestReport report(suite_name(use_rns ? "per_coefficient_rns"
+                                                 : "per_coefficient"));
             const int mod_count = 3;
             for (int logn = 1; logn <= std::min(9, max_logn_); logn++)
                 for (ReductionPolynomial poly : kPolys)
                     for (type dir : kDirections)
+                    {
+                        const int count = use_rns ? mod_count : 1;
+                        // A power of two with at least 2^11 coefficients.
+                        const int batch = 1 << std::max(2, 11 - logn);
+                        const size_t n = size_t(1) << logn;
+                        const size_t total = batch * n;
+                        auto params = parameters(count, logn, poly);
+                        auto cpus = cpu_references(params);
+
+                        std::vector<T> input = random_input(total);
+                        for (size_t i = 0; i < total; i++)
                         {
-                            const int count = use_rns ? mod_count : 1;
-                            // A power of two with at least 2^11 coefficients.
-                            const int batch = 1 << std::max(2, 11 - logn);
-                            const size_t n = size_t(1) << logn;
-                            const size_t total = batch * n;
-                            auto params = parameters(count, logn, poly);
-                            auto cpus = cpu_references(params);
+                            input[i] %= fields_[(i % batch) % count].prime;
+                        }
+                        std::vector<T> expected = reference_per_coefficient(
+                            input, logn, batch, dir,
+                            [&](int j) -> NTTCPU<T>&
+                            { return cpus[j % count]; });
 
-                            std::vector<T> input = random_input(total);
-                            for (size_t i = 0; i < total; i++)
+                        const std::string name =
+                            case_name(use_rns ? "per_coefficient rns"
+                                              : "per_coefficient single",
+                                      dir, logn, poly, batch);
+                        try
+                        {
+                            std::vector<Modulus<T>> moduli;
+                            std::vector<Ninverse<T>> n_inverse;
+                            for (auto& p : params)
                             {
-                                input[i] %= fields_[(i % batch) % count].prime;
+                                moduli.push_back(p.modulus);
+                                n_inverse.push_back(p.n_inv);
                             }
-                            std::vector<T> expected = reference_per_coefficient(
-                                input, logn, batch, dir,
-                                [&](int j) -> NTTCPU<T>& { return cpus[j % count]; });
+                            DeviceBuffer<Modulus<T>> d_moduli(moduli);
+                            DeviceBuffer<Ninverse<T>> d_n_inverse(n_inverse);
+                            DeviceBuffer<Root<T>> roots(
+                                concat_root_tables(params, dir == INVERSE, n));
 
-                            const std::string name = case_name(
-                                use_rns ? "per_coefficient rns"
-                                        : "per_coefficient single",
-                                dir, logn, poly, batch);
-                            try
+                            ntt_configuration<T> cfg = {
+                                .n_power = logn,
+                                .ntt_type = dir,
+                                .ntt_layout = PerCoefficient,
+                                .reduction_poly = poly,
+                                .mod_inverse = params[0].n_inv,
+                                .stream = 0};
+                            ntt_rns_configuration<T> cfg_rns = {
+                                .n_power = logn,
+                                .ntt_type = dir,
+                                .ntt_layout = PerCoefficient,
+                                .reduction_poly = poly,
+                                .mod_inverse = d_n_inverse.get(),
+                                .stream = 0};
+
+                            DeviceBuffer<T> in(input);
+                            DeviceBuffer<T> out(total);
+                            DeviceBuffer<T> inout(input);
+                            if (use_rns && dir == FORWARD)
                             {
-                                std::vector<Modulus<T>> moduli;
-                                std::vector<Ninverse<T>> n_inverse;
-                                for (auto& p : params)
-                                {
-                                    moduli.push_back(p.modulus);
-                                    n_inverse.push_back(p.n_inv);
-                                }
-                                DeviceBuffer<Modulus<T>> d_moduli(moduli);
-                                DeviceBuffer<Ninverse<T>> d_n_inverse(n_inverse);
-                                DeviceBuffer<Root<T>> roots(
-                                    concat_root_tables(params, dir == INVERSE, n));
+                                GPU_NTT(in.get(), out.get(), roots.get(),
+                                        d_moduli.get(), cfg_rns, batch,
+                                        mod_count);
+                                GPU_NTT_Inplace(inout.get(), roots.get(),
+                                                d_moduli.get(), cfg_rns, batch,
+                                                mod_count);
+                            }
+                            else if (use_rns)
+                            {
+                                GPU_INTT(in.get(), out.get(), roots.get(),
+                                         d_moduli.get(), cfg_rns, batch,
+                                         mod_count);
+                                GPU_INTT_Inplace(inout.get(), roots.get(),
+                                                 d_moduli.get(), cfg_rns, batch,
+                                                 mod_count);
+                            }
+                            else if (dir == FORWARD)
+                            {
+                                GPU_NTT(in.get(), out.get(), roots.get(),
+                                        params[0].modulus, cfg, batch);
+                                GPU_NTT_Inplace(inout.get(), roots.get(),
+                                                params[0].modulus, cfg, batch);
+                            }
+                            else
+                            {
+                                GPU_INTT(in.get(), out.get(), roots.get(),
+                                         params[0].modulus, cfg, batch);
+                                GPU_INTT_Inplace(inout.get(), roots.get(),
+                                                 params[0].modulus, cfg, batch);
+                            }
+                            sync();
+                            report.check(name + " out-of-place", out.download(),
+                                         expected);
+                            report.check(name + " in-place", inout.download(),
+                                         expected);
 
-                                ntt_configuration<T> cfg = {
-                                    .n_power = logn,
-                                    .ntt_type = dir,
-                                    .ntt_layout = PerCoefficient,
-                                    .reduction_poly = poly,
-                                    .mod_inverse = params[0].n_inv,
-                                    .stream = 0};
-                                ntt_rns_configuration<T> cfg_rns = {
-                                    .n_power = logn,
-                                    .ntt_type = dir,
-                                    .ntt_layout = PerCoefficient,
-                                    .reduction_poly = poly,
-                                    .mod_inverse = d_n_inverse.get(),
-                                    .stream = 0};
-
-                                DeviceBuffer<T> in(input);
-                                DeviceBuffer<T> out(total);
-                                DeviceBuffer<T> inout(input);
-                                if (use_rns && dir == FORWARD)
+                            // Signed input (NTT) / signed output (INTT).
+                            auto prime_of = [&](size_t i)
+                            { return fields_[(i % batch) % count].prime; };
+                            if (dir == FORWARD)
+                            {
+                                std::vector<S> signed_input(total);
+                                for (size_t i = 0; i < total; i++)
                                 {
-                                    GPU_NTT(in.get(), out.get(), roots.get(),
-                                            d_moduli.get(), cfg_rns, batch,
-                                            mod_count);
-                                    GPU_NTT_Inplace(inout.get(), roots.get(),
-                                                    d_moduli.get(), cfg_rns,
-                                                    batch, mod_count);
+                                    signed_input[i] =
+                                        to_centered(input[i], prime_of(i));
                                 }
-                                else if (use_rns)
-                                {
-                                    GPU_INTT(in.get(), out.get(), roots.get(),
-                                             d_moduli.get(), cfg_rns, batch,
-                                             mod_count);
-                                    GPU_INTT_Inplace(inout.get(), roots.get(),
-                                                     d_moduli.get(), cfg_rns,
-                                                     batch, mod_count);
-                                }
-                                else if (dir == FORWARD)
-                                {
-                                    GPU_NTT(in.get(), out.get(), roots.get(),
-                                            params[0].modulus, cfg, batch);
-                                    GPU_NTT_Inplace(inout.get(), roots.get(),
-                                                    params[0].modulus, cfg,
-                                                    batch);
-                                }
+                                DeviceBuffer<S> s_in(signed_input);
+                                DeviceBuffer<T> s_out(total);
+                                if (use_rns)
+                                    GPU_NTT(s_in.get(), s_out.get(),
+                                            roots.get(), d_moduli.get(),
+                                            cfg_rns, batch, mod_count);
                                 else
-                                {
-                                    GPU_INTT(in.get(), out.get(), roots.get(),
-                                             params[0].modulus, cfg, batch);
-                                    GPU_INTT_Inplace(inout.get(), roots.get(),
-                                                     params[0].modulus, cfg,
-                                                     batch);
-                                }
+                                    GPU_NTT(s_in.get(), s_out.get(),
+                                            roots.get(), params[0].modulus, cfg,
+                                            batch);
                                 sync();
-                                report.check(name + " out-of-place",
-                                             out.download(), expected);
-                                report.check(name + " in-place", inout.download(),
-                                             expected);
-
-                                // Signed input (NTT) / signed output (INTT).
-                                auto prime_of = [&](size_t i) {
-                                    return fields_[(i % batch) % count].prime;
-                                };
-                                if (dir == FORWARD)
-                                {
-                                    std::vector<S> signed_input(total);
-                                    for (size_t i = 0; i < total; i++)
-                                    {
-                                        signed_input[i] =
-                                            to_centered(input[i], prime_of(i));
-                                    }
-                                    DeviceBuffer<S> s_in(signed_input);
-                                    DeviceBuffer<T> s_out(total);
-                                    if (use_rns)
-                                        GPU_NTT(s_in.get(), s_out.get(),
-                                                roots.get(), d_moduli.get(),
-                                                cfg_rns, batch, mod_count);
-                                    else
-                                        GPU_NTT(s_in.get(), s_out.get(),
-                                                roots.get(), params[0].modulus,
-                                                cfg, batch);
-                                    sync();
-                                    report.check(name + " signed input",
-                                                 s_out.download(), expected);
-                                }
-                                else
-                                {
-                                    std::vector<S> signed_expected(total);
-                                    for (size_t i = 0; i < total; i++)
-                                    {
-                                        signed_expected[i] =
-                                            to_centered(expected[i], prime_of(i));
-                                    }
-                                    DeviceBuffer<T> s_in(input);
-                                    DeviceBuffer<S> s_out(total);
-                                    if (use_rns)
-                                        GPU_INTT(s_in.get(), s_out.get(),
-                                                 roots.get(), d_moduli.get(),
-                                                 cfg_rns, batch, mod_count);
-                                    else
-                                        GPU_INTT(s_in.get(), s_out.get(),
-                                                 roots.get(), params[0].modulus,
-                                                 cfg, batch);
-                                    sync();
-                                    report.check(name + " signed output",
-                                                 s_out.download(),
-                                                 signed_expected);
-                                }
+                                report.check(name + " signed input",
+                                             s_out.download(), expected);
                             }
-                            catch (const std::exception& e)
+                            else
                             {
-                                report.error(name, e.what());
+                                std::vector<S> signed_expected(total);
+                                for (size_t i = 0; i < total; i++)
+                                {
+                                    signed_expected[i] =
+                                        to_centered(expected[i], prime_of(i));
+                                }
+                                DeviceBuffer<T> s_in(input);
+                                DeviceBuffer<S> s_out(total);
+                                if (use_rns)
+                                    GPU_INTT(s_in.get(), s_out.get(),
+                                             roots.get(), d_moduli.get(),
+                                             cfg_rns, batch, mod_count);
+                                else
+                                    GPU_INTT(s_in.get(), s_out.get(),
+                                             roots.get(), params[0].modulus,
+                                             cfg, batch);
+                                sync();
+                                report.check(name + " signed output",
+                                             s_out.download(), signed_expected);
                             }
                         }
+                        catch (const std::exception& e)
+                        {
+                            report.error(name, e.what());
+                        }
+                    }
             return report.finish();
         }
 
@@ -836,16 +859,20 @@ namespace
                         const size_t total = batch * n;
                         auto params = parameters(prime_count, logn, poly);
                         auto cpus = cpu_references(params);
-                        auto prime_index = [&](int z) { return order[z % mod_count]; };
+                        auto prime_index = [&](int z)
+                        { return order[z % mod_count]; };
 
                         std::vector<T> input = random_input(
-                            total, n, [&](int z) { return fields_[prime_index(z)].prime; });
-                        std::vector<T> expected = reference(
-                            input, logn, dir,
-                            [&](int z) -> NTTCPU<T>& { return cpus[prime_index(z)]; });
+                            total, n,
+                            [&](int z)
+                            { return fields_[prime_index(z)].prime; });
+                        std::vector<T> expected =
+                            reference(input, logn, dir,
+                                      [&](int z) -> NTTCPU<T>&
+                                      { return cpus[prime_index(z)]; });
 
-                        const std::string name =
-                            case_name("modulus_ordered", dir, logn, poly, batch);
+                        const std::string name = case_name(
+                            "modulus_ordered", dir, logn, poly, batch);
                         try
                         {
                             std::vector<Modulus<T>> moduli;
@@ -921,10 +948,13 @@ namespace
                         }
 
                         std::vector<T> input = random_input(
-                            total, n, [&](int p) { return fields_[modulus_of[p]].prime; });
-                        std::vector<T> expected = reference(
-                            input, logn, dir,
-                            [&](int p) -> NTTCPU<T>& { return cpus[modulus_of[p]]; });
+                            total, n,
+                            [&](int p)
+                            { return fields_[modulus_of[p]].prime; });
+                        std::vector<T> expected =
+                            reference(input, logn, dir,
+                                      [&](int p) -> NTTCPU<T>&
+                                      { return cpus[modulus_of[p]]; });
 
                         const std::string name =
                             case_name("poly_ordered", dir, logn, poly, batch);
@@ -953,9 +983,10 @@ namespace
 
                             DeviceBuffer<T> in(input);
                             DeviceBuffer<T> out(total);
-                            GPU_NTT_Poly_Ordered(in.get(), out.get(), roots.get(),
-                                                 d_moduli.get(), cfg, batch,
-                                                 mod_count, d_order.get());
+                            GPU_NTT_Poly_Ordered(in.get(), out.get(),
+                                                 roots.get(), d_moduli.get(),
+                                                 cfg, batch, mod_count,
+                                                 d_order.get());
                             sync();
                             report.check(name + " out-of-place", out.download(),
                                          expected);
@@ -994,9 +1025,9 @@ namespace
 
             // Data32 has a single prime below 2^30 with a 2^26-th root of
             // unity, so its RNS cases use that prime twice.
-            std::vector<PrimeField<T>> fields = make_fields<T>(
-                std::is_same<T, Data32>::value ? 1 : mod_count,
-                Modulus<T>::max_bit, logn + 1);
+            std::vector<PrimeField<T>> fields =
+                make_fields<T>(std::is_same<T, Data32>::value ? 1 : mod_count,
+                               Modulus<T>::max_bit, logn + 1);
             while (static_cast<int>(fields.size()) < mod_count)
             {
                 fields.push_back(fields[0]);
@@ -1037,16 +1068,18 @@ namespace
                     Root<T>* forward_single = forward_rns.get();
                     Root<T>* inverse_single = inverse_rns.get();
 
-                    auto cfg = [&](type dir) {
-                        return ntt_configuration<T>{
-                            .n_power = logn,
-                            .ntt_type = dir,
-                            .ntt_layout = PerPolynomial,
-                            .reduction_poly = poly,
-                            .mod_inverse = params[0].n_inv,
-                            .stream = 0};
+                    auto cfg = [&](type dir)
+                    {
+                        return ntt_configuration<T>{.n_power = logn,
+                                                    .ntt_type = dir,
+                                                    .ntt_layout = PerPolynomial,
+                                                    .reduction_poly = poly,
+                                                    .mod_inverse =
+                                                        params[0].n_inv,
+                                                    .stream = 0};
                     };
-                    auto cfg_rns = [&](type dir) {
+                    auto cfg_rns = [&](type dir)
+                    {
                         return ntt_rns_configuration<T>{
                             .n_power = logn,
                             .ntt_type = dir,
@@ -1061,7 +1094,8 @@ namespace
 
                     using Op = std::function<void(T*, T*)>;
                     auto check = [&](const std::string& variant,
-                                     const Op& forward, const Op& inverse) {
+                                     const Op& forward, const Op& inverse)
+                    {
                         std::vector<T> transformed;
                         {
                             DeviceBuffer<T> in(input);
@@ -1088,32 +1122,36 @@ namespace
                     check(
                         "single",
                         [&](T* in, T* out) {
-                            GPU_NTT(in, out, forward_single,
-                                    params[0].modulus, cfg(FORWARD), batch);
+                            GPU_NTT(in, out, forward_single, params[0].modulus,
+                                    cfg(FORWARD), batch);
                         },
                         [&](T* in, T* out) {
-                            GPU_INTT(in, out, inverse_single,
-                                     params[0].modulus, cfg(INVERSE), batch);
+                            GPU_INTT(in, out, inverse_single, params[0].modulus,
+                                     cfg(INVERSE), batch);
                         });
                     check(
                         "rns",
-                        [&](T* in, T* out) {
+                        [&](T* in, T* out)
+                        {
                             GPU_NTT(in, out, forward_rns.get(), d_moduli.get(),
                                     cfg_rns(FORWARD), batch, mod_count);
                         },
-                        [&](T* in, T* out) {
+                        [&](T* in, T* out)
+                        {
                             GPU_INTT(in, out, inverse_rns.get(), d_moduli.get(),
                                      cfg_rns(INVERSE), batch, mod_count);
                         });
                     check(
                         "modulus_ordered",
-                        [&](T* in, T* out) {
+                        [&](T* in, T* out)
+                        {
                             GPU_NTT_Modulus_Ordered(
                                 in, out, forward_rns.get(), d_moduli.get(),
                                 cfg_rns(FORWARD), batch, mod_count,
                                 d_modulus_order.get());
                         },
-                        [&](T* in, T* out) {
+                        [&](T* in, T* out)
+                        {
                             GPU_NTT_Modulus_Ordered(
                                 in, out, inverse_rns.get(), d_moduli.get(),
                                 cfg_rns(INVERSE), batch, mod_count,
@@ -1121,17 +1159,19 @@ namespace
                         });
                     check(
                         "poly_ordered",
-                        [&](T* in, T* out) {
-                            GPU_NTT_Poly_Ordered(
-                                in, out, forward_rns.get(), d_moduli.get(),
-                                cfg_rns(FORWARD), batch, mod_count,
-                                d_poly_order.get());
+                        [&](T* in, T* out)
+                        {
+                            GPU_NTT_Poly_Ordered(in, out, forward_rns.get(),
+                                                 d_moduli.get(),
+                                                 cfg_rns(FORWARD), batch,
+                                                 mod_count, d_poly_order.get());
                         },
-                        [&](T* in, T* out) {
-                            GPU_NTT_Poly_Ordered(
-                                in, out, inverse_rns.get(), d_moduli.get(),
-                                cfg_rns(INVERSE), batch, mod_count,
-                                d_poly_order.get());
+                        [&](T* in, T* out)
+                        {
+                            GPU_NTT_Poly_Ordered(in, out, inverse_rns.get(),
+                                                 d_moduli.get(),
+                                                 cfg_rns(INVERSE), batch,
+                                                 mod_count, d_poly_order.get());
                         });
 
                     // Signed input to the NTT and signed output of the INTT.
@@ -1160,9 +1200,8 @@ namespace
                         {
                             GPU_NTT(in.get(), out.get(), forward_single,
                                     params[0].modulus, cfg(FORWARD), batch);
-                            GPU_INTT(out.get(), back.get(),
-                                     inverse_single, params[0].modulus,
-                                     cfg(INVERSE), batch);
+                            GPU_INTT(out.get(), back.get(), inverse_single,
+                                     params[0].modulus, cfg(INVERSE), batch);
                         }
                         sync();
                         report.check(std::string(use_rns ? "signed rns"
