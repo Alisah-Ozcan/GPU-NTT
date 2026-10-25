@@ -328,63 +328,103 @@ namespace gpuntt
         }
     };
 
-    // The low ring size kernels transform several small polynomials per
-    // block; the single modulus and RNS variants share one body.
-
-    template <typename T, typename ModulusPolicy>
-    __device__ __forceinline__ void ForwardCoreLowRingBody(
-        T* polynomial_in, typename std::make_unsigned<T>::type* polynomial_out,
-        const Root<typename std::make_unsigned<T>::type>* root_of_unity_table,
-        ModulusPolicy modulus_policy, int shared_index, int N_power,
-        bool reduction_poly_check, int total_batch)
+    // The low ring size kernels transform blockDim.y polynomials per block;
+    // thread (x, y) owns coefficients x and x + N/2 of polynomial
+    // blockIdx.x * blockDim.y + y. The transform is split into load, execute
+    // and store steps that share the thread's state, so that the modulus is
+    // read from global memory only once. The single modulus and RNS variants
+    // differ only in the modulus policy.
+    template <typename TU> struct LowRingThread
     {
-        using TU = typename std::make_unsigned<T>::type;
+        bool active_batch;
+        int prime_index;
+        Modulus<TU> modulus;
+        Ninverse<TU> n_inverse;
+        location_t global_address;
+        int half_n;
+        int row_base;
+        int shared_address0;
+        int shared_address1;
+    };
 
+    // n_inverse is only read when WithNinverse is set (inverse transform).
+    template <bool WithNinverse, typename TU, typename ModulusPolicy>
+    __device__ __forceinline__ LowRingThread<TU>
+    LowRingThreadState(ModulusPolicy modulus_policy, int N_power,
+                       int total_batch)
+    {
         const int idx_x = threadIdx.x;
         const int idx_y = threadIdx.y;
         const int block_x = blockIdx.x;
         const int batch_index = (block_x * blockDim.y) + idx_y;
+
         const bool active_batch = (batch_index < total_batch);
         const int batch_index_safe = active_batch ? batch_index : 0;
 
         const int prime_index = modulus_policy.prime_index(batch_index_safe);
-
-        extern __shared__ char shared_memory_typed[];
-        TU* shared_memory = reinterpret_cast<TU*>(shared_memory_typed);
-
-        const Modulus<TU> modulus_reg = modulus_policy.get_modulus(prime_index);
-
-        int t_2 = N_power - 1;
-        int offset = idx_y << N_power;
-        int t_ = shared_index;
-        int m = 1;
+        const Modulus<TU> modulus = modulus_policy.get_modulus(prime_index);
+        Ninverse<TU> n_inverse = 0;
+        if constexpr (WithNinverse)
+        {
+            n_inverse = modulus_policy.get_n_inverse(prime_index);
+        }
 
         const int half_n = 1 << (N_power - 1);
         const int row_base = idx_y << N_power;
         const int shared_address0 = row_base + idx_x;
-        const int shared_address1 = shared_address0 + half_n;
-        location_t global_address =
+        const location_t global_address =
             idx_x + (location_t) (batch_index_safe << N_power);
 
-        location_t omega_address = idx_x;
+        // Modulus has no device default constructor, so the state is built
+        // in one aggregate initialization.
+        return LowRingThread<TU>{
+            active_batch, prime_index,     modulus,
+            n_inverse,    global_address,  half_n,
+            row_base,     shared_address0, shared_address0 + half_n};
+    }
 
-        // Load T from global & store to shared
+    // Copies the thread's two coefficients to shared memory; signed input is
+    // reduced to [0, q).
+    template <typename T>
+    __device__ __forceinline__ void LowRingLoad(
+        const LowRingThread<typename std::make_unsigned<T>::type>& thread,
+        typename std::make_unsigned<T>::type* shared_memory, T* polynomial_in)
+    {
+        using TU = typename std::make_unsigned<T>::type;
+
         if constexpr (std::is_signed<T>::value)
         {
-            T input1_reg = polynomial_in[global_address];
-            T input2_reg = polynomial_in[global_address + half_n];
-            shared_memory[shared_address0] =
-                OPERATOR_GPU<TU>::reduce(input1_reg, modulus_reg);
-            shared_memory[shared_address1] =
-                OPERATOR_GPU<TU>::reduce(input2_reg, modulus_reg);
+            T input1_reg = polynomial_in[thread.global_address];
+            T input2_reg = polynomial_in[thread.global_address + thread.half_n];
+            shared_memory[thread.shared_address0] =
+                OPERATOR_GPU<TU>::reduce(input1_reg, thread.modulus);
+            shared_memory[thread.shared_address1] =
+                OPERATOR_GPU<TU>::reduce(input2_reg, thread.modulus);
         }
         else
         {
-            shared_memory[shared_address0] = polynomial_in[global_address];
-            shared_memory[shared_address1] =
-                polynomial_in[global_address + half_n];
+            shared_memory[thread.shared_address0] =
+                polynomial_in[thread.global_address];
+            shared_memory[thread.shared_address1] =
+                polynomial_in[thread.global_address + thread.half_n];
         }
+    }
 
+    // Forward NTT of the block's polynomials in shared memory.
+    template <typename TU>
+    __device__ __forceinline__ void
+    ForwardLowRingExecute(const LowRingThread<TU>& thread, TU* shared_memory,
+                          const Root<TU>* root_of_unity_table, int shared_index,
+                          int N_power, bool reduction_poly_check)
+    {
+        const int idx_x = threadIdx.x;
+
+        int t_2 = N_power - 1;
+        int offset = thread.row_base;
+        int t_ = shared_index;
+        int m = 1;
+
+        location_t omega_address = idx_x;
         int shared_address = idx_x;
 
         int t = 1 << t_;
@@ -398,19 +438,21 @@ namespace gpuntt
             int group_in_shared_address = in_shared_address + offset;
             if (reduction_poly_check)
             { // X_N_minus
-                current_root_index = (omega_address >> t_2) +
-                                     (location_t) (prime_index << N_power);
+                current_root_index =
+                    (omega_address >> t_2) +
+                    (location_t) (thread.prime_index << N_power);
             }
             else
             { // X_N_plus
-                current_root_index = m + (omega_address >> t_2) +
-                                     (location_t) (prime_index << N_power);
+                current_root_index =
+                    m + (omega_address >> t_2) +
+                    (location_t) (thread.prime_index << N_power);
             }
 
             CooleyTukeyUnit(shared_memory[group_in_shared_address],
                             shared_memory[group_in_shared_address + t],
                             root_of_unity_table[current_root_index],
-                            modulus_reg);
+                            thread.modulus);
 
             t = t >> 1;
             t_2 -= 1;
@@ -423,62 +465,25 @@ namespace gpuntt
             }
             __syncthreads();
         }
-
-        __syncthreads();
-
-        if (active_batch)
-        {
-            polynomial_out[global_address] = shared_memory[shared_address0];
-            polynomial_out[global_address + half_n] =
-                shared_memory[shared_address1];
-        }
     }
 
-    template <typename T, typename ModulusPolicy>
-    __device__ __forceinline__ void InverseCoreLowRingBody(
-        typename std::make_unsigned<T>::type* polynomial_in, T* polynomial_out,
-        const Root<typename std::make_unsigned<T>::type>*
-            inverse_root_of_unity_table,
-        ModulusPolicy modulus_policy, int shared_index, int N_power,
-        bool reduction_poly_check, int total_batch)
+    // Inverse NTT of the block's polynomials in shared memory, without the
+    // scaling by N^-1 (done by InverseLowRingStore).
+    template <typename TU>
+    __device__ __forceinline__ void
+    InverseLowRingExecute(const LowRingThread<TU>& thread, TU* shared_memory,
+                          const Root<TU>* inverse_root_of_unity_table,
+                          int N_power, bool reduction_poly_check)
     {
-        using TU = typename std::make_unsigned<T>::type;
-
         const int idx_x = threadIdx.x;
-        const int idx_y = threadIdx.y;
-        const int block_x = blockIdx.x;
-        const int batch_index = (block_x * blockDim.y) + idx_y;
-        const bool active_batch = (batch_index < total_batch);
-        const int batch_index_safe = active_batch ? batch_index : 0;
-
-        const int prime_index = modulus_policy.prime_index(batch_index_safe);
-
-        extern __shared__ char shared_memory_typed[];
-        TU* shared_memory = reinterpret_cast<TU*>(shared_memory_typed);
-
-        const Modulus<TU> modulus_reg = modulus_policy.get_modulus(prime_index);
-        const Ninverse<TU> n_inverse_reg =
-            modulus_policy.get_n_inverse(prime_index);
 
         int t_2 = 0;
         int t_ = 0;
-        int offset = idx_y << N_power;
+        int offset = thread.row_base;
         int loops = N_power;
         int m = (int) 1 << (N_power - 1);
 
-        const int half_n = 1 << (N_power - 1);
-        const int row_base = idx_y << N_power;
-        const int shared_address0 = row_base + idx_x;
-        const int shared_address1 = shared_address0 + half_n;
-        location_t global_address =
-            idx_x + (location_t) (batch_index_safe << N_power);
-
         location_t omega_address = idx_x;
-
-        // Load T from global & store to shared
-        shared_memory[shared_address0] = polynomial_in[global_address];
-        shared_memory[shared_address1] = polynomial_in[global_address + half_n];
-
         int shared_address = idx_x;
 
         int t = 1 << t_;
@@ -492,19 +497,21 @@ namespace gpuntt
             int group_in_shared_address = in_shared_address + offset;
             if (reduction_poly_check)
             { // X_N_minus
-                current_root_index = (omega_address >> t_2) +
-                                     (location_t) (prime_index << N_power);
+                current_root_index =
+                    (omega_address >> t_2) +
+                    (location_t) (thread.prime_index << N_power);
             }
             else
             { // X_N_plus
-                current_root_index = m + (omega_address >> t_2) +
-                                     (location_t) (prime_index << N_power);
+                current_root_index =
+                    m + (omega_address >> t_2) +
+                    (location_t) (thread.prime_index << N_power);
             }
 
             GentlemanSandeUnit(shared_memory[group_in_shared_address],
                                shared_memory[group_in_shared_address + t],
                                inverse_root_of_unity_table[current_root_index],
-                               modulus_reg);
+                               thread.modulus);
 
             t = t << 1;
             t_2 += 1;
@@ -517,30 +524,103 @@ namespace gpuntt
             }
             __syncthreads();
         }
+    }
+
+    // Copies the thread's two coefficients back to global memory.
+    template <typename TU>
+    __device__ __forceinline__ void
+    ForwardLowRingStore(const LowRingThread<TU>& thread, TU* shared_memory,
+                        TU* polynomial_out)
+    {
         __syncthreads();
 
-        TU output1_reg = OPERATOR_GPU<TU>::mult(shared_memory[shared_address0],
-                                                n_inverse_reg, modulus_reg);
-        TU output2_reg = OPERATOR_GPU<TU>::mult(shared_memory[shared_address1],
-                                                n_inverse_reg, modulus_reg);
+        if (thread.active_batch)
+        {
+            polynomial_out[thread.global_address] =
+                shared_memory[thread.shared_address0];
+            polynomial_out[thread.global_address + thread.half_n] =
+                shared_memory[thread.shared_address1];
+        }
+    }
 
-        if (active_batch)
+    // Scales the thread's two coefficients by N^-1 and writes them to global
+    // memory; signed output is mapped to the centered range.
+    template <typename T>
+    __device__ __forceinline__ void InverseLowRingStore(
+        const LowRingThread<typename std::make_unsigned<T>::type>& thread,
+        typename std::make_unsigned<T>::type* shared_memory, T* polynomial_out)
+    {
+        using TU = typename std::make_unsigned<T>::type;
+
+        __syncthreads();
+
+        TU output1_reg =
+            OPERATOR_GPU<TU>::mult(shared_memory[thread.shared_address0],
+                                   thread.n_inverse, thread.modulus);
+        TU output2_reg =
+            OPERATOR_GPU<TU>::mult(shared_memory[thread.shared_address1],
+                                   thread.n_inverse, thread.modulus);
+
+        if (thread.active_batch)
         {
             if constexpr (std::is_signed<T>::value)
             {
-                polynomial_out[global_address] =
+                polynomial_out[thread.global_address] =
                     OPERATOR_GPU<TU>::centered_reduction(output1_reg,
-                                                         modulus_reg);
-                polynomial_out[global_address + half_n] =
+                                                         thread.modulus);
+                polynomial_out[thread.global_address + thread.half_n] =
                     OPERATOR_GPU<TU>::centered_reduction(output2_reg,
-                                                         modulus_reg);
+                                                         thread.modulus);
             }
             else
             {
-                polynomial_out[global_address] = output1_reg;
-                polynomial_out[global_address + half_n] = output2_reg;
+                polynomial_out[thread.global_address] = output1_reg;
+                polynomial_out[thread.global_address + thread.half_n] =
+                    output2_reg;
             }
         }
+    }
+
+    template <typename T, typename ModulusPolicy>
+    __device__ __forceinline__ void ForwardCoreLowRingBody(
+        T* polynomial_in, typename std::make_unsigned<T>::type* polynomial_out,
+        const Root<typename std::make_unsigned<T>::type>* root_of_unity_table,
+        ModulusPolicy modulus_policy, int shared_index, int N_power,
+        bool reduction_poly_check, int total_batch)
+    {
+        using TU = typename std::make_unsigned<T>::type;
+
+        extern __shared__ char shared_memory_typed[];
+        TU* shared_memory = reinterpret_cast<TU*>(shared_memory_typed);
+
+        const LowRingThread<TU> thread =
+            LowRingThreadState<false, TU>(modulus_policy, N_power, total_batch);
+        LowRingLoad(thread, shared_memory, polynomial_in);
+        ForwardLowRingExecute(thread, shared_memory, root_of_unity_table,
+                              shared_index, N_power, reduction_poly_check);
+        ForwardLowRingStore(thread, shared_memory, polynomial_out);
+    }
+
+    template <typename T, typename ModulusPolicy>
+    __device__ __forceinline__ void InverseCoreLowRingBody(
+        typename std::make_unsigned<T>::type* polynomial_in, T* polynomial_out,
+        const Root<typename std::make_unsigned<T>::type>*
+            inverse_root_of_unity_table,
+        ModulusPolicy modulus_policy, int shared_index, int N_power,
+        bool reduction_poly_check, int total_batch)
+    {
+        using TU = typename std::make_unsigned<T>::type;
+
+        extern __shared__ char shared_memory_typed[];
+        TU* shared_memory = reinterpret_cast<TU*>(shared_memory_typed);
+
+        const LowRingThread<TU> thread =
+            LowRingThreadState<true, TU>(modulus_policy, N_power, total_batch);
+        LowRingLoad(thread, shared_memory, polynomial_in);
+        InverseLowRingExecute(thread, shared_memory,
+                              inverse_root_of_unity_table, N_power,
+                              reduction_poly_check);
+        InverseLowRingStore(thread, shared_memory, polynomial_out);
     }
 
     template <typename T>
