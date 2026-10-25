@@ -22,4 +22,8 @@ foreach(bits 32 64)
                     --max-logn ${GPUNTT_TEST_MAX_LOGN}
         )
     endforeach()
+    # The large suites need about 3 GB of GPU memory each; run them one at a
+    # time.
+    set_tests_properties(merge_ntt_${bits}_large PROPERTIES
+        RESOURCE_LOCK merge_ntt_large)
 endforeach()
