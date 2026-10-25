@@ -51,9 +51,5 @@ namespace gpuntt
 
     void customAssert(bool condition, const std::string& errorMessage);
 
-    void CudaDevice();
-
-    template <typename T> bool check_result(T* input1, T* input2, int size);
-
 } // namespace gpuntt
 #endif // COMMON_NTT_H

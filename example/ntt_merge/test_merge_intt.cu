@@ -8,11 +8,13 @@
 
 #include "gpuntt/ntt_merge/ntt.cuh"
 #include "gpuntt/ntt_merge/ntt_cpu.cuh"
+#include "example_util.cuh"
 
 #define DEFAULT_MODULUS
 
 using namespace std;
 using namespace gpuntt;
+using namespace gpuntt_example;
 
 int LOGN;
 int BATCH;
