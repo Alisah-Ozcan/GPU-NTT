@@ -9,7 +9,7 @@
 #define NTT_CORE_H
 
 #include "cuda_runtime.h"
-#include "gpuntt/ntt_merge/ntt_cpu.cuh"
+#include "gpuntt/common/nttparameters.cuh"
 #include <functional>
 #include <unordered_map>
 

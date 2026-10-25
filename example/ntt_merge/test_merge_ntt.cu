@@ -7,6 +7,7 @@
 #include <random>
 
 #include "gpuntt/ntt_merge/ntt.cuh"
+#include "gpuntt/ntt_merge/ntt_cpu.cuh"
 
 #define DEFAULT_MODULUS
 

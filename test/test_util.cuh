@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "gpuntt/ntt_merge/ntt.cuh"
+#include "gpuntt/ntt_merge/ntt_cpu.cuh"
 
 namespace gpuntt_test
 {
