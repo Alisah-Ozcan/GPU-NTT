@@ -3112,8 +3112,8 @@ namespace gpuntt
                             dim3(current_kernel_params.blockdim_x,
                                  current_kernel_params.blockdim_y),
                             current_kernel_params.shared_memory, cfg.stream>>>(
-                            device_in, device_out, root_of_unity_table, modulus,
-                            current_kernel_params.shared_index,
+                            device_in_, device_out, root_of_unity_table,
+                            modulus, current_kernel_params.shared_index,
                             current_kernel_params.logm, current_kernel_params.k,
                             current_kernel_params.outer_iteration_count,
                             cfg.n_power, cfg.mod_inverse,
