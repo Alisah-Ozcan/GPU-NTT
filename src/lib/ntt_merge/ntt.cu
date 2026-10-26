@@ -1221,25 +1221,97 @@ namespace gpuntt
             reduction_poly_check);
     }
 
-    template <typename T>
-    __global__ void ForwardCoreTranspose(
-        T* polynomial_in, typename std::make_unsigned<T>::type* polynomial_out,
-        const Root<typename std::make_unsigned<
-            T>::type>* __restrict__ root_of_unity_table,
-        const Modulus<typename std::make_unsigned<T>::type> modulus,
-        int log_row, int log_column, bool reduction_poly_check)
-    {
-        using TU = typename std::make_unsigned<T>::type;
+    // The transpose kernels run the PerCoefficient NTT: the input is a
+    // 2^log_row x 2^log_column matrix and every column is one polynomial.
+    // Block x handles blockDim.x adjacent columns; thread (x, y) loads rows y
+    // and y + blockDim.y of column x into shared memory transposed, so that
+    // each column becomes 2^log_row contiguous coefficients. The butterflies
+    // of a column are then run by 2^(log_row - 1) consecutive threads of the
+    // block, so a thread may compute in a different column than the one it
+    // loads and stores. The RNS variant uses the modulus of each column and
+    // keeps one root table per column in shared memory; the single modulus
+    // variant keeps a single root table. Apart from loading the root tables,
+    // both variants share the load, execute and store steps.
 
+    // The 512 threads of a block hold 1024 coefficients in shared memory;
+    // the root tables follow them.
+    constexpr int kTransposeRootTableOffset = 1024;
+
+    template <typename TU> struct TransposeThread
+    {
+        // Modulus of the column the thread computes in.
+        Modulus<TU> modulus;
+        // Modulus and N^-1 of the column the thread loads and stores.
+        int io_prime_index;
+        Modulus<TU> io_modulus;
+        Ninverse<TU> io_n_inverse;
+        location_t global_address;
+        location_t global_offset;
+        int transpose_block;
+        int ntt_thread_index;
+        // Start of the computed column in shared memory and of its root
+        // table in the root table area.
+        int offset;
+        int root_offset;
+    };
+
+    // PerColumnRoots is set when every column has its own root table.
+    // io_n_inverse is only read when WithNinverse is set (inverse transform).
+    template <bool PerColumnRoots, bool WithNinverse, typename TU,
+              typename ModulusPolicy>
+    __device__ __forceinline__ TransposeThread<TU>
+    TransposeThreadState(ModulusPolicy modulus_policy, int log_row,
+                         int log_column)
+    {
         const int idx_x = threadIdx.x;
         const int idx_y = threadIdx.y;
         const int block_x = blockIdx.x;
+        const int column_base = blockDim.x * block_x;
 
-        extern __shared__ char shared_memory_typed[];
-        TU* shared_memory = reinterpret_cast<TU*>(shared_memory_typed);
-        TU* root_shared_memory = shared_memory + (1024);
+        const int block_thread_index = idx_x + (idx_y * blockDim.x);
+        const int ntt_thread_index =
+            block_thread_index & ((1 << (log_row - 1)) - 1);
+        const int ntt_block_index = block_thread_index >> (log_row - 1);
+        const int offset = ntt_block_index << log_row;
 
-        const Modulus<TU> modulus_thread = modulus;
+        const int prime_index =
+            modulus_policy.prime_index(column_base + ntt_block_index);
+        const int io_prime_index =
+            modulus_policy.prime_index(column_base + idx_x);
+        const Modulus<TU> modulus = modulus_policy.get_modulus(prime_index);
+        const Modulus<TU> io_modulus =
+            modulus_policy.get_modulus(io_prime_index);
+        Ninverse<TU> io_n_inverse = 0;
+        if constexpr (WithNinverse)
+        {
+            io_n_inverse = modulus_policy.get_n_inverse(io_prime_index);
+        }
+
+        const location_t global_address =
+            (idx_y << log_column) + (blockDim.x * block_x) + idx_x;
+        const location_t global_offset = (blockDim.y << log_column);
+        const int transpose_block = idx_y + (idx_x * (2 * blockDim.y));
+
+        // Modulus has no device default constructor, so the state is built
+        // in one aggregate initialization.
+        return TransposeThread<TU>{
+            modulus,         io_prime_index,
+            io_modulus,      io_n_inverse,
+            global_address,  global_offset,
+            transpose_block, ntt_thread_index,
+            offset,          PerColumnRoots ? offset : 0};
+    }
+
+    // Single modulus: the threads of column 0 load the one root table.
+    template <typename TU>
+    __device__ __forceinline__ void
+    TransposeLoadRoots(TU* shared_memory, const Root<TU>* root_of_unity_table,
+                       bool reduction_poly_check)
+    {
+        const int idx_x = threadIdx.x;
+        const int idx_y = threadIdx.y;
+
+        TU* root_shared_memory = shared_memory + kTransposeRootTableOffset;
 
         if (idx_x == 0)
         {
@@ -1254,39 +1326,83 @@ namespace gpuntt
                     root_of_unity_table[idx_y + blockDim.y];
             }
         }
+    }
 
-        location_t global_address =
-            (idx_y << log_column) + (blockDim.x * block_x) + idx_x;
-        location_t global_offset = (blockDim.y << log_column);
+    // RNS: the threads of column x load the root table of the column's
+    // modulus to root_shared_memory[x << log_row].
+    template <typename TU>
+    __device__ __forceinline__ void
+    TransposeLoadColumnRoots(const TransposeThread<TU>& thread,
+                             TU* shared_memory,
+                             const Root<TU>* root_of_unity_table, int log_row,
+                             bool reduction_poly_check)
+    {
+        const int idx_x = threadIdx.x;
+        const int idx_y = threadIdx.y;
+
+        TU* root_shared_memory = shared_memory + kTransposeRootTableOffset;
+
+        const location_t root_src = (location_t) thread.io_prime_index
+                                    << log_row;
+        const int root_dst = idx_x << log_row;
+        if (reduction_poly_check)
+        { // X_N_minus
+            root_shared_memory[root_dst + idx_y] =
+                root_of_unity_table[root_src + idx_y];
+        }
+        else
+        { // X_N_plus
+            root_shared_memory[root_dst + idx_y] =
+                root_of_unity_table[root_src + idx_y];
+            root_shared_memory[root_dst + idx_y + blockDim.y] =
+                root_of_unity_table[root_src + idx_y + blockDim.y];
+        }
+    }
+
+    // Copies the thread's two coefficients to shared memory, transposed;
+    // signed input is reduced to [0, q).
+    template <typename T>
+    __device__ __forceinline__ void TransposeLoad(
+        const TransposeThread<typename std::make_unsigned<T>::type>& thread,
+        typename std::make_unsigned<T>::type* shared_memory, T* polynomial_in)
+    {
+        using TU = typename std::make_unsigned<T>::type;
+
+        if constexpr (std::is_signed<T>::value)
+        {
+            T input1_reg = polynomial_in[thread.global_address];
+            T input2_reg =
+                polynomial_in[thread.global_address + thread.global_offset];
+            shared_memory[thread.transpose_block] =
+                OPERATOR_GPU<TU>::reduce(input1_reg, thread.io_modulus);
+            shared_memory[thread.transpose_block + blockDim.y] =
+                OPERATOR_GPU<TU>::reduce(input2_reg, thread.io_modulus);
+        }
+        else
+        {
+            shared_memory[thread.transpose_block] =
+                polynomial_in[thread.global_address];
+            shared_memory[thread.transpose_block + blockDim.y] =
+                polynomial_in[thread.global_address + thread.global_offset];
+        }
+    }
+
+    // Forward NTT of the block's columns in shared memory. Ends with a
+    // block barrier.
+    template <typename TU>
+    __device__ __forceinline__ void
+    ForwardTransposeExecute(const TransposeThread<TU>& thread,
+                            TU* shared_memory, int log_row,
+                            bool reduction_poly_check)
+    {
+        const TU* root_shared_memory =
+            shared_memory + kTransposeRootTableOffset;
 
         int t_ = log_row - 1;
         int m = 1;
 
-        // Load T from global & store to shared
-        const int transpose_block = idx_y + (idx_x * (2 * blockDim.y));
-        if constexpr (std::is_signed<T>::value)
-        {
-            T input1_reg = polynomial_in[global_address];
-            T input2_reg = polynomial_in[global_address + global_offset];
-            shared_memory[transpose_block] =
-                OPERATOR_GPU<TU>::reduce(input1_reg, modulus_thread);
-            shared_memory[transpose_block + blockDim.y] =
-                OPERATOR_GPU<TU>::reduce(input2_reg, modulus_thread);
-        }
-        else
-        {
-            shared_memory[transpose_block] = polynomial_in[global_address];
-            shared_memory[transpose_block + blockDim.y] =
-                polynomial_in[global_address + global_offset];
-        }
-
-        const int block_thread_index = idx_x + (idx_y * blockDim.x);
-        const int ntt_thread_index = block_thread_index & ((1 << t_) - 1);
-        const int ntt_block_index = block_thread_index >> t_;
-        int offset = ntt_block_index << log_row;
-
-        int shared_address = ntt_thread_index;
-        int omega_address = ntt_thread_index;
+        int shared_address = thread.ntt_thread_index;
+        int omega_address = thread.ntt_thread_index;
         int t = 1 << t_;
         int in_shared_address = ((shared_address >> t_) << t_) + shared_address;
         location_t current_root_index;
@@ -1297,22 +1413,23 @@ namespace gpuntt
 #pragma unroll
         for (int lp = 0; lp < (log_row - 6); lp++)
         {
-            int group_in_shared_address = in_shared_address + offset;
+            int group_in_shared_address = in_shared_address + thread.offset;
 
             if (reduction_poly_check)
             { // X_N_minus
-                current_root_index = (omega_address >> t_);
+                current_root_index = (omega_address >> t_) + thread.root_offset;
             }
             else
             { // X_N_plus
-                current_root_index = m + (omega_address >> t_);
+                current_root_index =
+                    m + (omega_address >> t_) + thread.root_offset;
             }
 
             Root<TU> root = root_shared_memory[current_root_index];
 
             CooleyTukeyUnit(shared_memory[group_in_shared_address],
                             shared_memory[group_in_shared_address + t], root,
-                            modulus_thread);
+                            thread.modulus);
 
             t = t >> 1;
             t_ -= 1;
@@ -1325,22 +1442,23 @@ namespace gpuntt
 #pragma unroll
         for (int lp = 0; lp < loop; lp++)
         {
-            int group_in_shared_address = in_shared_address + offset;
+            int group_in_shared_address = in_shared_address + thread.offset;
 
             if (reduction_poly_check)
             { // X_N_minus
-                current_root_index = (omega_address >> t_);
+                current_root_index = (omega_address >> t_) + thread.root_offset;
             }
             else
             { // X_N_plus
-                current_root_index = m + (omega_address >> t_);
+                current_root_index =
+                    m + (omega_address >> t_) + thread.root_offset;
             }
 
             Root<TU> root = root_shared_memory[current_root_index];
 
             CooleyTukeyUnit(shared_memory[group_in_shared_address],
                             shared_memory[group_in_shared_address + t], root,
-                            modulus_thread);
+                            thread.modulus);
 
             t = t >> 1;
             t_ -= 1;
@@ -1350,10 +1468,129 @@ namespace gpuntt
         }
 
         __syncthreads();
+    }
 
-        polynomial_out[global_address] = shared_memory[transpose_block];
-        polynomial_out[global_address + global_offset] =
-            shared_memory[transpose_block + blockDim.y];
+    // Inverse NTT of the block's columns in shared memory, without the
+    // scaling by N^-1 (done by InverseTransposeStore). Ends with a block
+    // barrier.
+    template <typename TU>
+    __device__ __forceinline__ void
+    InverseTransposeExecute(const TransposeThread<TU>& thread,
+                            TU* shared_memory, int log_row,
+                            bool reduction_poly_check)
+    {
+        const TU* root_shared_memory =
+            shared_memory + kTransposeRootTableOffset;
+
+        int t_ = 0;
+        int loops = log_row;
+        int m = (int) 1 << (log_row - 1);
+
+        int omega_address = thread.ntt_thread_index;
+        int shared_address = thread.ntt_thread_index;
+        int t = 1 << t_;
+        int in_shared_address = ((shared_address >> t_) << t_) + shared_address;
+        location_t current_root_index;
+        __syncthreads();
+
+#pragma unroll
+        for (int lp = 0; lp < loops; lp++)
+        {
+            int group_in_shared_address = in_shared_address + thread.offset;
+
+            if (reduction_poly_check)
+            { // X_N_minus
+                current_root_index = (omega_address >> t_) + thread.root_offset;
+            }
+            else
+            { // X_N_plus
+                current_root_index =
+                    m + (omega_address >> t_) + thread.root_offset;
+            }
+
+            Root<TU> root = root_shared_memory[current_root_index];
+
+            GentlemanSandeUnit(shared_memory[group_in_shared_address],
+                               shared_memory[group_in_shared_address + t], root,
+                               thread.modulus);
+
+            t = t << 1;
+            t_ += 1;
+            m >>= 1;
+
+            in_shared_address = ((shared_address >> t_) << t_) + shared_address;
+            __syncthreads();
+        }
+    }
+
+    // Copies the thread's two coefficients back to global memory.
+    template <typename TU>
+    __device__ __forceinline__ void
+    ForwardTransposeStore(const TransposeThread<TU>& thread, TU* shared_memory,
+                          TU* polynomial_out)
+    {
+        polynomial_out[thread.global_address] =
+            shared_memory[thread.transpose_block];
+        polynomial_out[thread.global_address + thread.global_offset] =
+            shared_memory[thread.transpose_block + blockDim.y];
+    }
+
+    // Scales the thread's two coefficients by N^-1 of their column and
+    // writes them to global memory; signed output is mapped to the centered
+    // range.
+    template <typename T>
+    __device__ __forceinline__ void InverseTransposeStore(
+        const TransposeThread<typename std::make_unsigned<T>::type>& thread,
+        typename std::make_unsigned<T>::type* shared_memory, T* polynomial_out)
+    {
+        using TU = typename std::make_unsigned<T>::type;
+
+        TU output1_reg =
+            OPERATOR_GPU<TU>::mult(shared_memory[thread.transpose_block],
+                                   thread.io_n_inverse, thread.io_modulus);
+        TU output2_reg = OPERATOR_GPU<TU>::mult(
+            shared_memory[thread.transpose_block + blockDim.y],
+            thread.io_n_inverse, thread.io_modulus);
+
+        if constexpr (std::is_signed<T>::value)
+        {
+            polynomial_out[thread.global_address] =
+                OPERATOR_GPU<TU>::centered_reduction(output1_reg,
+                                                     thread.io_modulus);
+            polynomial_out[thread.global_address + thread.global_offset] =
+                OPERATOR_GPU<TU>::centered_reduction(output2_reg,
+                                                     thread.io_modulus);
+        }
+        else
+        {
+            polynomial_out[thread.global_address] = output1_reg;
+            polynomial_out[thread.global_address + thread.global_offset] =
+                output2_reg;
+        }
+    }
+
+    template <typename T>
+    __global__ void ForwardCoreTranspose(
+        T* polynomial_in, typename std::make_unsigned<T>::type* polynomial_out,
+        const Root<typename std::make_unsigned<
+            T>::type>* __restrict__ root_of_unity_table,
+        const Modulus<typename std::make_unsigned<T>::type> modulus,
+        int log_row, int log_column, bool reduction_poly_check)
+    {
+        using TU = typename std::make_unsigned<T>::type;
+
+        extern __shared__ char shared_memory_typed[];
+        TU* shared_memory = reinterpret_cast<TU*>(shared_memory_typed);
+
+        const TransposeThread<TU> thread =
+            TransposeThreadState<false, false, TU>(SingleModulus<TU>{modulus},
+                                                   log_row, log_column);
+        TransposeLoadRoots(shared_memory, root_of_unity_table,
+                           reduction_poly_check);
+        TransposeLoad(thread, shared_memory, polynomial_in);
+        ForwardTransposeExecute(thread, shared_memory, log_row,
+                                reduction_poly_check);
+        ForwardTransposeStore(thread, shared_memory, polynomial_out);
     }
 
     template <typename T>
@@ -1366,140 +1603,18 @@ namespace gpuntt
     {
         using TU = typename std::make_unsigned<T>::type;
 
-        const int idx_x = threadIdx.x;
-        const int idx_y = threadIdx.y;
-        const int block_x = blockIdx.x;
-
         extern __shared__ char shared_memory_typed[];
         TU* shared_memory = reinterpret_cast<TU*>(shared_memory_typed);
-        TU* root_shared_memory = shared_memory + (1024);
 
-        // Each column of the block (one NTT) keeps the root table of its own
-        // modulus at root_shared_memory[column << log_row].
-        const int column_base = blockDim.x * block_x;
-        const int load_mod_index = (column_base + idx_x) % mod_count;
-        const Modulus<TU> load_modulus = modulus[load_mod_index];
-        {
-            const location_t root_src = (location_t) load_mod_index << log_row;
-            const int root_dst = idx_x << log_row;
-            if (reduction_poly_check)
-            { // X_N_minus
-                root_shared_memory[root_dst + idx_y] =
-                    root_of_unity_table[root_src + idx_y];
-            }
-            else
-            { // X_N_plus
-                root_shared_memory[root_dst + idx_y] =
-                    root_of_unity_table[root_src + idx_y];
-                root_shared_memory[root_dst + idx_y + blockDim.y] =
-                    root_of_unity_table[root_src + idx_y + blockDim.y];
-            }
-        }
-
-        location_t global_address =
-            (idx_y << log_column) + (blockDim.x * block_x) + idx_x;
-        location_t global_offset = (blockDim.y << log_column);
-
-        int t_ = log_row - 1;
-        int m = 1;
-
-        const int block_thread_index = idx_x + (idx_y * blockDim.x);
-        const int ntt_thread_index = block_thread_index & ((1 << t_) - 1);
-        const int ntt_block_index = block_thread_index >> t_;
-        int offset = ntt_block_index << log_row;
-
-        const int mod_index = (column_base + ntt_block_index) % mod_count;
-        const int root_offset = ntt_block_index << log_row;
-
-        const Modulus<TU> modulus_thread = modulus[mod_index];
-
-        // Load T from global & store to shared
-        const int transpose_block = idx_y + (idx_x * (2 * blockDim.y));
-        if constexpr (std::is_signed<T>::value)
-        {
-            T input1_reg = polynomial_in[global_address];
-            T input2_reg = polynomial_in[global_address + global_offset];
-            shared_memory[transpose_block] =
-                OPERATOR_GPU<TU>::reduce(input1_reg, load_modulus);
-            shared_memory[transpose_block + blockDim.y] =
-                OPERATOR_GPU<TU>::reduce(input2_reg, load_modulus);
-        }
-        else
-        {
-            shared_memory[transpose_block] = polynomial_in[global_address];
-            shared_memory[transpose_block + blockDim.y] =
-                polynomial_in[global_address + global_offset];
-        }
-
-        int shared_address = ntt_thread_index;
-        int omega_address = ntt_thread_index;
-        int t = 1 << t_;
-        int in_shared_address = ((shared_address >> t_) << t_) + shared_address;
-        location_t current_root_index;
-        __syncthreads();
-
-        int loop = ((log_row - 6) <= 0) ? log_row : 6;
-
-#pragma unroll
-        for (int lp = 0; lp < (log_row - 6); lp++)
-        {
-            int group_in_shared_address = in_shared_address + offset;
-
-            if (reduction_poly_check)
-            { // X_N_minus
-                current_root_index = (omega_address >> t_) + root_offset;
-            }
-            else
-            { // X_N_plus
-                current_root_index = m + (omega_address >> t_) + root_offset;
-            }
-
-            Root<TU> root = root_shared_memory[current_root_index];
-
-            CooleyTukeyUnit(shared_memory[group_in_shared_address],
-                            shared_memory[group_in_shared_address + t], root,
-                            modulus_thread);
-
-            t = t >> 1;
-            t_ -= 1;
-            m <<= 1;
-
-            in_shared_address = ((shared_address >> t_) << t_) + shared_address;
-            __syncthreads();
-        }
-
-#pragma unroll
-        for (int lp = 0; lp < loop; lp++)
-        {
-            int group_in_shared_address = in_shared_address + offset;
-
-            if (reduction_poly_check)
-            { // X_N_minus
-                current_root_index = (omega_address >> t_) + root_offset;
-            }
-            else
-            { // X_N_plus
-                current_root_index = m + (omega_address >> t_) + root_offset;
-            }
-
-            Root<TU> root = root_shared_memory[current_root_index];
-
-            CooleyTukeyUnit(shared_memory[group_in_shared_address],
-                            shared_memory[group_in_shared_address + t], root,
-                            modulus_thread);
-
-            t = t >> 1;
-            t_ -= 1;
-            m <<= 1;
-
-            in_shared_address = ((shared_address >> t_) << t_) + shared_address;
-        }
-
-        __syncthreads();
-
-        polynomial_out[global_address] = shared_memory[transpose_block];
-        polynomial_out[global_address + global_offset] =
-            shared_memory[transpose_block + blockDim.y];
+        const TransposeThread<TU> thread =
+            TransposeThreadState<true, false, TU>(
+                RnsModulus<TU>{modulus, mod_count}, log_row, log_column);
+        TransposeLoadColumnRoots(thread, shared_memory, root_of_unity_table,
+                                 log_row, reduction_poly_check);
+        TransposeLoad(thread, shared_memory, polynomial_in);
+        ForwardTransposeExecute(thread, shared_memory, log_row,
+                                reduction_poly_check);
+        ForwardTransposeStore(thread, shared_memory, polynomial_out);
     }
 
     template <typename T>
@@ -1513,107 +1628,18 @@ namespace gpuntt
     {
         using TU = typename std::make_unsigned<T>::type;
 
-        const int idx_x = threadIdx.x;
-        const int idx_y = threadIdx.y;
-        const int block_x = blockIdx.x;
-
         extern __shared__ char shared_memory_typed[];
         TU* shared_memory = reinterpret_cast<TU*>(shared_memory_typed);
-        TU* root_shared_memory = shared_memory + (1024);
 
-        if (idx_x == 0)
-        {
-            if (reduction_poly_check)
-            { // X_N_minus
-                root_shared_memory[idx_y] = inverse_root_of_unity_table[idx_y];
-            }
-            else
-            { // X_N_plus
-                root_shared_memory[idx_y] = inverse_root_of_unity_table[idx_y];
-                root_shared_memory[idx_y + blockDim.y] =
-                    inverse_root_of_unity_table[idx_y + blockDim.y];
-            }
-        }
-
-        const Modulus<TU> modulus_thread = modulus;
-        const Ninverse<TU> n_inverse_thread = n_inverse;
-
-        location_t global_address =
-            (idx_y << log_column) + (blockDim.x * block_x) + idx_x;
-        location_t global_offset = (blockDim.y << log_column);
-
-        int t_ = 0;
-        int loops = log_row;
-        int m = (int) 1 << (log_row - 1);
-
-        // Load T from global & store to shared
-        const int transpose_block = idx_y + (idx_x * (2 * blockDim.y));
-        shared_memory[transpose_block] = polynomial_in[global_address];
-        shared_memory[transpose_block + blockDim.y] =
-            polynomial_in[global_address + global_offset];
-
-        int log_row_r = log_row - 1;
-        const int block_thread_index = idx_x + (idx_y * blockDim.x);
-        const int ntt_thread_index =
-            block_thread_index & ((1 << log_row_r) - 1);
-        const int ntt_block_index = block_thread_index >> log_row_r;
-        int offset = ntt_block_index << log_row;
-
-        int omega_address = ntt_thread_index;
-        int shared_address = ntt_thread_index;
-        int t = 1 << t_;
-        int in_shared_address = ((shared_address >> t_) << t_) + shared_address;
-        location_t current_root_index;
-        __syncthreads();
-
-#pragma unroll
-        for (int lp = 0; lp < loops; lp++)
-        {
-            int group_in_shared_address = in_shared_address + offset;
-
-            if (reduction_poly_check)
-            { // X_N_minus
-                current_root_index = (omega_address >> t_);
-            }
-            else
-            { // X_N_plus
-                current_root_index = m + (omega_address >> t_);
-            }
-
-            Root<TU> root = root_shared_memory[current_root_index];
-
-            GentlemanSandeUnit(shared_memory[group_in_shared_address],
-                               shared_memory[group_in_shared_address + t], root,
-                               modulus_thread);
-
-            t = t << 1;
-            t_ += 1;
-            m >>= 1;
-
-            in_shared_address = ((shared_address >> t_) << t_) + shared_address;
-            __syncthreads();
-        }
-
-        TU output1_reg = OPERATOR_GPU<TU>::mult(
-            shared_memory[transpose_block], n_inverse_thread, modulus_thread);
-        TU output2_reg =
-            OPERATOR_GPU<TU>::mult(shared_memory[transpose_block + blockDim.y],
-                                   n_inverse_thread, modulus_thread);
-
-        if constexpr (std::is_signed<T>::value)
-        {
-            polynomial_out[global_address] =
-                OPERATOR_GPU<TU>::centered_reduction(output1_reg,
-                                                     modulus_thread);
-            polynomial_out[global_address + global_offset] =
-                OPERATOR_GPU<TU>::centered_reduction(output2_reg,
-                                                     modulus_thread);
-        }
-        else
-        {
-            polynomial_out[global_address] = output1_reg;
-            polynomial_out[global_address + global_offset] = output2_reg;
-        }
+        const TransposeThread<TU> thread =
+            TransposeThreadState<false, true, TU>(
+                SingleModulus<TU>{modulus, n_inverse}, log_row, log_column);
+        TransposeLoadRoots(shared_memory, inverse_root_of_unity_table,
+                           reduction_poly_check);
+        TransposeLoad(thread, shared_memory, polynomial_in);
+        InverseTransposeExecute(thread, shared_memory, log_row,
+                                reduction_poly_check);
+        InverseTransposeStore(thread, shared_memory, polynomial_out);
     }
 
     template <typename T>
@@ -1627,119 +1653,18 @@ namespace gpuntt
     {
         using TU = typename std::make_unsigned<T>::type;
 
-        const int idx_x = threadIdx.x;
-        const int idx_y = threadIdx.y;
-        const int block_x = blockIdx.x;
-
         extern __shared__ char shared_memory_typed[];
         TU* shared_memory = reinterpret_cast<TU*>(shared_memory_typed);
-        TU* root_shared_memory = shared_memory + (1024);
 
-        // Each column of the block (one NTT) keeps the root table of its own
-        // modulus at root_shared_memory[column << log_row].
-        const int column_base = blockDim.x * block_x;
-        const int store_mod_index = (column_base + idx_x) % mod_count;
-        {
-            const location_t root_src = (location_t) store_mod_index << log_row;
-            const int root_dst = idx_x << log_row;
-            if (reduction_poly_check)
-            { // X_N_minus
-                root_shared_memory[root_dst + idx_y] =
-                    inverse_root_of_unity_table[root_src + idx_y];
-            }
-            else
-            { // X_N_plus
-                root_shared_memory[root_dst + idx_y] =
-                    inverse_root_of_unity_table[root_src + idx_y];
-                root_shared_memory[root_dst + idx_y + blockDim.y] =
-                    inverse_root_of_unity_table[root_src + idx_y + blockDim.y];
-            }
-        }
-
-        location_t global_address =
-            (idx_y << log_column) + (blockDim.x * block_x) + idx_x;
-        location_t global_offset = (blockDim.y << log_column);
-
-        int t_ = 0;
-        int loops = log_row;
-        int m = (int) 1 << (log_row - 1);
-
-        // Load T from global & store to shared
-        const int transpose_block = idx_y + (idx_x * (2 * blockDim.y));
-        shared_memory[transpose_block] = polynomial_in[global_address];
-        shared_memory[transpose_block + blockDim.y] =
-            polynomial_in[global_address + global_offset];
-
-        int log_row_r = log_row - 1;
-        const int block_thread_index = idx_x + (idx_y * blockDim.x);
-        const int ntt_thread_index =
-            block_thread_index & ((1 << log_row_r) - 1);
-        const int ntt_block_index = block_thread_index >> log_row_r;
-        int offset = ntt_block_index << log_row;
-
-        const int mod_index = (column_base + ntt_block_index) % mod_count;
-        const int root_offset = ntt_block_index << log_row;
-
-        const Modulus<TU> modulus_thread = modulus[mod_index];
-        const Modulus<TU> store_modulus = modulus[store_mod_index];
-        const Ninverse<TU> store_n_inverse = n_inverse[store_mod_index];
-
-        int omega_address = ntt_thread_index;
-        int shared_address = ntt_thread_index;
-        int t = 1 << t_;
-        int in_shared_address = ((shared_address >> t_) << t_) + shared_address;
-        location_t current_root_index;
-        __syncthreads();
-
-#pragma unroll
-        for (int lp = 0; lp < loops; lp++)
-        {
-            int group_in_shared_address = in_shared_address + offset;
-
-            if (reduction_poly_check)
-            { // X_N_minus
-                current_root_index = (omega_address >> t_) + root_offset;
-            }
-            else
-            { // X_N_plus
-                current_root_index = m + (omega_address >> t_) + root_offset;
-            }
-
-            Root<TU> root = root_shared_memory[current_root_index];
-
-            GentlemanSandeUnit(shared_memory[group_in_shared_address],
-                               shared_memory[group_in_shared_address + t], root,
-                               modulus_thread);
-
-            t = t << 1;
-            t_ += 1;
-            m >>= 1;
-
-            in_shared_address = ((shared_address >> t_) << t_) + shared_address;
-            __syncthreads();
-        }
-
-        // The thread stores its own column, so it uses that column's modulus.
-        TU output1_reg = OPERATOR_GPU<TU>::mult(shared_memory[transpose_block],
-                                                store_n_inverse, store_modulus);
-        TU output2_reg =
-            OPERATOR_GPU<TU>::mult(shared_memory[transpose_block + blockDim.y],
-                                   store_n_inverse, store_modulus);
-
-        if constexpr (std::is_signed<T>::value)
-        {
-            polynomial_out[global_address] =
-                OPERATOR_GPU<TU>::centered_reduction(output1_reg,
-                                                     store_modulus);
-            polynomial_out[global_address + global_offset] =
-                OPERATOR_GPU<TU>::centered_reduction(output2_reg,
-                                                     store_modulus);
-        }
-        else
-        {
-            polynomial_out[global_address] = output1_reg;
-            polynomial_out[global_address + global_offset] = output2_reg;
-        }
+        const TransposeThread<TU> thread = TransposeThreadState<true, true, TU>(
+            RnsModulus<TU>{modulus, mod_count, n_inverse}, log_row, log_column);
+        TransposeLoadColumnRoots(thread, shared_memory,
+                                 inverse_root_of_unity_table, log_row,
+                                 reduction_poly_check);
+        TransposeLoad(thread, shared_memory, polynomial_in);
+        InverseTransposeExecute(thread, shared_memory, log_row,
+                                reduction_poly_check);
+        InverseTransposeStore(thread, shared_memory, polynomial_out);
     }
 
     // The tables are built once, on first use, and only read afterwards.
