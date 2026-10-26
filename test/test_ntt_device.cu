@@ -6,7 +6,9 @@
 // Tests the single kernel device API (NTT().load / execute / store) against
 // the host API: a kernel written with a description must produce exactly the
 // output of GPU_NTT / GPU_INTT on the same data. The data and root tables
-// are random, so the comparison covers every butterfly.
+// are random, so the comparison covers every butterfly. A fused kernel
+// (NTT, pointwise product, INTT) is checked against the same steps run
+// through the host API.
 
 #include "gpuntt/ntt_merge/descriptor.cuh"
 #include "gpuntt/ntt_merge/ntt.cuh"
@@ -105,6 +107,52 @@ namespace
         NTT().store(shared_memory, out + offset, modulus, n_inverse, num_polys);
     }
 
+    // Polynomial multiplication in one kernel: forward NTT of a, pointwise
+    // product with b_hat (b in the NTT domain) in shared memory, inverse NTT.
+    template <typename Fwd, typename Inv>
+    __global__ void fused_multiply_kernel(
+        typename Fwd::value_type* a, const typename Fwd::value_type* b_hat,
+        typename Fwd::value_type* out,
+        const Root<typename Fwd::value_type>* roots,
+        const Root<typename Fwd::value_type>* inverse_roots,
+        Modulus<typename Fwd::value_type> modulus,
+        Ninverse<typename Fwd::value_type> n_inverse, int batch)
+    {
+        using T = typename Fwd::value_type;
+        extern __shared__ char shared_memory_raw[];
+        T* shared_memory = reinterpret_cast<T*>(shared_memory_raw);
+
+        const int first = blockIdx.x * Fwd::batches_per_block;
+        const int num_polys = min(Fwd::batches_per_block, batch - first);
+        const size_t offset = size_t(first) * Fwd::size;
+
+        Fwd().load(shared_memory, a + offset, modulus, num_polys);
+        Fwd().execute(shared_memory, roots, modulus);
+
+        const int threads = blockDim.x * blockDim.y;
+        for (int i = threadIdx.x + threadIdx.y * blockDim.x;
+             i < num_polys * Fwd::size; i += threads)
+        {
+            shared_memory[i] = OPERATOR_GPU<T>::mult(
+                shared_memory[i], b_hat[offset + i], modulus);
+        }
+        __syncthreads();
+
+        Inv().execute(shared_memory, inverse_roots, modulus);
+        Inv().store(shared_memory, out + offset, modulus, n_inverse, num_polys);
+    }
+
+    template <typename T>
+    __global__ void multiply_kernel(T* a, const T* b, Modulus<T> modulus,
+                                    size_t total)
+    {
+        const size_t i = size_t(blockIdx.x) * blockDim.x + threadIdx.x;
+        if (i < total)
+        {
+            a[i] = OPERATOR_GPU<T>::mult(a[i], b[i], modulus);
+        }
+    }
+
     template <typename T> std::vector<T> random_below(size_t n, T bound)
     {
         std::vector<T> values(n);
@@ -190,6 +238,66 @@ namespace
         }
     }
 
+    // The fused kernel must match GPU_NTT, a pointwise product and GPU_INTT
+    // run as separate steps.
+    template <typename T, int LogN, ReductionPolynomial R> void run_fused()
+    {
+        using Fwd = decltype(Size<(1 << LogN)>() + Direction<FORWARD>() +
+                             Precision<T>() + ReductionPoly<R>() + Block());
+        using Inv = decltype(Size<(1 << LogN)>() + Direction<INVERSE>() +
+                             Precision<T>() + ReductionPoly<R>() + Block());
+        static_assert(Fwd::batches_per_block == Inv::batches_per_block &&
+                      Fwd::shared_memory_size == Inv::shared_memory_size);
+
+        constexpr int n = 1 << LogN;
+        const int batch = 2 * Fwd::batches_per_block + 1;
+        const size_t total = size_t(batch) * n;
+
+        const int max_bits = std::is_same<T, Data32>::value ? 30 : 61;
+        const T top = T(1) << (max_bits - 1);
+        const T p = top + (static_cast<T>(rng() % top) | 1);
+        const Modulus<T> modulus(p);
+        const T n_inverse = static_cast<T>(rng() % p);
+
+        DeviceBuffer<T> roots(random_below<T>(n, p));
+        DeviceBuffer<T> inverse_roots(random_below<T>(n, p));
+        DeviceBuffer<T> a(random_below<T>(total, p));
+        DeviceBuffer<T> b(random_below<T>(total, p));
+
+        ntt_configuration<T> fwd_cfg = {.n_power = LogN,
+                                        .ntt_type = FORWARD,
+                                        .ntt_layout = PerPolynomial,
+                                        .reduction_poly = R,
+                                        .mod_inverse = n_inverse,
+                                        .stream = 0};
+        ntt_configuration<T> inv_cfg = fwd_cfg;
+        inv_cfg.ntt_type = INVERSE;
+
+        DeviceBuffer<T> b_hat(total), a_hat(total), expected(total),
+            actual(total);
+        GPU_NTT(b.data, b_hat.data, roots.data, modulus, fwd_cfg, batch);
+        GPU_NTT(a.data, a_hat.data, roots.data, modulus, fwd_cfg, batch);
+        multiply_kernel<<<(total + 255) / 256, 256>>>(a_hat.data, b_hat.data,
+                                                      modulus, total);
+        GPU_INTT(a_hat.data, expected.data, inverse_roots.data, modulus,
+                 inv_cfg, batch);
+
+        fused_multiply_kernel<Fwd, Inv>
+            <<<Fwd::grid(batch), Fwd::block_dim, Fwd::shared_memory_size>>>(
+                a.data, b_hat.data, actual.data, roots.data, inverse_roots.data,
+                modulus, n_inverse, batch);
+        check_cuda(cudaGetLastError(), "launch");
+
+        cases++;
+        if (expected.read() != actual.read())
+        {
+            failures++;
+            std::printf("FAIL fused multiply %s logn=%d %s batch=%d\n",
+                        sizeof(T) == 4 ? "u32" : "u64", LogN,
+                        R == X_N_minus ? "X^N-1" : "X^N+1", batch);
+        }
+    }
+
     template <typename T, typename TIO, int LogN> void run_size()
     {
         run_case<T, TIO, LogN, FORWARD, X_N_minus>();
@@ -218,6 +326,14 @@ int main()
     run_size<Data64, Data64s, 4>();
     run_size<Data64, Data64s, 9>();
     run_size<Data64, Data64s, 10>();
+
+    // NTT, pointwise product and INTT fused in one kernel.
+    run_fused<Data32, 4, X_N_minus>();
+    run_fused<Data32, 8, X_N_plus>();
+    run_fused<Data32, 10, X_N_minus>();
+    run_fused<Data64, 4, X_N_plus>();
+    run_fused<Data64, 8, X_N_minus>();
+    run_fused<Data64, 10, X_N_plus>();
 
     std::printf("ntt_device: %d of %d cases match the host API\n",
                 cases - failures, cases);
