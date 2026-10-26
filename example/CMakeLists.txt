@@ -4,6 +4,7 @@ set(EXECUTABLES
     gpu_merge_ntt_examples ntt_merge/test_merge_ntt.cu
     gpu_merge_intt_examples ntt_merge/test_merge_intt.cu
     cpu_merge_ntt_examples ntt_merge/test_cpu_merge_ntt.cu
+    gpu_device_api_examples ntt_merge/test_device_api.cu
 )
 
 function(add_example exe source)

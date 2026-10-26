@@ -84,6 +84,12 @@ Run GPU examples:
 # Example: ./build/bin/example/gpu_merge_ntt_examples 12 1
 ```
 
+Run the device API example (see [Device API](#device-api)):
+
+```bash
+./build/bin/example/gpu_device_api_examples <BATCH_SIZE>
+```
+
 #### Tests
 
 The tests compare every merge NTT host API variant (single modulus, RNS, signed input/output, column-wise, modulus/poly ordered; in-place and out-of-place) against the CPU reference for 32-bit and 64-bit data.
@@ -148,6 +154,98 @@ set_target_properties(<your-target> PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
 ```
 
 All GPU-NTT types and functions are in the `gpuntt` namespace. For compatibility, the arithmetic types (`Data32`, `Data64`, `Modulus`, `OPERATOR`, `OPERATOR_GPU`, `Root`, `Ninverse`, ...) are also available in the global namespace; define `GPUNTT_NO_GLOBAL_ALIASES` to disable them.
+
+## Device API
+
+Besides the host functions (`GPU_NTT`, `GPU_INTT`, ...), GPU-NTT can run the NTT inside your own kernels. Other work on the data, such as a pointwise product, then runs in the same kernel without an extra round trip through global memory. An NTT is described at compile time as a sum of operators:
+
+```cpp
+#include "gpuntt/ntt_merge/descriptor.cuh"
+using namespace gpuntt;
+
+using NTT = decltype(Size<1024>() + Direction<FORWARD>() + Precision<Data64>() +
+                     ReductionPoly<X_N_plus>() + Block());
+```
+
+| Operator | Required | Meaning |
+|---|---|---|
+| `Size<N>` | yes | Ring size, a power of two in [2, 2^28]. |
+| `Direction<FORWARD>`, `Direction<INVERSE>` | yes | |
+| `Precision<Data32>`, `Precision<Data64>` | yes | Coefficient type. `load` also accepts signed input (`Data32s`, `Data64s`) and the inverse `store` can write signed output. |
+| `ReductionPoly<X_N_minus>`, `ReductionPoly<X_N_plus>` | for `execute` | X^N - 1 or X^N + 1. |
+| `Block` | no | The NTT is computed by a thread block. |
+| `BatchesPerBlock<B>` | no | Polynomials per block, only for N up to 2^9. The default comes from the tuned kernel table. |
+| `BlockDim<N / 2, B>` | no | Same as `BatchesPerBlock<B>`. |
+| `Layout<PerPolynomial>` | no | Only `PerPolynomial` is supported. |
+| `SM<890>` | no | Accepted; all architectures currently use the same tuned kernel tables. |
+
+Each operator may appear once; invalid descriptions fail to compile with a `static_assert` message. The device functions live in headers and are inlined into your kernel, so the device API needs neither relocatable device code (`-rdc`) nor link-time optimization. The root tables, the modulus and N^-1 are the ones the host API takes, e.g. from `NTTParameters`: `gpu_root_of_unity_table_generator(forward_root_of_unity_table)` (or `inverse_root_of_unity_table`), `modulus` and `n_inv`.
+
+### Ring sizes up to 2^10: one kernel
+
+Block `b` transforms the `B = NTT::batches_per_block` polynomials that start at `data + b * B * N`:
+
+```cpp
+__global__ void my_ntt(Data64* data, const Root<Data64>* roots,
+                       Modulus<Data64> modulus, int batch)
+{
+    extern __shared__ char shared_memory_raw[];
+    Data64* shared_memory = reinterpret_cast<Data64*>(shared_memory_raw);
+
+    const int first = blockIdx.x * NTT::batches_per_block;
+    const int num_polys = min(NTT::batches_per_block, batch - first);
+    Data64* polys = data + size_t(first) * NTT::size;
+
+    NTT().load(shared_memory, polys, modulus, num_polys);
+    NTT().execute(shared_memory, roots, modulus);
+    // ... your own work on shared_memory, then __syncthreads() ...
+    NTT().store(shared_memory, polys, num_polys);
+}
+
+my_ntt<<<NTT::grid(batch), NTT::block_dim, NTT::shared_memory_size>>>(
+    data, roots, modulus, batch);
+```
+
+- Shared memory holds the block's polynomials one after another (polynomial `j` at `shared_memory + j * N`), with coefficients in the same order as in global memory. After the forward `execute` they are in the order of the `GPU_NTT` output, so element-wise work can use `OPERATOR_GPU<T>::add`, `sub` and `mult` directly.
+- `execute` ends with a block barrier. Code that writes shared memory between `execute` and `store` (or another `execute`) must end with `__syncthreads()`.
+- The inverse `execute` leaves N · INTT(x) in shared memory; the inverse `store(shared_memory, data, modulus, n_inverse, num_polys)` multiplies by `n_inverse` = N^-1 while writing, which saves a pass over shared memory.
+- `num_polys` (at most B) is the number of polynomials of a last block that is not full.
+
+### Larger ring sizes: one kernel per stage
+
+Larger transforms run as `NTT::num_stages` kernels. Stage kernels transform polynomial `blockIdx.z` of the batch:
+
+```cpp
+using BigNTT = decltype(Size<(1 << 16)>() + Direction<FORWARD>() +
+                        Precision<Data64>() + ReductionPoly<X_N_plus>() + Block());
+
+template <int I>
+__global__ void my_stage(Data64* in, Data64* out, const Root<Data64>* roots,
+                         Modulus<Data64> modulus)
+{
+    extern __shared__ char shared_memory_raw[];
+    Data64* shared_memory = reinterpret_cast<Data64*>(shared_memory_raw);
+
+    BigNTT::stage<I>().load(shared_memory, in, modulus);
+    BigNTT::stage<I>().execute(shared_memory, roots, modulus);
+    BigNTT::stage<I>().store(shared_memory, out);
+}
+
+// For I = 0, 1, ..., BigNTT::num_stages - 1, in order. Stage 0 reads `in`; every
+// stage writes `out`, which the later stages read and write in place.
+using Stage = BigNTT::stage<I>;
+my_stage<I><<<Stage::grid(batch), Stage::block_dim, Stage::shared_memory_size>>>(
+    I == 0 ? in : out, out, roots, modulus);
+```
+
+- The last inverse stage (`BigNTT::stage<I>::last`) stores with `store(shared_memory, out, modulus, n_inverse)`.
+- A stage holds a strided part of each polynomial in shared memory, so element-wise work with other polynomials fits best in the single kernel sizes or in a separate kernel.
+
+### RNS
+
+There is no separate RNS interface: pick the modulus of each polynomial yourself and pass the matching part of the root table, which holds the roots of prime `i` at offset `i << log2(N)`. For example, in a stage kernel `modulus = moduli[blockIdx.z % mod_count]` and `roots + (size_t(blockIdx.z % mod_count) << log2(N))`. In the single kernel API this needs `BatchesPerBlock<1>`, since all polynomials of a block share one modulus.
+
+A complete example (fused polynomial multiplication modulo X^N + 1, checked against schoolbook multiplication, and a staged NTT) is in [`example/ntt_merge/test_device_api.cu`](example/ntt_merge/test_device_api.cu); the device API tests are in [`test/test_ntt_device.cu`](test/test_ntt_device.cu).
 
 ## How to Cite GPU-NTT
 
