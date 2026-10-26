@@ -11,7 +11,6 @@
 #include "cuda_runtime.h"
 #include "gpuntt/common/nttparameters.cuh"
 #include <functional>
-#include <unordered_map>
 
 // --------------------- //
 // Authors: Alisah Ozcan
