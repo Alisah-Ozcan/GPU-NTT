@@ -439,21 +439,34 @@ namespace gpuntt
 
     constexpr int kLowRingMaxLogN = 9;
 
-    // Launch parameters of kernel I of an NTT of ring size 2^LogN. Ring sizes
-    // up to 2^kLowRingMaxLogN use the low ring kernel, which transforms B
-    // polynomials per block; larger ones use one or more stage kernels, which
-    // transform one polynomial per grid z index.
-    template <typename T, type D, int LogN, int I, int B> struct NTTStage
+    // Launch parameters and device functions of kernel I of an NTT of ring
+    // size 2^LogN. Ring sizes up to 2^kLowRingMaxLogN use the low ring
+    // kernel, which transforms B polynomials per block (use the single kernel
+    // API for them); larger ones use one or more stage kernels. A stage
+    // kernel transforms part of polynomial blockIdx.z of data: launch kernel
+    // I with grid(batch), block_dim and shared_memory_size, in order I = 0,
+    // 1, ..., num_stages - 1. Kernel 0 reads the input; every kernel writes
+    // the output array, which the later kernels read and write in place.
+    // Inside kernel I:
+    //
+    //   NTT::stage<I>().load(shared_memory, data, modulus);
+    //   NTT::stage<I>().execute(shared_memory, roots, modulus);
+    //   NTT::stage<I>().store(shared_memory, out);
+    //
+    // The last inverse kernel stores with store(shared_memory, out, modulus,
+    // n_inverse). For RNS, pick the modulus of polynomial blockIdx.z and
+    // pass roots + (prime_index << LogN) as the root table.
+    template <typename T, type D, int LogN, int I, int B, bool HasReductionPoly,
+              ReductionPolynomial R>
+    struct NTTStage
     {
-        static_assert(I >= 0 &&
-                          I < (D == FORWARD ? forward_kernel_table<T>
-                                            : inverse_kernel_table<T>) [LogN]
-                                  .size(),
-                      "Stage index out of range");
-
-        static constexpr KernelConfig config =
+        static constexpr KernelStages stages =
             (D == FORWARD ? forward_kernel_table<T>
-                          : inverse_kernel_table<T>) [LogN][I];
+                          : inverse_kernel_table<T>) [LogN];
+
+        static_assert(I >= 0 && I < stages.size(), "Stage index out of range");
+
+        static constexpr KernelConfig config = stages[I];
 
         static constexpr bool low_ring = (LogN <= kLowRingMaxLogN);
 
@@ -468,6 +481,97 @@ namespace gpuntt
         {
             return low_ring ? dim3((batch + B - 1) / B)
                             : dim3(config.griddim_x, config.griddim_y, batch);
+        }
+
+        static constexpr bool last = (I + 1 == stages.size());
+
+        // For log2(ring size) >= 25 the last forward and the first inverse
+        // kernel swap the roles of blockIdx.x and blockIdx.y (the host API's
+        // _ kernels); grid() already accounts for it.
+        static constexpr bool swap_grid_axes =
+            LogN >= 25 && (D == FORWARD ? last : I == 0);
+
+        template <typename TIn>
+        __device__ __forceinline__ void load(T* shared_memory, TIn* data,
+                                             Modulus<T> modulus) const
+        {
+            static_assert(!low_ring, "Use the single kernel API for Size up "
+                                     "to 2^9");
+            static_assert(
+                std::is_same<std::make_unsigned_t<TIn>, T>::value,
+                "The input must be the description's Precision or its "
+                "signed type");
+            StageLoad(thread(modulus, 0), shared_memory, data);
+        }
+
+        __device__ __forceinline__ void execute(T* shared_memory,
+                                                const Root<T>* roots,
+                                                Modulus<T> modulus) const
+        {
+            static_assert(!low_ring, "Use the single kernel API for Size up "
+                                     "to 2^9");
+            static_assert(HasReductionPoly,
+                          "execute needs the ReductionPoly operator");
+            constexpr bool x_n_minus = (R == X_N_minus);
+            if constexpr (D == FORWARD)
+            {
+                ForwardStageExecute(thread(modulus, 0), shared_memory, roots,
+                                    config.shared_index, config.logm,
+                                    config.outer_iteration_count, LogN,
+                                    config.not_last_kernel, x_n_minus);
+            }
+            else
+            {
+                InverseStageExecute<true>(
+                    thread(modulus, 0), shared_memory, roots,
+                    config.shared_index, config.logm,
+                    config.outer_iteration_count, LogN, x_n_minus);
+            }
+        }
+
+        __device__ __forceinline__ void store(T* shared_memory, T* data) const
+        {
+            static_assert(!low_ring, "Use the single kernel API for Size up "
+                                     "to 2^9");
+            static_assert(D == FORWARD || !last,
+                          "The last inverse store needs modulus and n_inverse");
+            if constexpr (D == FORWARD)
+            {
+                ForwardStageStore(thread(Modulus<T>(), 0), shared_memory, data);
+            }
+            else
+            {
+                InverseStageStore(thread(Modulus<T>(), 0), shared_memory, data,
+                                  false);
+            }
+        }
+
+        template <typename TOut>
+        __device__ __forceinline__ void store(T* shared_memory, TOut* data,
+                                              Modulus<T> modulus,
+                                              Ninverse<T> n_inverse) const
+        {
+            static_assert(!low_ring, "Use the single kernel API for Size up "
+                                     "to 2^9");
+            static_assert(D == INVERSE && last,
+                          "Only the last inverse store takes modulus and "
+                          "n_inverse");
+            static_assert(
+                std::is_same<std::make_unsigned_t<TOut>, T>::value,
+                "The output must be the description's Precision or its "
+                "signed type");
+            InverseStageStore(thread(modulus, n_inverse), shared_memory, data,
+                              true);
+        }
+
+      private:
+        __device__ __forceinline__ static StageThread<T>
+        thread(Modulus<T> modulus, Ninverse<T> n_inverse)
+        {
+            return StageThreadState<swap_grid_axes, D == INVERSE, T>(
+                SingleModulus<T>{modulus, n_inverse}, SequentialPolys{},
+                D == FORWARD ? config.logm : config.k,
+                config.outer_iteration_count, LogN);
         }
     };
 
@@ -781,7 +885,9 @@ namespace gpuntt
 
         template <int I>
         using stage =
-            NTTStage<value_type, direction, log_size, I, batches_per_block>;
+            NTTStage<value_type, direction, log_size, I, batches_per_block,
+                     !std::is_void<reduction_op>::value,
+                     reduction_value<reduction_op>()>;
 
         using single_kernel =
             NTTSingleKernel<value_type, direction, log_size, batches_per_block,

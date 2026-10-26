@@ -3,9 +3,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Developer: Alişah Özcan
 
-// Tests the single kernel device API (NTT().load / execute / store) against
-// the host API: a kernel written with a description must produce exactly the
-// output of GPU_NTT / GPU_INTT on the same data. The data and root tables
+// Tests the device API (NTT().load / execute / store and the per stage
+// NTT::stage<I>() functions) against the host API: kernels written with a
+// description must produce exactly the output of GPU_NTT / GPU_INTT on the
+// same data. The data and root tables
 // are random, so the comparison covers every butterfly. A fused kernel
 // (NTT, pointwise product, INTT) is checked against the same steps run
 // through the host API.
@@ -153,6 +154,79 @@ namespace
         }
     }
 
+    // Kernel I of a multi-kernel NTT. Kernel 0 reads the input; the others
+    // read and write the output in place. The last inverse kernel scales by
+    // N^-1 and may write signed output.
+    template <typename NTT, int I, typename TIn, typename TOut>
+    __global__ void stage_kernel(TIn* in, TOut* out,
+                                 const Root<typename NTT::value_type>* roots,
+                                 Modulus<typename NTT::value_type> modulus,
+                                 Ninverse<typename NTT::value_type> n_inverse)
+    {
+        using T = typename NTT::value_type;
+        using Stage = typename NTT::template stage<I>;
+        extern __shared__ char shared_memory_raw[];
+        T* shared_memory = reinterpret_cast<T*>(shared_memory_raw);
+
+        Stage().load(shared_memory, in, modulus);
+        Stage().execute(shared_memory, roots, modulus);
+        if constexpr (NTT::direction == INVERSE && Stage::last)
+        {
+            Stage().store(shared_memory, out, modulus, n_inverse);
+        }
+        else
+        {
+            Stage().store(shared_memory, out);
+        }
+    }
+
+    template <typename NTT, int I, typename TIn, typename TOut>
+    void launch_stage(TIn* in, TOut* out,
+                      const Root<typename NTT::value_type>* roots,
+                      Modulus<typename NTT::value_type> modulus,
+                      Ninverse<typename NTT::value_type> n_inverse, int batch)
+    {
+        using T = typename NTT::value_type;
+        using Stage = typename NTT::template stage<I>;
+        T* out_unsigned = reinterpret_cast<T*>(out);
+        auto stage_in = [&]
+        {
+            if constexpr (I == 0)
+            {
+                return in;
+            }
+            else
+            {
+                return out_unsigned;
+            }
+        }();
+        auto stage_out = [&]
+        {
+            if constexpr (NTT::direction == INVERSE && Stage::last)
+            {
+                return out;
+            }
+            else
+            {
+                return out_unsigned;
+            }
+        }();
+        stage_kernel<NTT, I><<<Stage::grid(batch), Stage::block_dim,
+                               Stage::shared_memory_size>>>(
+            stage_in, stage_out, roots, modulus, n_inverse);
+        check_cuda(cudaGetLastError(), "launch");
+    }
+
+    template <typename NTT, typename TIn, typename TOut, int... I>
+    void launch_stages(TIn* in, TOut* out,
+                       const Root<typename NTT::value_type>* roots,
+                       Modulus<typename NTT::value_type> modulus,
+                       Ninverse<typename NTT::value_type> n_inverse, int batch,
+                       std::integer_sequence<int, I...>)
+    {
+        (launch_stage<NTT, I>(in, out, roots, modulus, n_inverse, batch), ...);
+    }
+
     template <typename T> std::vector<T> random_below(size_t n, T bound)
     {
         std::vector<T> values(n);
@@ -166,7 +240,8 @@ namespace
     // Runs one description on random data and compares it with the host
     // API. TIO is the signed or unsigned type of the input (forward) or the
     // output (inverse).
-    template <typename T, typename TIO, int LogN, type D, ReductionPolynomial R>
+    template <bool Staged, typename T, typename TIO, int LogN, type D,
+              ReductionPolynomial R>
     void run_case()
     {
         using NTT = decltype(Size<(1 << LogN)>() + Direction<D>() +
@@ -205,10 +280,19 @@ namespace
             DeviceBuffer<TIO> in(signed_input);
             DeviceBuffer<T> reference(total), out(total);
             GPU_NTT(in.data, reference.data, roots.data, modulus, cfg, batch);
-            forward_kernel<NTT>
-                <<<NTT::grid(batch), NTT::block_dim, NTT::shared_memory_size>>>(
+            if constexpr (Staged)
+            {
+                launch_stages<NTT>(
+                    in.data, out.data, roots.data, modulus, n_inverse, batch,
+                    std::make_integer_sequence<int, NTT::num_stages>());
+            }
+            else
+            {
+                forward_kernel<NTT><<<NTT::grid(batch), NTT::block_dim,
+                                      NTT::shared_memory_size>>>(
                     in.data, out.data, roots.data, modulus, batch);
-            check_cuda(cudaGetLastError(), "launch");
+                check_cuda(cudaGetLastError(), "launch");
+            }
             const std::vector<T> e = reference.read(), a = out.read();
             expected.assign(e.begin(), e.end());
             actual.assign(a.begin(), a.end());
@@ -218,10 +302,19 @@ namespace
             DeviceBuffer<T> in(input);
             DeviceBuffer<TIO> reference(total), out(total);
             GPU_INTT(in.data, reference.data, roots.data, modulus, cfg, batch);
-            inverse_kernel<NTT>
-                <<<NTT::grid(batch), NTT::block_dim, NTT::shared_memory_size>>>(
+            if constexpr (Staged)
+            {
+                launch_stages<NTT>(
+                    in.data, out.data, roots.data, modulus, n_inverse, batch,
+                    std::make_integer_sequence<int, NTT::num_stages>());
+            }
+            else
+            {
+                inverse_kernel<NTT><<<NTT::grid(batch), NTT::block_dim,
+                                      NTT::shared_memory_size>>>(
                     in.data, out.data, roots.data, modulus, n_inverse, batch);
-            check_cuda(cudaGetLastError(), "launch");
+                check_cuda(cudaGetLastError(), "launch");
+            }
             expected = reference.read();
             actual = out.read();
         }
@@ -230,7 +323,8 @@ namespace
         if (expected != actual)
         {
             failures++;
-            std::printf("FAIL %s logn=%d %s %s%s batch=%d\n",
+            std::printf("FAIL %s %s logn=%d %s %s%s batch=%d\n",
+                        Staged ? "stages" : "single kernel",
                         sizeof(T) == 4 ? "u32" : "u64", LogN,
                         D == FORWARD ? "forward" : "inverse",
                         R == X_N_minus ? "X^N-1" : "X^N+1",
@@ -298,26 +392,36 @@ namespace
         }
     }
 
-    template <typename T, typename TIO, int LogN> void run_size()
+    template <typename T, typename TIO, int LogN, bool Staged = false>
+    void run_size()
     {
-        run_case<T, TIO, LogN, FORWARD, X_N_minus>();
-        run_case<T, TIO, LogN, FORWARD, X_N_plus>();
-        run_case<T, TIO, LogN, INVERSE, X_N_minus>();
-        run_case<T, TIO, LogN, INVERSE, X_N_plus>();
+        run_case<Staged, T, TIO, LogN, FORWARD, X_N_minus>();
+        run_case<Staged, T, TIO, LogN, FORWARD, X_N_plus>();
+        run_case<Staged, T, TIO, LogN, INVERSE, X_N_minus>();
+        run_case<Staged, T, TIO, LogN, INVERSE, X_N_plus>();
     }
 
-    template <typename T, int... LogN>
+    template <typename T, int First, bool Staged, int... LogN>
     void run_sizes(std::integer_sequence<int, LogN...>)
     {
-        (run_size<T, T, LogN + 1>(), ...);
+        (run_size<T, T, First + LogN, Staged>(), ...);
     }
 } // namespace
 
 int main()
 {
     // Every single kernel ring size, 2^1 ... 2^10.
-    run_sizes<Data32>(std::make_integer_sequence<int, 10>());
-    run_sizes<Data64>(std::make_integer_sequence<int, 10>());
+    run_sizes<Data32, 1, false>(std::make_integer_sequence<int, 10>());
+    run_sizes<Data64, 1, false>(std::make_integer_sequence<int, 10>());
+
+    // Stage kernels, 2^10 ... 2^20 and 2^25 (whose first or last kernel
+    // swaps the grid axes).
+    run_sizes<Data32, 10, true>(std::make_integer_sequence<int, 11>());
+    run_sizes<Data64, 10, true>(std::make_integer_sequence<int, 11>());
+    run_size<Data32, Data32, 25, true>();
+    run_size<Data64, Data64, 25, true>();
+    run_size<Data32, Data32s, 12, true>();
+    run_size<Data64, Data64s, 25, true>();
 
     // Signed input (forward) and output (inverse).
     run_size<Data32, Data32s, 4>();

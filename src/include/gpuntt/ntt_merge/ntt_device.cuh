@@ -634,7 +634,14 @@ namespace gpuntt
     // Inverse butterflies of one stage in shared memory, without the scaling
     // by N^-1 (done by InverseStageStore in the last stage). Ends with a
     // block barrier.
-    template <typename TU>
+    //
+    // With PrefetchRoots each root is loaded an iteration ahead, so that its
+    // latency overlaps the barrier and the butterfly of the previous
+    // iteration: when the loop count is a compile-time constant and the loop
+    // is fully unrolled, the compiler does not move the loads across
+    // __syncthreads() by itself. With a run-time loop count (the host API
+    // kernels) the compiler pipelines the loads better on its own.
+    template <bool PrefetchRoots = false, typename TU>
     __device__ __forceinline__ void
     InverseStageExecute(const StageThread<TU>& thread, TU* shared_memory,
                         const Root<TU>* inverse_root_of_unity_table,
@@ -651,35 +658,77 @@ namespace gpuntt
 
         int t = 1 << t_;
         int in_shared_address = ((shared_address >> t_) << t_) + shared_address;
-        location_t current_root_index;
-#pragma unroll
-        for (int lp = 0; lp < loops; lp++)
+        if constexpr (PrefetchRoots)
         {
-            __syncthreads();
-            if (reduction_poly_check)
-            { // X_N_minus
-                current_root_index =
-                    (omega_address >> t_2) +
+            auto root_index = [&](int level_shift, location_t level_m)
+            {
+                const location_t prime_offset =
                     (location_t) (thread.prime_index << N_power);
+                return reduction_poly_check // X_N_minus : X_N_plus
+                           ? (omega_address >> level_shift) + prime_offset
+                           : level_m + (omega_address >> level_shift) +
+                                 prime_offset;
+            };
+            Root<TU> next_root =
+                inverse_root_of_unity_table[root_index(t_2, m)];
+#pragma unroll
+            for (int lp = 0; lp < loops; lp++)
+            {
+                __syncthreads();
+                const Root<TU> root = next_root;
+                if (lp + 1 < loops)
+                {
+                    next_root = inverse_root_of_unity_table[root_index(t_2 + 1,
+                                                                       m >> 1)];
+                }
+
+                GentlemanSandeUnit(shared_memory[in_shared_address],
+                                   shared_memory[in_shared_address + t], root,
+                                   thread.modulus);
+
+                t = t << 1;
+                t_2 += 1;
+                t_ += 1;
+                m >>= 1;
+
+                in_shared_address =
+                    ((shared_address >> t_) << t_) + shared_address;
             }
-            else
-            { // X_N_plus
-                current_root_index =
-                    m + (omega_address >> t_2) +
-                    (location_t) (thread.prime_index << N_power);
+        }
+        else
+        {
+            location_t current_root_index;
+#pragma unroll
+            for (int lp = 0; lp < loops; lp++)
+            {
+                __syncthreads();
+                if (reduction_poly_check)
+                { // X_N_minus
+                    current_root_index =
+                        (omega_address >> t_2) +
+                        (location_t) (thread.prime_index << N_power);
+                }
+                else
+                { // X_N_plus
+                    current_root_index =
+                        m + (omega_address >> t_2) +
+                        (location_t) (thread.prime_index << N_power);
+                }
+
+                GentlemanSandeUnit(
+                    shared_memory[in_shared_address],
+                    shared_memory[in_shared_address + t],
+                    inverse_root_of_unity_table[current_root_index],
+                    thread.modulus);
+
+                t = t << 1;
+                t_2 += 1;
+                t_ += 1;
+                m >>= 1;
+
+                in_shared_address =
+                    ((shared_address >> t_) << t_) + shared_address;
             }
-
-            GentlemanSandeUnit(shared_memory[in_shared_address],
-                               shared_memory[in_shared_address + t],
-                               inverse_root_of_unity_table[current_root_index],
-                               thread.modulus);
-
-            t = t << 1;
-            t_2 += 1;
-            t_ += 1;
-            m >>= 1;
-
-            in_shared_address = ((shared_address >> t_) << t_) + shared_address;
         }
         __syncthreads();
     }
