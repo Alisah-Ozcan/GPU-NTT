@@ -876,35 +876,45 @@ namespace gpuntt
                 in_shared_address =
                     ((shared_address >> t_) << t_) + shared_address;
             }
-            __syncthreads();
 
+            // In the last 6 butterfly levels (t = 32 ... 1) warp w only
+            // touches shared memory entries 64 * w ... 64 * w + 63, so a warp
+            // barrier between the levels is enough. The warp barriers also
+            // order global memory accesses, so the roots of these levels are
+            // loaded up front to keep the loads overlapped.
+            Root<TU> last_roots[6];
 #pragma unroll
             for (int lp = 0; lp < 6; lp++)
             {
                 if (reduction_poly_check)
                 { // X_N_minus
                     current_root_index =
-                        (omega_address >> t_2) +
+                        (omega_address >> (t_2 - lp)) +
                         (location_t) (thread.prime_index << N_power);
                 }
                 else
                 { // X_N_plus
                     current_root_index =
-                        m + (omega_address >> t_2) +
+                        (m << lp) + (omega_address >> (t_2 - lp)) +
                         (location_t) (thread.prime_index << N_power);
                 }
+                last_roots[lp] = root_of_unity_table[current_root_index];
+            }
+            __syncthreads();
+
+#pragma unroll
+            for (int lp = 0; lp < 6; lp++)
+            {
                 CooleyTukeyUnit(shared_memory[in_shared_address],
                                 shared_memory[in_shared_address + t],
-                                root_of_unity_table[current_root_index],
-                                thread.modulus);
+                                last_roots[lp], thread.modulus);
 
                 t = t >> 1;
-                t_2 -= 1;
                 t_ -= 1;
-                m <<= 1;
 
                 in_shared_address =
                     ((shared_address >> t_) << t_) + shared_address;
+                __syncwarp();
             }
             __syncthreads();
         }
@@ -1439,6 +1449,10 @@ namespace gpuntt
             __syncthreads();
         }
 
+        // In the last levels (t <= 32) each group of 64 entries is computed
+        // by one warp: by warp w at offset 64 * w if log_row >= 6, otherwise
+        // a whole column of at most 32 entries by at most 16 consecutive
+        // threads. A warp barrier between the levels is therefore enough.
 #pragma unroll
         for (int lp = 0; lp < loop; lp++)
         {
@@ -1465,6 +1479,7 @@ namespace gpuntt
             m <<= 1;
 
             in_shared_address = ((shared_address >> t_) << t_) + shared_address;
+            __syncwarp();
         }
 
         __syncthreads();
