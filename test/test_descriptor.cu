@@ -54,6 +54,67 @@ static_assert(
     std::is_same<get_or_default_t<NTTOperator::BlockDim, FwdNTT, BlockDim<512>>,
                  BlockDim<512>>::value);
 
+constexpr bool same_dim(dim3 d, unsigned x, unsigned y, unsigned z)
+{
+    return d.x == x && d.y == y && d.z == z;
+}
+
+template <typename T, typename = void> struct has_block_dim : std::false_type
+{
+};
+
+template <typename T>
+struct has_block_dim<T, std::void_t<decltype(T::block_dim)>> : std::true_type
+{
+};
+
+// A partial description has no members.
+static_assert(!has_block_dim<decltype(Size<256>() + Block())>::value);
+
+// 2^12 forward, Data64: two stage kernels (kernel table entry 12).
+static_assert(FwdNTT::size == 4096 && FwdNTT::log_size == 12);
+static_assert(FwdNTT::direction == FORWARD);
+static_assert(std::is_same<FwdNTT::value_type, Data64>::value);
+static_assert(FwdNTT::num_stages == 2 && FwdNTT::batches_per_block == 1);
+static_assert(same_dim(FwdNTT::stage<0>::block_dim, 64, 4, 1));
+static_assert(same_dim(FwdNTT::stage<0>::grid(3), 8, 1, 3));
+static_assert(FwdNTT::stage<0>::shared_memory_size == 512 * sizeof(Data64));
+static_assert(same_dim(FwdNTT::stage<1>::block_dim, 256, 1, 1));
+static_assert(same_dim(FwdNTT::stage<1>::grid(3), 1, 8, 3));
+static_assert(!has_block_dim<FwdNTT>::value);
+
+// The inverse runs the stages in the opposite order.
+using InvNTT = decltype(Size<4096>() + Direction<INVERSE>() +
+                        Precision<Data64>() + Block());
+static_assert(same_dim(InvNTT::stage<0>::block_dim, 256, 1, 1));
+static_assert(same_dim(InvNTT::stage<1>::block_dim, 64, 4, 1));
+
+// 2^8: low ring kernel, 2 polynomials per block by default.
+using Small = decltype(Size<256>() + Direction<FORWARD>() +
+                       Precision<Data32>() + Block());
+static_assert(Small::num_stages == 1 && Small::batches_per_block == 2);
+static_assert(same_dim(Small::block_dim, 128, 2, 1));
+static_assert(Small::shared_memory_size == 512 * sizeof(Data32));
+static_assert(same_dim(Small::grid(5), 3, 1, 1));
+
+using SmallBatches = decltype(Small() + BatchesPerBlock<4>());
+static_assert(SmallBatches::batches_per_block == 4);
+static_assert(same_dim(SmallBatches::block_dim, 128, 4, 1));
+static_assert(SmallBatches::shared_memory_size == 1024 * sizeof(Data32));
+static_assert(same_dim(SmallBatches::grid(5), 2, 1, 1));
+
+using SmallBlockDim = decltype(Small() + BlockDim<128, 8>());
+static_assert(SmallBlockDim::batches_per_block == 8);
+static_assert(same_dim(SmallBlockDim::block_dim, 128, 8, 1));
+
+// 2^10: a single stage kernel, one polynomial per grid z index.
+using Mid = decltype(Size<1024>() + Direction<FORWARD>() + Precision<Data64>() +
+                     Block());
+static_assert(Mid::num_stages == 1 && Mid::batches_per_block == 1);
+static_assert(same_dim(Mid::block_dim, 512, 1, 1));
+static_assert(same_dim(Mid::grid(7), 1, 1, 7));
+static_assert(Mid::shared_memory_size == 1024 * sizeof(Data64));
+
 // Operator values are usable in device code.
 __global__ void use_in_kernel(int* out)
 {

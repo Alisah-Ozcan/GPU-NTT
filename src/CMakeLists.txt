@@ -43,7 +43,7 @@ option(GPUNTT_CC_89_KERNEL_CONFIG
     "Use the kernel configuration tuned for compute capability 8.9 for 2^27 and 2^28 ring sizes"
     ON)
 if(GPUNTT_CC_89_KERNEL_CONFIG)
-    target_compile_definitions(ntt PRIVATE GPUNTT_CC_89_KERNEL_CONFIG)
+    target_compile_definitions(ntt PUBLIC GPUNTT_CC_89_KERNEL_CONFIG)
 endif()
 
 option(GPUNTT_ENABLE_WARNINGS "Enable extra warnings for GPUNTT" OFF)

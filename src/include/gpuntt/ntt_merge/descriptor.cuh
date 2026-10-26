@@ -8,10 +8,251 @@
 #define NTT_DESCRIPTOR_H
 
 #include "gpuntt/common/nttparameters.cuh"
+#include <cstddef>
 #include <type_traits>
 
 namespace gpuntt
 {
+    struct KernelConfig
+    {
+        int griddim_x;
+        int griddim_y;
+        int blockdim_x;
+        int blockdim_y;
+        size_t shared_memory;
+
+        int shared_index;
+        int logm;
+        int k;
+        int outer_iteration_count;
+
+        bool not_last_kernel;
+    };
+
+    // The kernels of one transform, in launch order; unused entries have
+    // blockdim_x == 0.
+    struct KernelStages
+    {
+        int n_power;
+        KernelConfig stage[4];
+
+        constexpr int size() const
+        {
+            int count = 0;
+            while (count < 4 && stage[count].blockdim_x != 0)
+            {
+                count++;
+            }
+            return count;
+        }
+
+        constexpr const KernelConfig& operator[](int i) const
+        {
+            return stage[i];
+        }
+    };
+
+    constexpr KernelStages Stages(int n_power, KernelConfig stage0,
+                                  KernelConfig stage1 = {},
+                                  KernelConfig stage2 = {},
+                                  KernelConfig stage3 = {})
+    {
+        return KernelStages{n_power, {stage0, stage1, stage2, stage3}};
+    }
+
+    // Kernel parameters per log2(ring size), indexed by log2(ring size).
+    // GPUNTT_CC_89_KERNEL_CONFIG (CMake option, ON by default) selects the
+    // configuration tuned for compute capability 8.9 for log2(ring size) 27
+    // and 28.
+    template <typename T>
+    inline constexpr KernelStages forward_kernel_table[] = {
+        KernelStages{},
+        Stages(1, {1, 1, 1, 256, 512 * sizeof(T), 0, 0, 0, 1, false}),
+        Stages(2, {1, 1, 2, 128, 512 * sizeof(T), 1, 0, 0, 2, false}),
+        Stages(3, {1, 1, 4, 64, 512 * sizeof(T), 2, 0, 0, 3, false}),
+        Stages(4, {1, 1, 8, 32, 512 * sizeof(T), 3, 0, 0, 4, false}),
+        Stages(5, {1, 1, 16, 16, 512 * sizeof(T), 4, 0, 0, 5, false}),
+        Stages(6, {1, 1, 32, 8, 512 * sizeof(T), 5, 0, 0, 6, false}),
+        Stages(7, {1, 1, 64, 4, 512 * sizeof(T), 6, 0, 0, 7, false}),
+        Stages(8, {1, 1, 128, 2, 512 * sizeof(T), 7, 0, 0, 8, false}),
+        Stages(9, {1, 1, 256, 1, 512 * sizeof(T), 8, 0, 0, 9, false}),
+        Stages(10, {1, 1, 512, 1, 1024 * sizeof(T), 9, 0, 0, 10, false}),
+        Stages(11, {4, 1, 128, 2, 512 * sizeof(T), 8, 0, 0, 2, true},
+               {1, 4, 256, 1, 512 * sizeof(T), 8, 2, 0, 9, false}),
+        Stages(12, {8, 1, 64, 4, 512 * sizeof(T), 8, 0, 0, 3, true},
+               {1, 8, 256, 1, 512 * sizeof(T), 8, 3, 0, 9, false}),
+        Stages(13, {16, 1, 32, 8, 512 * sizeof(T), 8, 0, 0, 4, true},
+               {1, 16, 256, 1, 512 * sizeof(T), 8, 4, 0, 9, false}),
+        Stages(14, {32, 1, 16, 16, 512 * sizeof(T), 8, 0, 0, 5, true},
+               {1, 32, 256, 1, 512 * sizeof(T), 8, 5, 0, 9, false}),
+        Stages(15, {64, 1, 8, 32, 512 * sizeof(T), 8, 0, 0, 6, true},
+               {1, 64, 256, 1, 512 * sizeof(T), 8, 6, 0, 9, false}),
+        Stages(16, {128, 1, 4, 64, 512 * sizeof(T), 8, 0, 0, 7, true},
+               {1, 128, 256, 1, 512 * sizeof(T), 8, 7, 0, 9, false}),
+        Stages(17, {256, 1, 32, 8, 512 * sizeof(T), 8, 0, 0, 4, true},
+               {16, 16, 32, 8, 512 * sizeof(T), 8, 4, 0, 4, true},
+               {1, 256, 256, 1, 512 * sizeof(T), 8, 8, 0, 9, false}),
+        Stages(18, {512, 1, 32, 8, 512 * sizeof(T), 8, 0, 0, 4, true},
+               {32, 16, 16, 16, 512 * sizeof(T), 8, 4, 0, 5, true},
+               {1, 512, 256, 1, 512 * sizeof(T), 8, 9, 0, 9, false}),
+        Stages(19, {1024, 1, 16, 16, 512 * sizeof(T), 8, 0, 0, 5, true},
+               {32, 32, 16, 16, 512 * sizeof(T), 8, 5, 0, 5, true},
+               {1, 1024, 256, 1, 512 * sizeof(T), 8, 10, 0, 9, false}),
+        Stages(20, {2048, 1, 16, 16, 512 * sizeof(T), 8, 0, 0, 5, true},
+               {64, 32, 8, 32, 512 * sizeof(T), 8, 5, 0, 6, true},
+               {1, 2048, 256, 1, 512 * sizeof(T), 8, 11, 0, 9, false}),
+        Stages(21, {4096, 1, 8, 32, 512 * sizeof(T), 8, 0, 0, 6, true},
+               {64, 64, 8, 32, 512 * sizeof(T), 8, 6, 0, 6, true},
+               {1, 4096, 256, 1, 512 * sizeof(T), 8, 12, 0, 9, false}),
+        Stages(22, {8192, 1, 8, 32, 512 * sizeof(T), 8, 0, 0, 6, true},
+               {128, 64, 4, 64, 512 * sizeof(T), 8, 6, 0, 7, true},
+               {1, 8192, 256, 1, 512 * sizeof(T), 8, 13, 0, 9, false}),
+        Stages(23, {16384, 1, 4, 64, 512 * sizeof(T), 8, 0, 0, 7, true},
+               {128, 128, 4, 64, 512 * sizeof(T), 8, 7, 0, 7, true},
+               {1, 16384, 256, 1, 512 * sizeof(T), 8, 14, 0, 9, false}),
+        Stages(24, {16384, 1, 8, 64, 1024 * sizeof(T), 9, 0, 0, 7, true},
+               {128, 128, 8, 64, 1024 * sizeof(T), 9, 7, 0, 7, true},
+               {1, 16384, 512, 1, 1024 * sizeof(T), 9, 14, 0, 10, false}),
+        Stages(25, {32768, 1, 8, 64, 1024 * sizeof(T), 9, 0, 0, 7, true},
+               {256, 128, 4, 128, 1024 * sizeof(T), 9, 7, 0, 8, true},
+               {32768, 1, 512, 1, 1024 * sizeof(T), 9, 15, 0, 10, false}),
+        Stages(26, {65536, 1, 4, 128, 1024 * sizeof(T), 9, 0, 0, 8, true},
+               {256, 256, 4, 128, 1024 * sizeof(T), 9, 8, 0, 8, true},
+               {65536, 1, 512, 1, 1024 * sizeof(T), 9, 16, 0, 10, false}),
+#ifndef GPUNTT_CC_89_KERNEL_CONFIG
+        Stages(27, {262144, 1, 16, 16, 512 * sizeof(T), 8, 0, 0, 5, true},
+               {8192, 32, 8, 32, 512 * sizeof(T), 8, 5, 0, 6, true},
+               {128, 2048, 4, 64, 512 * sizeof(T), 8, 11, 0, 7, true},
+               {262144, 1, 256, 1, 512 * sizeof(T), 8, 18, 0, 9, false}),
+        Stages(28, {524288, 1, 8, 32, 512 * sizeof(T), 8, 0, 0, 6, true},
+               {8192, 64, 8, 32, 512 * sizeof(T), 8, 6, 0, 6, true},
+               {128, 4096, 4, 64, 512 * sizeof(T), 8, 12, 0, 7, true},
+               {524288, 1, 256, 1, 512 * sizeof(T), 8, 19, 0, 9, false}),
+#else
+        Stages(27, {131072, 1, 4, 128, 1024 * sizeof(T), 9, 0, 0, 8, true},
+               {512, 256, 2, 256, 1024 * sizeof(T), 9, 8, 0, 9, true},
+               {131072, 1, 512, 1, 1024 * sizeof(T), 9, 17, 0, 10, false}),
+        Stages(28, {262144, 1, 2, 256, 1024 * sizeof(T), 9, 0, 0, 9, true},
+               {512, 512, 2, 256, 1024 * sizeof(T), 9, 9, 0, 9, true},
+               {262144, 1, 512, 1, 1024 * sizeof(T), 9, 18, 0, 10, false}),
+#endif
+    };
+
+    template <typename T>
+    inline constexpr KernelStages inverse_kernel_table[] = {
+        KernelStages{},
+        Stages(1, {1, 1, 1, 256, 512 * sizeof(T), 0, 0, 0, 1, true}),
+        Stages(2, {1, 1, 2, 128, 512 * sizeof(T), 1, 1, 0, 2, true}),
+        Stages(3, {1, 1, 4, 64, 512 * sizeof(T), 2, 2, 0, 3, true}),
+        Stages(4, {1, 1, 8, 32, 512 * sizeof(T), 3, 3, 0, 4, true}),
+        Stages(5, {1, 1, 16, 16, 512 * sizeof(T), 4, 4, 0, 5, true}),
+        Stages(6, {1, 1, 32, 8, 512 * sizeof(T), 5, 5, 0, 6, true}),
+        Stages(7, {1, 1, 64, 4, 512 * sizeof(T), 6, 6, 0, 7, true}),
+        Stages(8, {1, 1, 128, 2, 512 * sizeof(T), 7, 7, 0, 8, true}),
+        Stages(9, {1, 1, 256, 1, 512 * sizeof(T), 8, 8, 0, 9, true}),
+        Stages(10, {1, 1, 512, 1, 1024 * sizeof(T), 9, 9, 0, 10, true}),
+        Stages(11, {1, 4, 256, 1, 512 * sizeof(T), 8, 10, 2, 9, false},
+               {4, 1, 128, 2, 512 * sizeof(T), 8, 1, 0, 2, true}),
+        Stages(12, {1, 8, 256, 1, 512 * sizeof(T), 8, 11, 3, 9, false},
+               {8, 1, 64, 4, 512 * sizeof(T), 8, 2, 0, 3, true}),
+        Stages(13, {1, 16, 256, 1, 512 * sizeof(T), 8, 12, 4, 9, false},
+               {16, 1, 32, 8, 512 * sizeof(T), 8, 3, 0, 4, true}),
+        Stages(14, {1, 32, 256, 1, 512 * sizeof(T), 8, 13, 5, 9, false},
+               {32, 1, 16, 16, 512 * sizeof(T), 8, 4, 0, 5, true}),
+        Stages(15, {1, 64, 256, 1, 512 * sizeof(T), 8, 14, 6, 9, false},
+               {64, 1, 8, 32, 512 * sizeof(T), 8, 5, 0, 6, true}),
+        Stages(16, {1, 128, 256, 1, 512 * sizeof(T), 8, 15, 7, 9, false},
+               {128, 1, 4, 64, 512 * sizeof(T), 8, 6, 0, 7, true}),
+        Stages(17, {1, 256, 256, 1, 512 * sizeof(T), 8, 16, 8, 9, false},
+               {16, 16, 32, 8, 512 * sizeof(T), 8, 7, 4, 4, false},
+               {256, 1, 32, 8, 512 * sizeof(T), 8, 3, 0, 4, true}),
+        Stages(18, {1, 512, 256, 1, 512 * sizeof(T), 8, 17, 9, 9, false},
+               {32, 16, 16, 16, 512 * sizeof(T), 8, 8, 4, 5, false},
+               {512, 1, 32, 8, 512 * sizeof(T), 8, 3, 0, 4, true}),
+        Stages(19, {1, 1024, 256, 1, 512 * sizeof(T), 8, 18, 10, 9, false},
+               {32, 32, 16, 16, 512 * sizeof(T), 8, 9, 5, 5, false},
+               {1024, 1, 16, 16, 512 * sizeof(T), 8, 4, 0, 5, true}),
+        Stages(20, {1, 2048, 256, 1, 512 * sizeof(T), 8, 19, 11, 9, false},
+               {64, 32, 8, 32, 512 * sizeof(T), 8, 10, 5, 6, false},
+               {2048, 1, 16, 16, 512 * sizeof(T), 8, 4, 0, 5, true}),
+        Stages(21, {1, 4096, 256, 1, 512 * sizeof(T), 8, 20, 12, 9, false},
+               {64, 64, 8, 32, 512 * sizeof(T), 8, 11, 6, 6, false},
+               {4096, 1, 8, 32, 512 * sizeof(T), 8, 5, 0, 6, true}),
+        Stages(22, {1, 8192, 256, 1, 512 * sizeof(T), 8, 21, 13, 9, false},
+               {128, 64, 4, 64, 512 * sizeof(T), 8, 12, 6, 7, false},
+               {8192, 1, 8, 32, 512 * sizeof(T), 8, 5, 0, 6, true}),
+        Stages(23, {1, 16384, 256, 1, 512 * sizeof(T), 8, 22, 14, 9, false},
+               {128, 128, 4, 64, 512 * sizeof(T), 8, 13, 7, 7, false},
+               {16384, 1, 4, 64, 512 * sizeof(T), 8, 6, 0, 7, true}),
+        Stages(24, {1, 16384, 512, 1, 1024 * sizeof(T), 9, 23, 14, 10, false},
+               {128, 128, 8, 64, 1024 * sizeof(T), 9, 13, 7, 7, false},
+               {16384, 1, 8, 64, 1024 * sizeof(T), 9, 6, 0, 7, true}),
+        Stages(25, {32768, 1, 512, 1, 1024 * sizeof(T), 9, 24, 15, 10, false},
+               {256, 128, 4, 128, 1024 * sizeof(T), 9, 14, 7, 8, false},
+               {32768, 1, 8, 64, 1024 * sizeof(T), 9, 6, 0, 7, true}),
+        Stages(26, {65536, 1, 512, 1, 1024 * sizeof(T), 9, 25, 16, 10, false},
+               {256, 256, 4, 128, 1024 * sizeof(T), 9, 15, 8, 8, false},
+               {65536, 1, 4, 128, 1024 * sizeof(T), 9, 7, 0, 8, true}),
+#ifndef GPUNTT_CC_89_KERNEL_CONFIG
+        Stages(27, {262144, 1, 256, 1, 512 * sizeof(T), 8, 26, 18, 9, false},
+               {128, 2048, 4, 64, 512 * sizeof(T), 8, 17, 11, 7, false},
+               {8192, 32, 8, 32, 512 * sizeof(T), 8, 10, 5, 6, false},
+               {262144, 1, 16, 16, 512 * sizeof(T), 8, 4, 0, 5, true}),
+        Stages(28, {524288, 1, 256, 1, 512 * sizeof(T), 8, 27, 19, 9, false},
+               {128, 4096, 4, 64, 512 * sizeof(T), 8, 18, 12, 7, false},
+               {8192, 64, 8, 32, 512 * sizeof(T), 8, 11, 6, 6, false},
+               {524288, 1, 8, 32, 512 * sizeof(T), 8, 5, 0, 6, true}),
+#else
+        Stages(27, {131072, 1, 512, 1, 1024 * sizeof(T), 9, 26, 17, 10, false},
+               {512, 256, 2, 256, 1024 * sizeof(T), 9, 16, 8, 9, false},
+               {131072, 1, 4, 128, 1024 * sizeof(T), 9, 7, 0, 8, true}),
+        Stages(28, {262144, 1, 512, 1, 1024 * sizeof(T), 9, 27, 18, 10, false},
+               {512, 512, 2, 256, 1024 * sizeof(T), 9, 17, 9, 9, false},
+               {262144, 1, 2, 256, 1024 * sizeof(T), 9, 8, 0, 9, true}),
+#endif
+    };
+
+    // Checks that entry n of a table describes ring size 2^n, that its
+    // stages are contiguous, and that only the last stage has
+    // not_last_kernel == last_flag (forward: false, inverse: the last_kernel
+    // flag, true).
+    template <size_t Count>
+    constexpr bool IsValidKernelTable(const KernelStages (&table)[Count],
+                                      bool last_flag)
+    {
+        if (Count != 29 || table[0].size() != 0)
+        {
+            return false;
+        }
+        for (int n = 1; n < 29; n++)
+        {
+            const KernelStages& stages = table[n];
+            const int count = stages.size();
+            if (stages.n_power != n || count == 0)
+            {
+                return false;
+            }
+            for (int i = 0; i < 4; i++)
+            {
+                if (i >= count && stages[i].blockdim_x != 0)
+                {
+                    return false;
+                }
+                if (i < count && stages[i].not_last_kernel !=
+                                     (i + 1 == count ? last_flag : !last_flag))
+                {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    static_assert(IsValidKernelTable(forward_kernel_table<Data32>, false));
+    static_assert(IsValidKernelTable(forward_kernel_table<Data64>, false));
+    static_assert(IsValidKernelTable(inverse_kernel_table<Data32>, true));
+    static_assert(IsValidKernelTable(inverse_kernel_table<Data64>, true));
+
     // Compile-time description of an NTT, for use inside user kernels. A
     // description is the sum of operators, each fixing one property:
     //
@@ -125,7 +366,9 @@ namespace gpuntt
         static constexpr int value = B;
     };
 
-    // Target architecture as 100 * major + 10 * minor, e.g. SM<890>.
+    // Target architecture as 100 * major + 10 * minor, e.g. SM<890>. Not
+    // used yet: all architectures use the same kernel tables (see
+    // GPUNTT_CC_89_KERNEL_CONFIG).
     template <int Arch> struct SM : NTTOperatorBase<NTTOperator::SM>
     {
         static_assert(Arch >= 700 && Arch % 10 == 0,
@@ -133,9 +376,7 @@ namespace gpuntt
         static constexpr int value = Arch;
     };
 
-    template <typename... Operators> struct NTTDescription
-    {
-    };
+    template <typename... Operators> struct NTTDescription;
 
     template <typename T, typename = void>
     struct is_ntt_operator : std::false_type
@@ -194,6 +435,187 @@ namespace gpuntt
     template <NTTOperator Op, typename Description, typename Default>
     using get_or_default_t =
         typename get_or_default<Op, Description, Default>::type;
+
+    constexpr int kLowRingMaxLogN = 9;
+
+    // Launch parameters of kernel I of an NTT of ring size 2^LogN. Ring sizes
+    // up to 2^kLowRingMaxLogN use the low ring kernel, which transforms B
+    // polynomials per block; larger ones use one or more stage kernels, which
+    // transform one polynomial per grid z index.
+    template <typename T, type D, int LogN, int I, int B> struct NTTStage
+    {
+        static_assert(I >= 0 &&
+                          I < (D == FORWARD ? forward_kernel_table<T>
+                                            : inverse_kernel_table<T>) [LogN]
+                                  .size(),
+                      "Stage index out of range");
+
+        static constexpr KernelConfig config =
+            (D == FORWARD ? forward_kernel_table<T>
+                          : inverse_kernel_table<T>) [LogN][I];
+
+        static constexpr bool low_ring = (LogN <= kLowRingMaxLogN);
+
+        static constexpr dim3 block_dim =
+            low_ring ? dim3(1 << (LogN - 1), B)
+                     : dim3(config.blockdim_x, config.blockdim_y);
+
+        static constexpr size_t shared_memory_size =
+            low_ring ? (size_t(B) << LogN) * sizeof(T) : config.shared_memory;
+
+        static constexpr dim3 grid(int batch)
+        {
+            return low_ring ? dim3((batch + B - 1) / B)
+                            : dim3(config.griddim_x, config.griddim_y, batch);
+        }
+    };
+
+    // Values of a description that has Size, Direction and Precision.
+    template <typename... Operators> struct NTTDescriptionValues
+    {
+      private:
+        template <NTTOperator Op>
+        using get = typename find_operator<Op, void, Operators...>::type;
+
+        using batches_op = get<NTTOperator::BatchesPerBlock>;
+        using block_dim_op = get<NTTOperator::BlockDim>;
+        using layout_op = get<NTTOperator::Layout>;
+
+        static constexpr bool has_batches = !std::is_void<batches_op>::value;
+        static constexpr bool has_block_dim =
+            !std::is_void<block_dim_op>::value;
+
+        // True if Op is absent or is BlockDim<x, y> with x == half_size.
+        template <typename Op>
+        static constexpr bool block_dim_is_rows(int half_size)
+        {
+            if constexpr (std::is_void<Op>::value)
+            {
+                return true;
+            }
+            else
+            {
+                return Op::x == half_size && Op::z == 1;
+            }
+        }
+
+        template <typename Op> static constexpr int block_dim_y()
+        {
+            if constexpr (std::is_void<Op>::value)
+            {
+                return 0;
+            }
+            else
+            {
+                return Op::y;
+            }
+        }
+
+        template <typename Op> static constexpr int batches_value()
+        {
+            if constexpr (std::is_void<Op>::value)
+            {
+                return 0;
+            }
+            else
+            {
+                return Op::value;
+            }
+        }
+
+        template <typename Op> static constexpr bool is_per_polynomial()
+        {
+            if constexpr (std::is_void<Op>::value)
+            {
+                return true;
+            }
+            else
+            {
+                return Op::value == PerPolynomial;
+            }
+        }
+
+      public:
+        using value_type = typename get<NTTOperator::Precision>::value_type;
+
+        static constexpr int size = get<NTTOperator::Size>::value;
+        static constexpr int log_size = get<NTTOperator::Size>::log_value;
+        static constexpr type direction = get<NTTOperator::Direction>::value;
+
+      private:
+        static constexpr KernelStages stages =
+            (direction == FORWARD
+                 ? forward_kernel_table<value_type>
+                 : inverse_kernel_table<value_type>) [log_size];
+
+      public:
+        static constexpr int num_stages = stages.size();
+
+        // Polynomials per block. Only the low ring kernel takes more than one;
+        // its default comes from the kernel table.
+        static constexpr int batches_per_block =
+            has_batches                   ? batches_value<batches_op>()
+            : has_block_dim               ? block_dim_y<block_dim_op>()
+            : log_size <= kLowRingMaxLogN ? stages[0].blockdim_y
+                                          : 1;
+
+        static_assert(is_per_polynomial<layout_op>(),
+                      "Only Layout<PerPolynomial> is supported");
+        static_assert(log_size <= kLowRingMaxLogN ||
+                          (!has_batches && !has_block_dim),
+                      "BlockDim and BatchesPerBlock can only be set for Size "
+                      "up to 2^9");
+        static_assert(block_dim_is_rows<block_dim_op>(size / 2),
+                      "BlockDim must be (Size / 2, BatchesPerBlock)");
+        static_assert(!has_block_dim || !has_batches ||
+                          block_dim_y<block_dim_op>() ==
+                              batches_value<batches_op>(),
+                      "BlockDim must be (Size / 2, BatchesPerBlock)");
+        static_assert(
+            log_size > kLowRingMaxLogN ||
+                (size / 2) * batches_per_block <= 1024,
+            "Size / 2 * BatchesPerBlock must be at most 1024 threads");
+
+        template <int I>
+        using stage =
+            NTTStage<value_type, direction, log_size, I, batches_per_block>;
+    };
+
+    struct NTTNoMembers
+    {
+    };
+
+    template <typename... Operators>
+    constexpr bool has_required_operators =
+        ((Operators::op == NTTOperator::Size) || ...) &&
+        ((Operators::op == NTTOperator::Direction) || ...) &&
+        ((Operators::op == NTTOperator::Precision) || ...);
+
+    template <bool Complete, typename... Operators>
+    struct NTTDescriptionMembers : NTTNoMembers
+    {
+    };
+
+    // A description with a single kernel also exposes that kernel's launch
+    // parameters (block_dim, shared_memory_size, grid) directly.
+    template <typename... Operators>
+    struct NTTDescriptionMembers<true, Operators...>
+        : NTTDescriptionValues<Operators...>,
+          std::conditional_t<
+              NTTDescriptionValues<Operators...>::num_stages == 1,
+              typename NTTDescriptionValues<Operators...>::template stage<0>,
+              NTTNoMembers>
+    {
+    };
+
+    // Descriptions without Size, Direction and Precision (for example the
+    // partial sums while a description is built) have no members.
+    template <typename... Operators>
+    struct NTTDescription
+        : NTTDescriptionMembers<has_required_operators<Operators...>,
+                                Operators...>
+    {
+    };
 
     template <typename... Operators>
     constexpr bool has_unique_operators(NTTDescription<Operators...>)
