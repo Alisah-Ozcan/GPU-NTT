@@ -107,12 +107,15 @@ using SmallBlockDim = decltype(Small() + BlockDim<128, 8>());
 static_assert(SmallBlockDim::batches_per_block == 8);
 static_assert(same_dim(SmallBlockDim::block_dim, 128, 8, 1));
 
-// 2^10: a single stage kernel, one polynomial per grid z index.
+// 2^10: a single stage kernel, one polynomial per block. The single kernel
+// API indexes blocks by blockIdx.x; the stage API, like the host API, by
+// blockIdx.z.
 using Mid = decltype(Size<1024>() + Direction<FORWARD>() + Precision<Data64>() +
                      Block());
 static_assert(Mid::num_stages == 1 && Mid::batches_per_block == 1);
 static_assert(same_dim(Mid::block_dim, 512, 1, 1));
-static_assert(same_dim(Mid::grid(7), 1, 1, 7));
+static_assert(same_dim(Mid::grid(7), 7, 1, 1));
+static_assert(same_dim(Mid::stage<0>::grid(7), 1, 1, 7));
 static_assert(Mid::shared_memory_size == 1024 * sizeof(Data64));
 
 // Operator values are usable in device code.

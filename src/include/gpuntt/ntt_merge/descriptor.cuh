@@ -8,6 +8,7 @@
 #define NTT_DESCRIPTOR_H
 
 #include "gpuntt/common/nttparameters.cuh"
+#include "gpuntt/ntt_merge/ntt_device.cuh"
 #include <cstddef>
 #include <type_traits>
 
@@ -470,6 +471,194 @@ namespace gpuntt
         }
     };
 
+    // Launch parameters and device functions of an NTT that runs in a single
+    // kernel (ring sizes up to 2^10). Block b transforms the B polynomials
+    // that start at data + b * B * N; launch it with grid(batch), block_dim
+    // and shared_memory_size. Inside the kernel:
+    //
+    //   NTT().load(shared_memory, data, modulus);
+    //   NTT().execute(shared_memory, roots, modulus);
+    //   ... optional work on shared_memory ...
+    //   NTT().store(shared_memory, data);                       // forward
+    //   NTT().store(shared_memory, data, modulus, n_inverse);   // inverse
+    //
+    // num_polys (at most B) is the number of polynomials of the block, for a
+    // last block that is not full. execute ends with a block barrier; code
+    // that writes shared memory between execute and store must end with
+    // __syncthreads(). The inverse execute leaves N * INTT(x) in shared
+    // memory; store multiplies by n_inverse = N^-1.
+    template <typename T, type D, int LogN, int B, bool HasReductionPoly,
+              ReductionPolynomial R>
+    struct NTTSingleKernel
+    {
+        static constexpr KernelConfig config =
+            (D == FORWARD ? forward_kernel_table<T>
+                          : inverse_kernel_table<T>) [LogN][0];
+
+        static constexpr bool low_ring = (LogN <= kLowRingMaxLogN);
+
+        static constexpr dim3 block_dim =
+            low_ring ? dim3(1 << (LogN - 1), B)
+                     : dim3(config.blockdim_x, config.blockdim_y);
+
+        static constexpr size_t shared_memory_size =
+            low_ring ? (size_t(B) << LogN) * sizeof(T) : config.shared_memory;
+
+        static constexpr dim3 grid(int batch)
+        {
+            return dim3((batch + B - 1) / B);
+        }
+
+        template <typename TIn>
+        __device__ __forceinline__ void load(T* shared_memory, TIn* data,
+                                             Modulus<T> modulus,
+                                             int num_polys = B) const
+        {
+            static_assert(
+                std::is_same<std::make_unsigned_t<TIn>, T>::value,
+                "The input must be the description's Precision or its "
+                "signed type");
+            if constexpr (low_ring)
+            {
+                LowRingLoad(low_ring_thread(modulus, 0, num_polys),
+                            shared_memory, data);
+            }
+            else
+            {
+                StageLoad(stage_thread(modulus, 0), shared_memory, data);
+            }
+        }
+
+        __device__ __forceinline__ void execute(T* shared_memory,
+                                                const Root<T>* roots,
+                                                Modulus<T> modulus) const
+        {
+            static_assert(HasReductionPoly,
+                          "execute needs the ReductionPoly operator");
+            constexpr bool x_n_minus = (R == X_N_minus);
+            if constexpr (low_ring)
+            {
+                const LowRingThread<T> thread = low_ring_thread(modulus, 0, B);
+                if constexpr (D == FORWARD)
+                {
+                    ForwardLowRingExecute(thread, shared_memory, roots,
+                                          config.shared_index, LogN, x_n_minus);
+                }
+                else
+                {
+                    InverseLowRingExecute(thread, shared_memory, roots, LogN,
+                                          x_n_minus);
+                }
+            }
+            else
+            {
+                const StageThread<T> thread = stage_thread(modulus, 0);
+                if constexpr (D == FORWARD)
+                {
+                    ForwardStageExecute(thread, shared_memory, roots,
+                                        config.shared_index, config.logm,
+                                        config.outer_iteration_count, LogN,
+                                        config.not_last_kernel, x_n_minus);
+                }
+                else
+                {
+                    InverseStageExecute(thread, shared_memory, roots,
+                                        config.shared_index, config.logm,
+                                        config.outer_iteration_count, LogN,
+                                        x_n_minus);
+                }
+            }
+        }
+
+        __device__ __forceinline__ void store(T* shared_memory, T* data,
+                                              int num_polys = B) const
+        {
+            static_assert(D == FORWARD,
+                          "The inverse store needs modulus and n_inverse");
+            if constexpr (low_ring)
+            {
+                ForwardLowRingStore(low_ring_thread(Modulus<T>(), 0, num_polys),
+                                    shared_memory, data);
+            }
+            else
+            {
+                ForwardStageStore(stage_thread(Modulus<T>(), 0), shared_memory,
+                                  data);
+            }
+        }
+
+        template <typename TOut>
+        __device__ __forceinline__ void
+        store(T* shared_memory, TOut* data, Modulus<T> modulus,
+              Ninverse<T> n_inverse, int num_polys = B) const
+        {
+            static_assert(D == INVERSE,
+                          "Only the inverse store takes modulus and n_inverse");
+            static_assert(
+                std::is_same<std::make_unsigned_t<TOut>, T>::value,
+                "The output must be the description's Precision or its "
+                "signed type");
+            if constexpr (low_ring)
+            {
+                InverseLowRingStore(
+                    low_ring_thread(modulus, n_inverse, num_polys),
+                    shared_memory, data);
+            }
+            else
+            {
+                InverseStageStore(stage_thread(modulus, n_inverse),
+                                  shared_memory, data, config.not_last_kernel);
+            }
+        }
+
+      private:
+        // Thread (x, y) owns coefficients x and x + N/2 of polynomial y of
+        // the block. Rows y >= num_polys read polynomial 0 and store nothing.
+        __device__ __forceinline__ static LowRingThread<T>
+        low_ring_thread(Modulus<T> modulus, Ninverse<T> n_inverse,
+                        int num_polys)
+        {
+            const int idx_x = threadIdx.x;
+            const int idx_y = threadIdx.y;
+            const bool active = (idx_y < num_polys);
+            const int half_n = 1 << (LogN - 1);
+            const int row_base = idx_y << LogN;
+            return LowRingThread<T>{
+                active,
+                0,
+                modulus,
+                n_inverse,
+                location_t(idx_x + ((active ? idx_y : 0) << LogN)),
+                half_n,
+                row_base,
+                row_base + idx_x,
+                row_base + idx_x + half_n};
+        }
+
+        // The single stage kernel transforms one polynomial per block, as in
+        // StageThreadState with block (0, 0).
+        __device__ __forceinline__ static StageThread<T>
+        stage_thread(Modulus<T> modulus, Ninverse<T> n_inverse)
+        {
+            const int idx_x = threadIdx.x;
+            const int idx_y = threadIdx.y;
+            const int level = (D == FORWARD) ? config.logm : config.k;
+            const location_t offset = 1 << (LogN - level - 1);
+            const location_t address =
+                idx_x +
+                (location_t) (idx_y *
+                              (offset /
+                               (1 << (config.outer_iteration_count - 1))));
+            return StageThread<T>{0,
+                                  modulus,
+                                  n_inverse,
+                                  offset,
+                                  address,
+                                  address,
+                                  location_t(idx_x + (idx_y * blockDim.x))};
+        }
+    };
+
     // Values of a description that has Size, Direction and Precision.
     template <typename... Operators> struct NTTDescriptionValues
     {
@@ -480,6 +669,7 @@ namespace gpuntt
         using batches_op = get<NTTOperator::BatchesPerBlock>;
         using block_dim_op = get<NTTOperator::BlockDim>;
         using layout_op = get<NTTOperator::Layout>;
+        using reduction_op = get<NTTOperator::ReductionPoly>;
 
         static constexpr bool has_batches = !std::is_void<batches_op>::value;
         static constexpr bool has_block_dim =
@@ -516,6 +706,19 @@ namespace gpuntt
             if constexpr (std::is_void<Op>::value)
             {
                 return 0;
+            }
+            else
+            {
+                return Op::value;
+            }
+        }
+
+        template <typename Op>
+        static constexpr ReductionPolynomial reduction_value()
+        {
+            if constexpr (std::is_void<Op>::value)
+            {
+                return X_N_minus;
             }
             else
             {
@@ -579,6 +782,11 @@ namespace gpuntt
         template <int I>
         using stage =
             NTTStage<value_type, direction, log_size, I, batches_per_block>;
+
+        using single_kernel =
+            NTTSingleKernel<value_type, direction, log_size, batches_per_block,
+                            !std::is_void<reduction_op>::value,
+                            reduction_value<reduction_op>()>;
     };
 
     struct NTTNoMembers
@@ -596,14 +804,14 @@ namespace gpuntt
     {
     };
 
-    // A description with a single kernel also exposes that kernel's launch
-    // parameters (block_dim, shared_memory_size, grid) directly.
+    // A description with a single kernel also has that kernel's launch
+    // parameters and device functions (see NTTSingleKernel).
     template <typename... Operators>
     struct NTTDescriptionMembers<true, Operators...>
         : NTTDescriptionValues<Operators...>,
           std::conditional_t<
               NTTDescriptionValues<Operators...>::num_stages == 1,
-              typename NTTDescriptionValues<Operators...>::template stage<0>,
+              typename NTTDescriptionValues<Operators...>::single_kernel,
               NTTNoMembers>
     {
     };

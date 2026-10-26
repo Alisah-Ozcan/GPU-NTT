@@ -54,7 +54,7 @@ namespace gpuntt
             mu = mu_generator();
         }
 
-        __host__ Modulus() : value(0), bit(0), mu(0) {}
+        __host__ __device__ Modulus() : value(0), bit(0), mu(0) {}
 
       private:
         // Bit length of the modulus. It is computed with integers since log2 on
