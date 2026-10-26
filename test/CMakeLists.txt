@@ -12,6 +12,13 @@ set_target_properties(merge_ntt_tests PROPERTIES
     CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES}
 )
 
+add_executable(descriptor_tests test_descriptor.cu)
+target_link_libraries(descriptor_tests PRIVATE ntt CUDA::cudart)
+set_target_properties(descriptor_tests PROPERTIES
+    CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES}
+)
+add_test(NAME descriptor COMMAND descriptor_tests)
+
 foreach(bits 32 64)
     foreach(suite single pool_parameters modulus validation rns signed
                   per_coefficient per_coefficient_rns modulus_ordered
