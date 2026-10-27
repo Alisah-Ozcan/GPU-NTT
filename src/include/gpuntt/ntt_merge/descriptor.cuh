@@ -486,8 +486,8 @@ namespace gpuntt
         static constexpr bool last = (I + 1 == stages.size());
 
         // For log2(ring size) >= 25 the last forward and the first inverse
-        // kernel swap the roles of blockIdx.x and blockIdx.y (the host API's
-        // _ kernels); grid() already accounts for it.
+        // kernel swap the roles of blockIdx.x and blockIdx.y; grid() already
+        // accounts for it.
         static constexpr bool swap_grid_axes =
             LogN >= 25 && (D == FORWARD ? last : I == 0);
 
@@ -522,10 +522,10 @@ namespace gpuntt
             }
             else
             {
-                InverseStageExecute<true>(
-                    thread(modulus, 0), shared_memory, roots,
-                    config.shared_index, config.logm,
-                    config.outer_iteration_count, LogN, x_n_minus);
+                InverseStageExecute(thread(modulus, 0), shared_memory, roots,
+                                    config.shared_index, config.logm,
+                                    config.outer_iteration_count, LogN,
+                                    x_n_minus);
             }
         }
 

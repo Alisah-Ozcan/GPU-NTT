@@ -403,12 +403,11 @@ namespace gpuntt
         InverseLowRingStore(thread, shared_memory, polynomial_out);
     }
 
-    // The multi-stage NTT kernels (ForwardCore, InverseCore, their _ variants
-    // and the modulus ordered and poly ordered variants) run one stage of a
-    // transform that spans several kernels; each stage is split into load,
-    // execute and store steps. The variants differ only in the modulus and
-    // polynomial policies and in SwapGridAxes: the _ variants swap the roles
-    // of blockIdx.x and blockIdx.y for large grids.
+    // The stage kernels run one stage of a transform that spans several
+    // kernels; each stage is split into load, execute and store steps. The
+    // single modulus, RNS and ordered variants differ only in the modulus and
+    // polynomial policies. With SwapGridAxes a stage swaps the roles of
+    // blockIdx.x and blockIdx.y for large grids.
 
     // Per-thread state of one stage: thread (x, y) owns the shared memory
     // entries shared_address and shared_address + blockDim.x * blockDim.y,
@@ -635,13 +634,11 @@ namespace gpuntt
     // by N^-1 (done by InverseStageStore in the last stage). Ends with a
     // block barrier.
     //
-    // With PrefetchRoots each root is loaded an iteration ahead, so that its
-    // latency overlaps the barrier and the butterfly of the previous
-    // iteration: when the loop count is a compile-time constant and the loop
-    // is fully unrolled, the compiler does not move the loads across
-    // __syncthreads() by itself. With a run-time loop count (the host API
-    // kernels) the compiler pipelines the loads better on its own.
-    template <bool PrefetchRoots = false, typename TU>
+    // Each root is loaded an iteration ahead, so that its latency overlaps
+    // the barrier and the butterfly of the previous iteration: the loop count
+    // is a compile-time constant and the loop is fully unrolled, and the
+    // compiler does not move the loads across __syncthreads() by itself.
+    template <typename TU>
     __device__ __forceinline__ void
     InverseStageExecute(const StageThread<TU>& thread, TU* shared_memory,
                         const Root<TU>* inverse_root_of_unity_table,
@@ -658,77 +655,37 @@ namespace gpuntt
 
         int t = 1 << t_;
         int in_shared_address = ((shared_address >> t_) << t_) + shared_address;
-        if constexpr (PrefetchRoots)
+        auto root_index = [&](int level_shift, location_t level_m)
         {
-            auto root_index = [&](int level_shift, location_t level_m)
-            {
-                const location_t prime_offset =
-                    (location_t) (thread.prime_index << N_power);
-                return reduction_poly_check // X_N_minus : X_N_plus
-                           ? (omega_address >> level_shift) + prime_offset
-                           : level_m + (omega_address >> level_shift) +
-                                 prime_offset;
-            };
-            Root<TU> next_root =
-                inverse_root_of_unity_table[root_index(t_2, m)];
+            const location_t prime_offset =
+                (location_t) (thread.prime_index << N_power);
+            return reduction_poly_check // X_N_minus : X_N_plus
+                       ? (omega_address >> level_shift) + prime_offset
+                       : level_m + (omega_address >> level_shift) +
+                             prime_offset;
+        };
+        Root<TU> next_root = inverse_root_of_unity_table[root_index(t_2, m)];
 #pragma unroll
-            for (int lp = 0; lp < loops; lp++)
-            {
-                __syncthreads();
-                const Root<TU> root = next_root;
-                if (lp + 1 < loops)
-                {
-                    next_root = inverse_root_of_unity_table[root_index(t_2 + 1,
-                                                                       m >> 1)];
-                }
-
-                GentlemanSandeUnit(shared_memory[in_shared_address],
-                                   shared_memory[in_shared_address + t], root,
-                                   thread.modulus);
-
-                t = t << 1;
-                t_2 += 1;
-                t_ += 1;
-                m >>= 1;
-
-                in_shared_address =
-                    ((shared_address >> t_) << t_) + shared_address;
-            }
-        }
-        else
+        for (int lp = 0; lp < loops; lp++)
         {
-            location_t current_root_index;
-#pragma unroll
-            for (int lp = 0; lp < loops; lp++)
+            __syncthreads();
+            const Root<TU> root = next_root;
+            if (lp + 1 < loops)
             {
-                __syncthreads();
-                if (reduction_poly_check)
-                { // X_N_minus
-                    current_root_index =
-                        (omega_address >> t_2) +
-                        (location_t) (thread.prime_index << N_power);
-                }
-                else
-                { // X_N_plus
-                    current_root_index =
-                        m + (omega_address >> t_2) +
-                        (location_t) (thread.prime_index << N_power);
-                }
-
-                GentlemanSandeUnit(
-                    shared_memory[in_shared_address],
-                    shared_memory[in_shared_address + t],
-                    inverse_root_of_unity_table[current_root_index],
-                    thread.modulus);
-
-                t = t << 1;
-                t_2 += 1;
-                t_ += 1;
-                m >>= 1;
-
-                in_shared_address =
-                    ((shared_address >> t_) << t_) + shared_address;
+                next_root =
+                    inverse_root_of_unity_table[root_index(t_2 + 1, m >> 1)];
             }
+
+            GentlemanSandeUnit(shared_memory[in_shared_address],
+                               shared_memory[in_shared_address + t], root,
+                               thread.modulus);
+
+            t = t << 1;
+            t_2 += 1;
+            t_ += 1;
+            m >>= 1;
+
+            in_shared_address = ((shared_address >> t_) << t_) + shared_address;
         }
         __syncthreads();
     }
@@ -817,8 +774,8 @@ namespace gpuntt
         ForwardStageStore(thread, shared_memory, polynomial_out);
     }
 
-    template <bool SwapGridAxes, bool PrefetchRoots = false, typename T,
-              typename ModulusPolicy, typename PolyPolicy>
+    template <bool SwapGridAxes, typename T, typename ModulusPolicy,
+              typename PolyPolicy>
     __device__ __forceinline__ void InverseCoreBody(
         typename std::make_unsigned<T>::type* polynomial_in, T* polynomial_out,
         const Root<typename std::make_unsigned<T>::type>*
@@ -835,9 +792,9 @@ namespace gpuntt
         const StageThread<TU> thread = StageThreadState<SwapGridAxes, true, TU>(
             modulus_policy, poly_policy, k, outer_iteration_count, N_power);
         StageLoad(thread, shared_memory, polynomial_in);
-        InverseStageExecute<PrefetchRoots>(
-            thread, shared_memory, inverse_root_of_unity_table, shared_index,
-            logm, outer_iteration_count, N_power, reduction_poly_check);
+        InverseStageExecute(thread, shared_memory, inverse_root_of_unity_table,
+                            shared_index, logm, outer_iteration_count, N_power,
+                            reduction_poly_check);
         InverseStageStore(thread, shared_memory, polynomial_out, last_kernel);
     }
 

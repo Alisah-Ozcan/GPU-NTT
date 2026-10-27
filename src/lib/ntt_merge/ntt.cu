@@ -31,225 +31,6 @@ namespace gpuntt
     }
 
     template <typename T>
-    __global__ void ForwardCoreLowRing(
-        T* polynomial_in, typename std::make_unsigned<T>::type* polynomial_out,
-        const Root<typename std::make_unsigned<
-            T>::type>* __restrict__ root_of_unity_table,
-        Modulus<typename std::make_unsigned<T>::type> modulus, int shared_index,
-        int N_power, bool reduction_poly_check, int total_batch)
-    {
-        using TU = typename std::make_unsigned<T>::type;
-
-        ForwardCoreLowRingBody(polynomial_in, polynomial_out,
-                               root_of_unity_table, SingleModulus<TU>{modulus},
-                               shared_index, N_power, reduction_poly_check,
-                               total_batch);
-    }
-
-    template <typename T>
-    __global__ void
-    ForwardCoreLowRing(T* polynomial_in,
-                       typename std::make_unsigned<T>::type* polynomial_out,
-                       const Root<typename std::make_unsigned<
-                           T>::type>* __restrict__ root_of_unity_table,
-                       Modulus<typename std::make_unsigned<T>::type>* modulus,
-                       int shared_index, int N_power, bool reduction_poly_check,
-                       int total_batch, int mod_count)
-    {
-        using TU = typename std::make_unsigned<T>::type;
-
-        ForwardCoreLowRingBody(polynomial_in, polynomial_out,
-                               root_of_unity_table,
-                               RnsModulus<TU>{modulus, mod_count}, shared_index,
-                               N_power, reduction_poly_check, total_batch);
-    }
-
-    template <typename T>
-    __global__ void InverseCoreLowRing(
-        typename std::make_unsigned<T>::type* polynomial_in, T* polynomial_out,
-        const Root<typename std::make_unsigned<
-            T>::type>* __restrict__ inverse_root_of_unity_table,
-        Modulus<typename std::make_unsigned<T>::type> modulus, int shared_index,
-        int N_power, Ninverse<typename std::make_unsigned<T>::type> n_inverse,
-        bool reduction_poly_check, int total_batch)
-    {
-        using TU = typename std::make_unsigned<T>::type;
-
-        InverseCoreLowRingBody(
-            polynomial_in, polynomial_out, inverse_root_of_unity_table,
-            SingleModulus<TU>{modulus, n_inverse}, shared_index, N_power,
-            reduction_poly_check, total_batch);
-    }
-
-    template <typename T>
-    __global__ void InverseCoreLowRing(
-        typename std::make_unsigned<T>::type* polynomial_in, T* polynomial_out,
-        const Root<typename std::make_unsigned<
-            T>::type>* __restrict__ inverse_root_of_unity_table,
-        Modulus<typename std::make_unsigned<T>::type>* modulus,
-        int shared_index, int N_power,
-        Ninverse<typename std::make_unsigned<T>::type>* n_inverse,
-        bool reduction_poly_check, int total_batch, int mod_count)
-    {
-        using TU = typename std::make_unsigned<T>::type;
-
-        InverseCoreLowRingBody(
-            polynomial_in, polynomial_out, inverse_root_of_unity_table,
-            RnsModulus<TU>{modulus, mod_count, n_inverse}, shared_index,
-            N_power, reduction_poly_check, total_batch);
-    }
-
-    template <typename T>
-    __global__ void
-    ForwardCore(T* polynomial_in,
-                typename std::make_unsigned<T>::type* polynomial_out,
-                const Root<typename std::make_unsigned<
-                    T>::type>* __restrict__ root_of_unity_table,
-                Modulus<typename std::make_unsigned<T>::type> modulus,
-                int shared_index, int logm, int outer_iteration_count,
-                int N_power, bool not_last_kernel, bool reduction_poly_check)
-    {
-        using TU = typename std::make_unsigned<T>::type;
-
-        ForwardCoreBody<false>(polynomial_in, polynomial_out,
-                               root_of_unity_table, SingleModulus<TU>{modulus},
-                               SequentialPolys{}, shared_index, logm,
-                               outer_iteration_count, N_power, not_last_kernel,
-                               reduction_poly_check);
-    }
-
-    template <typename T>
-    __global__ void ForwardCore(
-        T* polynomial_in, typename std::make_unsigned<T>::type* polynomial_out,
-        const Root<typename std::make_unsigned<
-            T>::type>* __restrict__ root_of_unity_table,
-        Modulus<typename std::make_unsigned<T>::type>* modulus,
-        int shared_index, int logm, int outer_iteration_count, int N_power,
-        bool not_last_kernel, bool reduction_poly_check, int mod_count)
-    {
-        using TU = typename std::make_unsigned<T>::type;
-
-        ForwardCoreBody<false>(
-            polynomial_in, polynomial_out, root_of_unity_table,
-            RnsModulus<TU>{modulus, mod_count}, SequentialPolys{}, shared_index,
-            logm, outer_iteration_count, N_power, not_last_kernel,
-            reduction_poly_check);
-    }
-
-    template <typename T>
-    __global__ void
-    ForwardCore_(T* polynomial_in,
-                 typename std::make_unsigned<T>::type* polynomial_out,
-                 const Root<typename std::make_unsigned<
-                     T>::type>* __restrict__ root_of_unity_table,
-                 Modulus<typename std::make_unsigned<T>::type> modulus,
-                 int shared_index, int logm, int outer_iteration_count,
-                 int N_power, bool not_last_kernel, bool reduction_poly_check)
-    {
-        using TU = typename std::make_unsigned<T>::type;
-
-        ForwardCoreBody<true>(polynomial_in, polynomial_out,
-                              root_of_unity_table, SingleModulus<TU>{modulus},
-                              SequentialPolys{}, shared_index, logm,
-                              outer_iteration_count, N_power, not_last_kernel,
-                              reduction_poly_check);
-    }
-
-    template <typename T>
-    __global__ void ForwardCore_(
-        T* polynomial_in, typename std::make_unsigned<T>::type* polynomial_out,
-        const Root<typename std::make_unsigned<
-            T>::type>* __restrict__ root_of_unity_table,
-        Modulus<typename std::make_unsigned<T>::type>* modulus,
-        int shared_index, int logm, int outer_iteration_count, int N_power,
-        bool not_last_kernel, bool reduction_poly_check, int mod_count)
-    {
-        using TU = typename std::make_unsigned<T>::type;
-
-        ForwardCoreBody<true>(
-            polynomial_in, polynomial_out, root_of_unity_table,
-            RnsModulus<TU>{modulus, mod_count}, SequentialPolys{}, shared_index,
-            logm, outer_iteration_count, N_power, not_last_kernel,
-            reduction_poly_check);
-    }
-
-    template <typename T>
-    __global__ void InverseCore(
-        typename std::make_unsigned<T>::type* polynomial_in, T* polynomial_out,
-        const Root<typename std::make_unsigned<
-            T>::type>* __restrict__ inverse_root_of_unity_table,
-        Modulus<typename std::make_unsigned<T>::type> modulus, int shared_index,
-        int logm, int k, int outer_iteration_count, int N_power,
-        Ninverse<typename std::make_unsigned<T>::type> n_inverse,
-        bool last_kernel, bool reduction_poly_check)
-    {
-        using TU = typename std::make_unsigned<T>::type;
-
-        InverseCoreBody<false>(
-            polynomial_in, polynomial_out, inverse_root_of_unity_table,
-            SingleModulus<TU>{modulus, n_inverse}, SequentialPolys{},
-            shared_index, logm, k, outer_iteration_count, N_power, last_kernel,
-            reduction_poly_check);
-    }
-
-    template <typename T>
-    __global__ void InverseCore(
-        typename std::make_unsigned<T>::type* polynomial_in, T* polynomial_out,
-        const Root<typename std::make_unsigned<
-            T>::type>* __restrict__ inverse_root_of_unity_table,
-        Modulus<typename std::make_unsigned<T>::type>* modulus,
-        int shared_index, int logm, int k, int outer_iteration_count,
-        int N_power, Ninverse<typename std::make_unsigned<T>::type>* n_inverse,
-        bool last_kernel, bool reduction_poly_check, int mod_count)
-    {
-        using TU = typename std::make_unsigned<T>::type;
-
-        InverseCoreBody<false>(
-            polynomial_in, polynomial_out, inverse_root_of_unity_table,
-            RnsModulus<TU>{modulus, mod_count, n_inverse}, SequentialPolys{},
-            shared_index, logm, k, outer_iteration_count, N_power, last_kernel,
-            reduction_poly_check);
-    }
-
-    template <typename T>
-    __global__ void InverseCore_(
-        typename std::make_unsigned<T>::type* polynomial_in, T* polynomial_out,
-        const Root<typename std::make_unsigned<
-            T>::type>* __restrict__ inverse_root_of_unity_table,
-        Modulus<typename std::make_unsigned<T>::type> modulus, int shared_index,
-        int logm, int k, int outer_iteration_count, int N_power,
-        Ninverse<typename std::make_unsigned<T>::type> n_inverse,
-        bool last_kernel, bool reduction_poly_check)
-    {
-        using TU = typename std::make_unsigned<T>::type;
-
-        InverseCoreBody<true>(
-            polynomial_in, polynomial_out, inverse_root_of_unity_table,
-            SingleModulus<TU>{modulus, n_inverse}, SequentialPolys{},
-            shared_index, logm, k, outer_iteration_count, N_power, last_kernel,
-            reduction_poly_check);
-    }
-
-    template <typename T>
-    __global__ void InverseCore_(
-        typename std::make_unsigned<T>::type* polynomial_in, T* polynomial_out,
-        const Root<typename std::make_unsigned<
-            T>::type>* __restrict__ inverse_root_of_unity_table,
-        Modulus<typename std::make_unsigned<T>::type>* modulus,
-        int shared_index, int logm, int k, int outer_iteration_count,
-        int N_power, Ninverse<typename std::make_unsigned<T>::type>* n_inverse,
-        bool last_kernel, bool reduction_poly_check, int mod_count)
-    {
-        using TU = typename std::make_unsigned<T>::type;
-
-        InverseCoreBody<true>(
-            polynomial_in, polynomial_out, inverse_root_of_unity_table,
-            RnsModulus<TU>{modulus, mod_count, n_inverse}, SequentialPolys{},
-            shared_index, logm, k, outer_iteration_count, N_power, last_kernel,
-            reduction_poly_check);
-    }
-
-    template <typename T>
     __global__ void ForwardCoreTranspose(
         T* polynomial_in, typename std::make_unsigned<T>::type* polynomial_out,
         const Root<typename std::make_unsigned<
@@ -360,12 +141,13 @@ namespace gpuntt
     // Low ring sizes: one kernel that transforms blockDim.y polynomials per
     // block.
     template <int LogN, typename T, typename ModulusPolicy>
-    __global__ void ForwardLowRing(
-        T* polynomial_in, typename std::make_unsigned<T>::type* polynomial_out,
-        const Root<typename std::make_unsigned<
-            T>::type>* __restrict__ root_of_unity_table,
-        ModulusPolicy modulus_policy, bool reduction_poly_check,
-        int total_batch)
+    __global__ void
+    ForwardLowRing(T* polynomial_in,
+                   typename std::make_unsigned<T>::type* polynomial_out,
+                   const Root<typename std::make_unsigned<
+                       T>::type>* __restrict__ root_of_unity_table,
+                   ModulusPolicy modulus_policy, bool reduction_poly_check,
+                   int total_batch)
     {
         using TU = typename std::make_unsigned<T>::type;
         using Config = StageConfig<TU, FORWARD, LogN>;
@@ -377,12 +159,13 @@ namespace gpuntt
     }
 
     template <int LogN, typename T, typename ModulusPolicy>
-    __global__ void InverseLowRing(
-        typename std::make_unsigned<T>::type* polynomial_in, T* polynomial_out,
-        const Root<typename std::make_unsigned<
-            T>::type>* __restrict__ inverse_root_of_unity_table,
-        ModulusPolicy modulus_policy, bool reduction_poly_check,
-        int total_batch)
+    __global__ void
+    InverseLowRing(typename std::make_unsigned<T>::type* polynomial_in,
+                   T* polynomial_out,
+                   const Root<typename std::make_unsigned<
+                       T>::type>* __restrict__ inverse_root_of_unity_table,
+                   ModulusPolicy modulus_policy, bool reduction_poly_check,
+                   int total_batch)
     {
         using TU = typename std::make_unsigned<T>::type;
         using Config = StageConfig<TU, INVERSE, LogN>;
@@ -396,12 +179,13 @@ namespace gpuntt
     // Stage I of a transform that spans several kernels.
     template <int LogN, int I, typename T, typename ModulusPolicy,
               typename PolyPolicy>
-    __global__ void ForwardStage(
-        T* polynomial_in, typename std::make_unsigned<T>::type* polynomial_out,
-        const Root<typename std::make_unsigned<
-            T>::type>* __restrict__ root_of_unity_table,
-        ModulusPolicy modulus_policy, PolyPolicy poly_policy,
-        bool reduction_poly_check)
+    __global__ void
+    ForwardStage(T* polynomial_in,
+                 typename std::make_unsigned<T>::type* polynomial_out,
+                 const Root<typename std::make_unsigned<
+                     T>::type>* __restrict__ root_of_unity_table,
+                 ModulusPolicy modulus_policy, PolyPolicy poly_policy,
+                 bool reduction_poly_check)
     {
         using TU = typename std::make_unsigned<T>::type;
         using Config = StageConfig<TU, FORWARD, LogN, I>;
@@ -417,18 +201,19 @@ namespace gpuntt
     // not_last_kernel.
     template <int LogN, int I, typename T, typename ModulusPolicy,
               typename PolyPolicy>
-    __global__ void InverseStage(
-        typename std::make_unsigned<T>::type* polynomial_in, T* polynomial_out,
-        const Root<typename std::make_unsigned<
-            T>::type>* __restrict__ inverse_root_of_unity_table,
-        ModulusPolicy modulus_policy, PolyPolicy poly_policy,
-        bool reduction_poly_check)
+    __global__ void
+    InverseStage(typename std::make_unsigned<T>::type* polynomial_in,
+                 T* polynomial_out,
+                 const Root<typename std::make_unsigned<
+                     T>::type>* __restrict__ inverse_root_of_unity_table,
+                 ModulusPolicy modulus_policy, PolyPolicy poly_policy,
+                 bool reduction_poly_check)
     {
         using TU = typename std::make_unsigned<T>::type;
         using Config = StageConfig<TU, INVERSE, LogN, I>;
         constexpr KernelConfig k = Config::config;
 
-        InverseCoreBody<Config::swap_grid_axes, true>(
+        InverseCoreBody<Config::swap_grid_axes>(
             polynomial_in, polynomial_out, inverse_root_of_unity_table,
             modulus_policy, poly_policy, k.shared_index, k.logm, k.k,
             k.outer_iteration_count, LogN, k.not_last_kernel,
@@ -469,11 +254,11 @@ namespace gpuntt
         using TU = typename std::make_unsigned<T>::type;
         constexpr KernelConfig k = StageConfig<TU, FORWARD, LogN>::config;
 
-        ForwardLowRing<LogN><<<
-            dim3((batch_size + (k.blockdim_y - 1)) / k.blockdim_y, 1, 1),
-            dim3(k.blockdim_x, k.blockdim_y), k.shared_memory, stream>>>(
-            device_in, device_out, root_of_unity_table, modulus_policy,
-            (reduction_poly == ReductionPolynomial::X_N_minus), batch_size);
+        ForwardLowRing<LogN>
+            <<<dim3((batch_size + (k.blockdim_y - 1)) / k.blockdim_y, 1, 1),
+               dim3(k.blockdim_x, k.blockdim_y), k.shared_memory, stream>>>(
+                device_in, device_out, root_of_unity_table, modulus_policy,
+                (reduction_poly == ReductionPolynomial::X_N_minus), batch_size);
         GPUNTT_CUDA_CHECK(cudaGetLastError());
     }
 
@@ -487,11 +272,11 @@ namespace gpuntt
         using TU = typename std::make_unsigned<T>::type;
         constexpr KernelConfig k = StageConfig<TU, INVERSE, LogN>::config;
 
-        InverseLowRing<LogN><<<
-            dim3((batch_size + (k.blockdim_y - 1)) / k.blockdim_y, 1, 1),
-            dim3(k.blockdim_x, k.blockdim_y), k.shared_memory, stream>>>(
-            device_in, device_out, root_of_unity_table, modulus_policy,
-            (reduction_poly == ReductionPolynomial::X_N_minus), batch_size);
+        InverseLowRing<LogN>
+            <<<dim3((batch_size + (k.blockdim_y - 1)) / k.blockdim_y, 1, 1),
+               dim3(k.blockdim_x, k.blockdim_y), k.shared_memory, stream>>>(
+                device_in, device_out, root_of_unity_table, modulus_policy,
+                (reduction_poly == ReductionPolynomial::X_N_minus), batch_size);
         GPUNTT_CUDA_CHECK(cudaGetLastError());
     }
 
@@ -565,8 +350,8 @@ namespace gpuntt
                 {
                     InverseStage<LogN, I>
                         <<<grid, block, k.shared_memory, stream>>>(
-                            in, device_out, root_of_unity_table,
-                            modulus_policy, poly_policy, x_n_minus);
+                            in, device_out, root_of_unity_table, modulus_policy,
+                            poly_policy, x_n_minus);
                 }
                 else
                 {
@@ -972,64 +757,6 @@ namespace gpuntt
     ////////////////////////////////////
 
     template <typename T>
-    __global__ void ForwardCoreModulusOrdered(
-        T* polynomial_in, T* polynomial_out, Root<T>* root_of_unity_table,
-        Modulus<T>* modulus, int shared_index, int logm,
-        int outer_iteration_count, int N_power, bool not_last_kernel,
-        bool reduction_poly_check, int mod_count, int* order)
-    {
-        ForwardCoreBody<false>(
-            polynomial_in, polynomial_out, root_of_unity_table,
-            OrderedRnsModulus<T>{modulus, mod_count, order}, SequentialPolys{},
-            shared_index, logm, outer_iteration_count, N_power, not_last_kernel,
-            reduction_poly_check);
-    }
-
-    template <typename T>
-    __global__ void ForwardCoreModulusOrdered_(
-        T* polynomial_in, T* polynomial_out, Root<T>* root_of_unity_table,
-        Modulus<T>* modulus, int shared_index, int logm,
-        int outer_iteration_count, int N_power, bool not_last_kernel,
-        bool reduction_poly_check, int mod_count, int* order)
-    {
-        ForwardCoreBody<true>(
-            polynomial_in, polynomial_out, root_of_unity_table,
-            OrderedRnsModulus<T>{modulus, mod_count, order}, SequentialPolys{},
-            shared_index, logm, outer_iteration_count, N_power, not_last_kernel,
-            reduction_poly_check);
-    }
-
-    template <typename T>
-    __global__ void InverseCoreModulusOrdered(
-        T* polynomial_in, T* polynomial_out,
-        Root<T>* inverse_root_of_unity_table, Modulus<T>* modulus,
-        int shared_index, int logm, int k, int outer_iteration_count,
-        int N_power, Ninverse<T>* n_inverse, bool last_kernel,
-        bool reduction_poly_check, int mod_count, int* order)
-    {
-        InverseCoreBody<false>(
-            polynomial_in, polynomial_out, inverse_root_of_unity_table,
-            OrderedRnsModulus<T>{modulus, mod_count, order, n_inverse},
-            SequentialPolys{}, shared_index, logm, k, outer_iteration_count,
-            N_power, last_kernel, reduction_poly_check);
-    }
-
-    template <typename T>
-    __global__ void InverseCoreModulusOrdered_(
-        T* polynomial_in, T* polynomial_out,
-        Root<T>* inverse_root_of_unity_table, Modulus<T>* modulus,
-        int shared_index, int logm, int k, int outer_iteration_count,
-        int N_power, Ninverse<T>* n_inverse, bool last_kernel,
-        bool reduction_poly_check, int mod_count, int* order)
-    {
-        InverseCoreBody<true>(
-            polynomial_in, polynomial_out, inverse_root_of_unity_table,
-            OrderedRnsModulus<T>{modulus, mod_count, order, n_inverse},
-            SequentialPolys{}, shared_index, logm, k, outer_iteration_count,
-            N_power, last_kernel, reduction_poly_check);
-    }
-
-    template <typename T>
     __host__ void
     GPU_NTT_Modulus_Ordered(T* device_in, T* device_out,
                             Root<T>* root_of_unity_table, Modulus<T>* modulus,
@@ -1066,65 +793,6 @@ namespace gpuntt
     ////////////////////////////////////
     // Poly Ordered
     ////////////////////////////////////
-
-    template <typename T>
-    __global__ void ForwardCorePolyOrdered(
-        T* polynomial_in, T* polynomial_out, Root<T>* root_of_unity_table,
-        Modulus<T>* modulus, int shared_index, int logm,
-        int outer_iteration_count, int N_power, bool not_last_kernel,
-        bool reduction_poly_check, int mod_count, int* order)
-    {
-        ForwardCoreBody<false>(
-            polynomial_in, polynomial_out, root_of_unity_table,
-            RnsModulus<T>{modulus, mod_count}, OrderedPolys{order},
-            shared_index, logm, outer_iteration_count, N_power, not_last_kernel,
-            reduction_poly_check);
-    }
-
-    template <typename T>
-    __global__ void ForwardCorePolyOrdered_(
-        T* polynomial_in, T* polynomial_out, Root<T>* root_of_unity_table,
-        Modulus<T>* modulus, int shared_index, int logm,
-        int outer_iteration_count, int N_power, bool not_last_kernel,
-        bool reduction_poly_check, int mod_count, int* order)
-    {
-        ForwardCoreBody<true>(
-            polynomial_in, polynomial_out, root_of_unity_table,
-            RnsModulus<T>{modulus, mod_count}, OrderedPolys{order},
-            shared_index, logm, outer_iteration_count, N_power, not_last_kernel,
-            reduction_poly_check);
-    }
-
-    template <typename T>
-    __global__ void
-    InverseCorePolyOrdered(T* polynomial_in, T* polynomial_out,
-                           Root<T>* inverse_root_of_unity_table,
-                           Modulus<T>* modulus, int shared_index, int logm,
-                           int k, int outer_iteration_count, int N_power,
-                           Ninverse<T>* n_inverse, bool last_kernel,
-                           bool reduction_poly_check, int mod_count, int* order)
-    {
-        InverseCoreBody<false>(
-            polynomial_in, polynomial_out, inverse_root_of_unity_table,
-            RnsModulus<T>{modulus, mod_count, n_inverse}, OrderedPolys{order},
-            shared_index, logm, k, outer_iteration_count, N_power, last_kernel,
-            reduction_poly_check);
-    }
-
-    template <typename T>
-    __global__ void InverseCorePolyOrdered_(
-        T* polynomial_in, T* polynomial_out,
-        Root<T>* inverse_root_of_unity_table, Modulus<T>* modulus,
-        int shared_index, int logm, int k, int outer_iteration_count,
-        int N_power, Ninverse<T>* n_inverse, bool last_kernel,
-        bool reduction_poly_check, int mod_count, int* order)
-    {
-        InverseCoreBody<true>(
-            polynomial_in, polynomial_out, inverse_root_of_unity_table,
-            RnsModulus<T>{modulus, mod_count, n_inverse}, OrderedPolys{order},
-            shared_index, logm, k, outer_iteration_count, N_power, last_kernel,
-            reduction_poly_check);
-    }
 
     template <typename T>
     __host__ void
@@ -1212,47 +880,6 @@ namespace gpuntt
     using UnsignedOf = typename std::make_unsigned<T>::type;
 
 #define GPUNTT_INSTANTIATE_ALL_TYPES(T)                                        \
-    template __global__ void ForwardCoreLowRing<T>(                            \
-        T*, UnsignedOf<T>*, const Root<UnsignedOf<T>>* __restrict__,           \
-        Modulus<UnsignedOf<T>>, int, int, bool, int);                          \
-    template __global__ void ForwardCoreLowRing<T>(                            \
-        T*, UnsignedOf<T>*, const Root<UnsignedOf<T>>* __restrict__,           \
-        Modulus<UnsignedOf<T>>*, int, int, bool, int, int);                    \
-    template __global__ void ForwardCore<T>(                                   \
-        T*, UnsignedOf<T>*, const Root<UnsignedOf<T>>* __restrict__,           \
-        Modulus<UnsignedOf<T>>, int, int, int, int, bool, bool);               \
-    template __global__ void ForwardCore<T>(                                   \
-        T*, UnsignedOf<T>*, const Root<UnsignedOf<T>>* __restrict__,           \
-        Modulus<UnsignedOf<T>>*, int, int, int, int, bool, bool, int);         \
-    template __global__ void ForwardCore_<T>(                                  \
-        T*, UnsignedOf<T>*, const Root<UnsignedOf<T>>* __restrict__,           \
-        Modulus<UnsignedOf<T>>, int, int, int, int, bool, bool);               \
-    template __global__ void ForwardCore_<T>(                                  \
-        T*, UnsignedOf<T>*, const Root<UnsignedOf<T>>* __restrict__,           \
-        Modulus<UnsignedOf<T>>*, int, int, int, int, bool, bool, int);         \
-    template __global__ void InverseCoreLowRing<T>(                            \
-        UnsignedOf<T>*, T*, const Root<UnsignedOf<T>>* __restrict__,           \
-        Modulus<UnsignedOf<T>>, int, int, Ninverse<UnsignedOf<T>>, bool, int); \
-    template __global__ void InverseCoreLowRing<T>(                            \
-        UnsignedOf<T>*, T*, const Root<UnsignedOf<T>>* __restrict__,           \
-        Modulus<UnsignedOf<T>>*, int, int, Ninverse<UnsignedOf<T>>*, bool,     \
-        int, int);                                                             \
-    template __global__ void InverseCore<T>(                                   \
-        UnsignedOf<T>*, T*, const Root<UnsignedOf<T>>* __restrict__,           \
-        Modulus<UnsignedOf<T>>, int, int, int, int, int,                       \
-        Ninverse<UnsignedOf<T>>, bool, bool);                                  \
-    template __global__ void InverseCore<T>(                                   \
-        UnsignedOf<T>*, T*, const Root<UnsignedOf<T>>* __restrict__,           \
-        Modulus<UnsignedOf<T>>*, int, int, int, int, int,                      \
-        Ninverse<UnsignedOf<T>>*, bool, bool, int);                            \
-    template __global__ void InverseCore_<T>(                                  \
-        UnsignedOf<T>*, T*, const Root<UnsignedOf<T>>* __restrict__,           \
-        Modulus<UnsignedOf<T>>, int, int, int, int, int,                       \
-        Ninverse<UnsignedOf<T>>, bool, bool);                                  \
-    template __global__ void InverseCore_<T>(                                  \
-        UnsignedOf<T>*, T*, const Root<UnsignedOf<T>>* __restrict__,           \
-        Modulus<UnsignedOf<T>>*, int, int, int, int, int,                      \
-        Ninverse<UnsignedOf<T>>*, bool, bool, int);                            \
     template __global__ void ForwardCoreTranspose<T>(                          \
         T*, UnsignedOf<T>*, const Root<UnsignedOf<T>>* __restrict__,           \
         const Modulus<UnsignedOf<T>>, int, int, bool);                         \
@@ -1288,35 +915,11 @@ namespace gpuntt
         T*, Root<T>*, Modulus<T>*, ntt_rns_configuration<T>, int, int);        \
     template __host__ void GPU_INTT_Inplace<T>(                                \
         T*, Root<T>*, Modulus<T>*, ntt_rns_configuration<T>, int, int);        \
-    template __global__ void ForwardCoreModulusOrdered<T>(                     \
-        T*, T*, Root<T>*, Modulus<T>*, int, int, int, int, bool, bool, int,    \
-        int*);                                                                 \
-    template __global__ void ForwardCoreModulusOrdered_<T>(                    \
-        T*, T*, Root<T>*, Modulus<T>*, int, int, int, int, bool, bool, int,    \
-        int*);                                                                 \
-    template __global__ void InverseCoreModulusOrdered<T>(                     \
-        T*, T*, Root<T>*, Modulus<T>*, int, int, int, int, int, Ninverse<T>*,  \
-        bool, bool, int, int*);                                                \
-    template __global__ void InverseCoreModulusOrdered_<T>(                    \
-        T*, T*, Root<T>*, Modulus<T>*, int, int, int, int, int, Ninverse<T>*,  \
-        bool, bool, int, int*);                                                \
     template __host__ void GPU_NTT_Modulus_Ordered<T>(                         \
         T*, T*, Root<T>*, Modulus<T>*, ntt_rns_configuration<T>, int, int,     \
         int*);                                                                 \
     template __host__ void GPU_NTT_Modulus_Ordered_Inplace<T>(                 \
         T*, Root<T>*, Modulus<T>*, ntt_rns_configuration<T>, int, int, int*);  \
-    template __global__ void ForwardCorePolyOrdered<T>(                        \
-        T*, T*, Root<T>*, Modulus<T>*, int, int, int, int, bool, bool, int,    \
-        int*);                                                                 \
-    template __global__ void ForwardCorePolyOrdered_<T>(                       \
-        T*, T*, Root<T>*, Modulus<T>*, int, int, int, int, bool, bool, int,    \
-        int*);                                                                 \
-    template __global__ void InverseCorePolyOrdered<T>(                        \
-        T*, T*, Root<T>*, Modulus<T>*, int, int, int, int, int, Ninverse<T>*,  \
-        bool, bool, int, int*);                                                \
-    template __global__ void InverseCorePolyOrdered_<T>(                       \
-        T*, T*, Root<T>*, Modulus<T>*, int, int, int, int, int, Ninverse<T>*,  \
-        bool, bool, int, int*);                                                \
     template __host__ void GPU_NTT_Poly_Ordered<T>(                            \
         T*, T*, Root<T>*, Modulus<T>*, ntt_rns_configuration<T>, int, int,     \
         int*);                                                                 \
