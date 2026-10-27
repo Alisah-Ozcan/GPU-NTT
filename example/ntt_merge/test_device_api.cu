@@ -54,29 +54,26 @@ __global__ void multiply_kernel(TestDataType* a, const TestDataType* b_hat,
                                 Modulus<TestDataType> modulus,
                                 TestDataType n_inverse, int batch)
 {
-    extern __shared__ char shared_memory_raw[];
-    TestDataType* shared_memory =
-        reinterpret_cast<TestDataType*>(shared_memory_raw);
+    TestDataType* shared_memory = SmallForward::shared_memory();
+    TestDataType* polys = SmallForward::block_data(a);
+    const TestDataType* polys_b_hat = SmallForward::block_data(b_hat);
+    const int num_polys = SmallForward::num_polys(batch);
 
-    const int first = blockIdx.x * SmallForward::batches_per_block;
-    const int num_polys = min(SmallForward::batches_per_block, batch - first);
-    const size_t offset = size_t(first) * SmallForward::size;
-
-    SmallForward().load(shared_memory, a + offset, modulus, num_polys);
+    SmallForward().load(shared_memory, polys, modulus, num_polys);
     SmallForward().execute(shared_memory, forward_roots, modulus);
 
     // Any element-wise work can go here; this kernel multiplies by b_hat.
-    for (int i = threadIdx.x + threadIdx.y * blockDim.x;
-         i < num_polys * SmallForward::size; i += blockDim.x * blockDim.y)
-    {
-        shared_memory[i] = OPERATOR_GPU<TestDataType>::mult(
-            shared_memory[i], b_hat[offset + i], modulus);
-    }
-    __syncthreads();
+    SmallForward().for_each(
+        shared_memory,
+        [&](TestDataType& value, size_t index)
+        {
+            value = OPERATOR_GPU<TestDataType>::mult(value, polys_b_hat[index],
+                                                     modulus);
+        },
+        num_polys);
 
     SmallInverse().execute(shared_memory, inverse_roots, modulus);
-    SmallInverse().store(shared_memory, a + offset, modulus, n_inverse,
-                         num_polys);
+    SmallInverse().store(shared_memory, polys, modulus, n_inverse, num_polys);
 }
 
 // Stage I of the large forward NTT. Stage 0 reads in; every stage writes out,
@@ -86,35 +83,11 @@ __global__ void large_stage_kernel(TestDataType* in, TestDataType* out,
                                    const TestDataType* roots,
                                    Modulus<TestDataType> modulus)
 {
-    extern __shared__ char shared_memory_raw[];
-    TestDataType* shared_memory =
-        reinterpret_cast<TestDataType*>(shared_memory_raw);
-
     using Stage = LargeForward::stage<I>;
+    TestDataType* shared_memory = Stage::shared_memory();
     Stage().load(shared_memory, in, modulus);
     Stage().execute(shared_memory, roots, modulus);
     Stage().store(shared_memory, out);
-}
-
-template <int I>
-void launch_large_stage(TestDataType* in, TestDataType* out,
-                        const TestDataType* roots,
-                        Modulus<TestDataType> modulus, int batch)
-{
-    using Stage = LargeForward::stage<I>;
-    large_stage_kernel<I>
-        <<<Stage::grid(batch), Stage::block_dim, Stage::shared_memory_size>>>(
-            I == 0 ? in : out, out, roots, modulus);
-    GPUNTT_CUDA_CHECK(cudaGetLastError());
-}
-
-template <int... I>
-void launch_large_stages(TestDataType* in, TestDataType* out,
-                         const TestDataType* roots,
-                         Modulus<TestDataType> modulus, int batch,
-                         std::integer_sequence<int, I...>)
-{
-    (launch_large_stage<I>(in, out, roots, modulus, batch), ...);
 }
 
 // N = 2^12 runs as two stage kernels per direction. The last forward stage
@@ -134,11 +107,8 @@ __global__ void staged_forward_kernel(TestDataType* a,
                                       const TestDataType* forward_roots,
                                       Modulus<TestDataType> modulus)
 {
-    extern __shared__ char shared_memory_raw[];
-    TestDataType* shared_memory =
-        reinterpret_cast<TestDataType*>(shared_memory_raw);
-
     using Stage = StagedForward::stage<0>;
+    TestDataType* shared_memory = Stage::shared_memory();
     Stage().load(shared_memory, a, modulus);
     Stage().execute(shared_memory, forward_roots, modulus);
     Stage().store(shared_memory, a);
@@ -153,12 +123,9 @@ __global__ void staged_multiply_kernel(TestDataType* a,
                                        const TestDataType* inverse_roots,
                                        Modulus<TestDataType> modulus)
 {
-    extern __shared__ char shared_memory_raw[];
-    TestDataType* shared_memory =
-        reinterpret_cast<TestDataType*>(shared_memory_raw);
-
     using Last = StagedForward::stage<1>;
     using First = StagedInverse::stage<0>;
+    TestDataType* shared_memory = Last::shared_memory();
     Last().load(shared_memory, a, modulus);
     Last().execute(shared_memory, forward_roots, modulus);
     Last().for_each(shared_memory,
@@ -176,11 +143,8 @@ __global__ void staged_inverse_kernel(TestDataType* a,
                                       Modulus<TestDataType> modulus,
                                       TestDataType n_inverse)
 {
-    extern __shared__ char shared_memory_raw[];
-    TestDataType* shared_memory =
-        reinterpret_cast<TestDataType*>(shared_memory_raw);
-
     using Stage = StagedInverse::stage<1>;
+    TestDataType* shared_memory = Stage::shared_memory();
     Stage().load(shared_memory, a, modulus);
     Stage().execute(shared_memory, inverse_roots, modulus);
     Stage().store(shared_memory, a, modulus, n_inverse);
@@ -314,9 +278,18 @@ int main(int argc, char* argv[])
                                      input.size() * sizeof(TestDataType),
                                      cudaMemcpyHostToDevice));
 
-        launch_large_stages(
-            in_device, out_device, roots, parameters.modulus, batch,
-            std::make_integer_sequence<int, LargeForward::num_stages>());
+        // Stage 0 reads in_device; every stage writes out_device, which the
+        // later stages read and write in place.
+        LargeForward::for_each_stage(
+            [&](auto I)
+            {
+                using Stage = LargeForward::stage<I>;
+                large_stage_kernel<I><<<Stage::grid(batch), Stage::block_dim,
+                                        Stage::shared_memory_size>>>(
+                    I == 0 ? in_device : out_device, out_device, roots,
+                    parameters.modulus);
+                GPUNTT_CUDA_CHECK(cudaGetLastError());
+            });
 
         vector<TestDataType> output(input.size());
         GPUNTT_CUDA_CHECK(cudaMemcpy(output.data(), out_device,

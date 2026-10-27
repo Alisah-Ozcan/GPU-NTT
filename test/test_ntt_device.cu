@@ -143,6 +143,35 @@ namespace
         Inv().store(shared_memory, out + offset, modulus, n_inverse, num_polys);
     }
 
+    // The same with the helpers: shared_memory, block_data, num_polys and
+    // for_each.
+    template <typename Fwd, typename Inv>
+    __global__ void fused_multiply_helpers_kernel(
+        typename Fwd::value_type* a, const typename Fwd::value_type* b_hat,
+        typename Fwd::value_type* out, const typename Fwd::value_type* roots,
+        const typename Fwd::value_type* inverse_roots,
+        Modulus<typename Fwd::value_type> modulus,
+        typename Fwd::value_type n_inverse, int batch)
+    {
+        using T = typename Fwd::value_type;
+        T* shared_memory = Fwd::shared_memory();
+        const T* block_b_hat = Fwd::block_data(b_hat);
+        const int num_polys = Fwd::num_polys(batch);
+
+        Fwd().load(shared_memory, Fwd::block_data(a), modulus, num_polys);
+        Fwd().execute(shared_memory, roots, modulus);
+        Fwd().for_each(
+            shared_memory,
+            [&](T& value, size_t index) {
+                value =
+                    OPERATOR_GPU<T>::mult(value, block_b_hat[index], modulus);
+            },
+            num_polys);
+        Inv().execute(shared_memory, inverse_roots, modulus);
+        Inv().store(shared_memory, Fwd::block_data(out), modulus, n_inverse,
+                    num_polys);
+    }
+
     template <typename T>
     __global__ void multiply_kernel(T* a, const T* b, Modulus<T> modulus,
                                     size_t total)
@@ -214,6 +243,22 @@ namespace
                                Stage::shared_memory_size>>>(
             stage_in, stage_out, roots, modulus, n_inverse);
         check_cuda(cudaGetLastError(), "launch");
+    }
+
+    // Forward stage I with the shared_memory helper; launched by
+    // for_each_stage.
+    template <typename NTT, int I>
+    __global__ void
+    forward_stage_helpers_kernel(const typename NTT::value_type* in,
+                                 typename NTT::value_type* out,
+                                 const typename NTT::value_type* roots,
+                                 Modulus<typename NTT::value_type> modulus)
+    {
+        using Stage = typename NTT::template stage<I>;
+        typename NTT::value_type* shared_memory = Stage::shared_memory();
+        Stage().load(shared_memory, in, modulus);
+        Stage().execute(shared_memory, roots, modulus);
+        Stage().store(shared_memory, out);
     }
 
     // The last forward stage, a pointwise product with b_hat and the first
@@ -508,13 +553,26 @@ namespace
                 modulus, n_inverse, batch);
         check_cuda(cudaGetLastError(), "launch");
 
-        cases++;
-        if (expected.read() != actual.read())
+        DeviceBuffer<T> with_helpers(total);
+        fused_multiply_helpers_kernel<Fwd, Inv>
+            <<<Fwd::grid(batch), Fwd::block_dim, Fwd::shared_memory_size>>>(
+                a.data, b_hat.data, with_helpers.data, roots.data,
+                inverse_roots.data, modulus, n_inverse, batch);
+        check_cuda(cudaGetLastError(), "launch");
+
+        const std::vector<T> expected_values = expected.read();
+        const char* const variants[] = {"", " with helpers"};
+        const std::vector<T> results[] = {actual.read(), with_helpers.read()};
+        for (int v = 0; v < 2; v++)
         {
-            failures++;
-            std::printf("FAIL fused multiply %s logn=%d %s batch=%d\n",
-                        sizeof(T) == 4 ? "u32" : "u64", LogN,
-                        R == X_N_minus ? "X^N-1" : "X^N+1", batch);
+            cases++;
+            if (results[v] != expected_values)
+            {
+                failures++;
+                std::printf("FAIL fused multiply%s %s logn=%d %s batch=%d\n",
+                            variants[v], sizeof(T) == 4 ? "u32" : "u64", LogN,
+                            R == X_N_minus ? "X^N-1" : "X^N+1", batch);
+            }
         }
     }
 
@@ -655,8 +713,28 @@ namespace
         ntt_configuration<T> inv_cfg = fwd_cfg;
         inv_cfg.ntt_type = INVERSE;
 
-        DeviceBuffer<T> expected(total), actual(total);
+        // Forward NTT with all stages launched by for_each_stage.
+        DeviceBuffer<T> expected(total), actual(total), staged(total);
         GPU_NTT(a.data, expected.data, roots.data, modulus, fwd_cfg, batch);
+        Fwd::for_each_stage(
+            [&](auto I)
+            {
+                using Stage = typename Fwd::template stage<I>;
+                forward_stage_helpers_kernel<Fwd, I>
+                    <<<Stage::grid(batch), Stage::block_dim,
+                       Stage::shared_memory_size>>>(
+                        I == 0 ? a.data : staged.data, staged.data, roots.data,
+                        modulus);
+            });
+        check_cuda(cudaGetLastError(), "launch");
+        cases++;
+        if (expected.read() != staged.read())
+        {
+            failures++;
+            std::printf("FAIL for_each_stage %s logn=%d %s batch=%d\n",
+                        sizeof(T) == 4 ? "u32" : "u64", LogN,
+                        R == X_N_minus ? "X^N-1" : "X^N+1", batch);
+        }
         multiply_kernel<<<(total + 255) / 256, 256>>>(expected.data, b_hat.data,
                                                       modulus, total);
         GPU_INTT_Inplace(expected.data, inverse_roots.data, modulus, inv_cfg,

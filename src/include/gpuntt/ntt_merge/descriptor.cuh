@@ -13,6 +13,7 @@
 #include "gpuntt/ntt_merge/ntt_device.cuh"
 #include <cstddef>
 #include <type_traits>
+#include <utility>
 
 namespace gpuntt
 {
@@ -441,6 +442,14 @@ namespace gpuntt
 
     constexpr int kLowRingMaxLogN = 9;
 
+    // The kernel's dynamic shared memory as an array of T. Kernels that use
+    // the device API launch with the description's shared_memory_size.
+    template <typename T> __device__ __forceinline__ T* dynamic_shared_memory()
+    {
+        extern __shared__ __align__(16) unsigned char gpuntt_shared_memory[];
+        return reinterpret_cast<T*>(gpuntt_shared_memory);
+    }
+
     // Launch parameters and device functions of kernel I of an NTT of ring
     // size 2^LogN. Ring sizes up to 2^kLowRingMaxLogN use the low ring
     // kernel, which transforms B polynomials per block (use the single kernel
@@ -500,6 +509,12 @@ namespace gpuntt
         static constexpr bool swap_grid_axes =
             LogN >= 25 && (D == FORWARD ? last : I == 0);
 
+        // The kernel's dynamic shared memory (shared_memory_size bytes).
+        __device__ __forceinline__ static T* shared_memory()
+        {
+            return dynamic_shared_memory<T>();
+        }
+
         template <typename TIn>
         __device__ __forceinline__ void load(T* shared_memory, TIn* data,
                                              Modulus<T> modulus) const
@@ -507,10 +522,13 @@ namespace gpuntt
             static_assert(!low_ring, "Use the single kernel API for Size up "
                                      "to 2^9");
             static_assert(
-                std::is_same<std::make_unsigned_t<TIn>, T>::value,
+                std::is_same<std::make_unsigned_t<std::remove_const_t<TIn>>,
+                             T>::value,
                 "The input must be the description's Precision or its "
                 "signed type");
-            StageLoad(thread(modulus, 0), shared_memory, data);
+            // The load functions only read data.
+            StageLoad(thread(modulus, 0), shared_memory,
+                      const_cast<std::remove_const_t<TIn>*>(data));
         }
 
         __device__ __forceinline__ void
@@ -639,23 +657,48 @@ namespace gpuntt
             return dim3((batch + B - 1) / B);
         }
 
+        // The kernel's dynamic shared memory (shared_memory_size bytes).
+        __device__ __forceinline__ static T* shared_memory()
+        {
+            return dynamic_shared_memory<T>();
+        }
+
+        // The block's first polynomial in an array of polynomials:
+        // data + blockIdx.x * B * N.
+        template <typename U>
+        __device__ __forceinline__ static U* block_data(U* data)
+        {
+            return data + ((size_t(blockIdx.x) * B) << LogN);
+        }
+
+        // Polynomials of the block out of batch: B, or fewer in a last block
+        // that is not full.
+        __device__ __forceinline__ static int num_polys(int batch)
+        {
+            return min(B, batch - int(blockIdx.x) * B);
+        }
+
         template <typename TIn>
         __device__ __forceinline__ void load(T* shared_memory, TIn* data,
                                              Modulus<T> modulus,
                                              int num_polys = B) const
         {
             static_assert(
-                std::is_same<std::make_unsigned_t<TIn>, T>::value,
+                std::is_same<std::make_unsigned_t<std::remove_const_t<TIn>>,
+                             T>::value,
                 "The input must be the description's Precision or its "
                 "signed type");
             if constexpr (low_ring)
             {
+                // The load functions only read data.
                 LowRingLoad(low_ring_thread(modulus, 0, num_polys),
-                            shared_memory, data);
+                            shared_memory,
+                            const_cast<std::remove_const_t<TIn>*>(data));
             }
             else
             {
-                StageLoad(stage_thread(modulus, 0), shared_memory, data);
+                StageLoad(stage_thread(modulus, 0), shared_memory,
+                          const_cast<std::remove_const_t<TIn>*>(data));
             }
         }
 
@@ -697,6 +740,22 @@ namespace gpuntt
                                         x_n_minus);
                 }
             }
+        }
+
+        // Calls f(value, index) for the entries of the block's num_polys
+        // polynomials, spread over the threads; index is the entry's position
+        // in data, the array load reads and store writes. Ends with a block
+        // barrier.
+        template <typename F>
+        __device__ __forceinline__ void for_each(T* shared_memory, F f,
+                                                 int num_polys = B) const
+        {
+            for (int i = threadIdx.x + threadIdx.y * blockDim.x;
+                 i < (num_polys << LogN); i += blockDim.x * blockDim.y)
+            {
+                f(shared_memory[i], size_t(i));
+            }
+            __syncthreads();
         }
 
         __device__ __forceinline__ void store(T* shared_memory, T* data,
@@ -1026,6 +1085,14 @@ namespace gpuntt
       public:
         static constexpr int num_stages = stages.size();
 
+        // Calls f(std::integral_constant<int, I>()) for I = 0, 1, ...,
+        // num_stages - 1 in order, e.g. to launch the stage kernels:
+        //   NTT::for_each_stage([&](auto I) { my_stage<I><<<...>>>(...); });
+        template <typename F> static void for_each_stage(F f)
+        {
+            call_for_stages(f, std::make_integer_sequence<int, num_stages>());
+        }
+
         // Polynomials per block. Only the low ring kernel takes more than one;
         // its default comes from the kernel table.
         static constexpr int batches_per_block =
@@ -1065,6 +1132,13 @@ namespace gpuntt
         using root_table = NTTRootTable<value_type, size, direction,
                                         !std::is_void<reduction_op>::value,
                                         reduction_value<reduction_op>()>;
+
+      private:
+        template <typename F, int... I>
+        static void call_for_stages(F f, std::integer_sequence<int, I...>)
+        {
+            (f(std::integral_constant<int, I>()), ...);
+        }
     };
 
     struct NTTNoMembers

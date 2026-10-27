@@ -207,28 +207,31 @@ Data64 n_inverse = InverseNTT::n_inv(modulus);  // N^-1 mod prime
 Block `b` transforms the `B = NTT::batches_per_block` polynomials that start at `data + b * B * N`:
 
 ```cpp
-__global__ void my_ntt(Data64* data, const Data64* roots,
+__global__ void my_ntt(Data64* data, const Data64* other, const Data64* roots,
                        Modulus<Data64> modulus, int batch)
 {
-    extern __shared__ char shared_memory_raw[];
-    Data64* shared_memory = reinterpret_cast<Data64*>(shared_memory_raw);
-
-    const int first = blockIdx.x * NTT::batches_per_block;
-    const int num_polys = min(NTT::batches_per_block, batch - first);
-    Data64* polys = data + size_t(first) * NTT::size;
+    Data64* shared_memory = NTT::shared_memory();
+    Data64* polys = NTT::block_data(data);          // data + blockIdx.x * B * N
+    const Data64* other_polys = NTT::block_data(other);
+    const int num_polys = NTT::num_polys(batch);    // B, fewer in a last block
 
     NTT().load(shared_memory, polys, modulus, num_polys);
     NTT().execute(shared_memory, roots, modulus);
-    // ... your own work on shared_memory, then __syncthreads() ...
+    // Your own element-wise work, e.g. a product with another array:
+    NTT().for_each(shared_memory, [&](Data64& value, size_t index) {
+        value = OPERATOR_GPU<Data64>::mult(value, other_polys[index], modulus);
+    }, num_polys);
     NTT().store(shared_memory, polys, num_polys);
 }
 
 my_ntt<<<NTT::grid(batch), NTT::block_dim, NTT::shared_memory_size>>>(
-    data, roots, modulus, batch);
+    data, other, roots, modulus, batch);
 ```
 
-- Shared memory holds the block's polynomials one after another (polynomial `j` at `shared_memory + j * N`), with coefficients in the same order as in global memory. After the forward `execute` they are in the order of the `GPU_NTT` output, so element-wise work can use `OPERATOR_GPU<T>::add`, `sub` and `mult` directly.
-- `execute` ends with a block barrier. Code that writes shared memory between `execute` and `store` (or another `execute`) must end with `__syncthreads()`.
+- `NTT::shared_memory()` is the kernel's dynamic shared memory; launch with `NTT::shared_memory_size` bytes.
+- Shared memory holds the block's polynomials one after another (polynomial `j` at `shared_memory + j * N`), with coefficients in the same order as in global memory. After the forward `execute` they are in the order of the `GPU_NTT` output.
+- `NTT().for_each(shared_memory, f, num_polys)` calls `f(value, index)` for every entry, spread over the threads; `index` is the entry's position in the array `load` reads. It ends with a block barrier. `OPERATOR_GPU<T>::add`, `sub` and `mult` work on the values.
+- `execute` ends with a block barrier. Code that writes shared memory between `execute` and `store` (or another `execute`) without `for_each` must end with `__syncthreads()`.
 - The inverse `execute` leaves N · INTT(x) in shared memory; the inverse `store(shared_memory, data, modulus, n_inverse, num_polys)` multiplies by `n_inverse` = N^-1 while writing, which saves a pass over shared memory.
 - `num_polys` (at most B) is the number of polynomials of a last block that is not full.
 
@@ -244,19 +247,22 @@ template <int I>
 __global__ void my_stage(Data64* in, Data64* out, const Data64* roots,
                          Modulus<Data64> modulus)
 {
-    extern __shared__ char shared_memory_raw[];
-    Data64* shared_memory = reinterpret_cast<Data64*>(shared_memory_raw);
+    using Stage = BigNTT::stage<I>;
+    Data64* shared_memory = Stage::shared_memory();
 
-    BigNTT::stage<I>().load(shared_memory, in, modulus);
-    BigNTT::stage<I>().execute(shared_memory, roots, modulus);
-    BigNTT::stage<I>().store(shared_memory, out);
+    Stage().load(shared_memory, in, modulus);
+    Stage().execute(shared_memory, roots, modulus);
+    Stage().store(shared_memory, out);
 }
 
-// For I = 0, 1, ..., BigNTT::num_stages - 1, in order. Stage 0 reads `in`; every
-// stage writes `out`, which the later stages read and write in place.
-using Stage = BigNTT::stage<I>;
-my_stage<I><<<Stage::grid(batch), Stage::block_dim, Stage::shared_memory_size>>>(
-    I == 0 ? in : out, out, roots, modulus);
+// Launches the stages in order, I = 0, 1, ..., BigNTT::num_stages - 1. Stage 0
+// reads `in`; every stage writes `out`, which the later stages read and write
+// in place.
+BigNTT::for_each_stage([&](auto I) {
+    using Stage = BigNTT::stage<I>;
+    my_stage<I><<<Stage::grid(batch), Stage::block_dim, Stage::shared_memory_size>>>(
+        I == 0 ? in : out, out, roots, modulus);
+});
 ```
 
 - The last inverse stage (`BigNTT::stage<I>::last`) stores with `store(shared_memory, out, modulus, n_inverse)`.
@@ -269,6 +275,7 @@ using BigInverseNTT = decltype(Size<(1 << 16)>() + Direction<INVERSE>() +
 using Last = BigNTT::stage<BigNTT::num_stages - 1>;
 using First = BigInverseNTT::stage<0>;
 
+Data64* shared_memory = Last::shared_memory();
 Last().load(shared_memory, a, modulus);
 Last().execute(shared_memory, roots, modulus);
 Last().for_each(shared_memory, [&](Data64& value, size_t index) {

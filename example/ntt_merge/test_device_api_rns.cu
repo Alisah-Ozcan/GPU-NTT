@@ -51,28 +51,24 @@ __global__ void rns_multiply_kernel(TestDataType* a, const TestDataType* b_hat,
                                     const Modulus<TestDataType>* moduli,
                                     const TestDataType* n_inverses)
 {
-    extern __shared__ char shared_memory_raw[];
-    TestDataType* shared_memory =
-        reinterpret_cast<TestDataType*>(shared_memory_raw);
+    TestDataType* shared_memory = Forward::shared_memory();
+    TestDataType* poly = Forward::block_data(a);
+    const TestDataType* poly_b_hat = Forward::block_data(b_hat);
 
     const int prime = blockIdx.x % kModCount;
     const Modulus<TestDataType> modulus = moduli[prime];
     const size_t root_offset = size_t(prime) << kLogN;
-    const size_t offset = size_t(blockIdx.x) * Forward::size;
 
-    Forward().load(shared_memory, a + offset, modulus);
+    Forward().load(shared_memory, poly, modulus);
     Forward().execute(shared_memory, forward_roots + root_offset, modulus);
-
-    for (int i = threadIdx.x + threadIdx.y * blockDim.x; i < Forward::size;
-         i += blockDim.x * blockDim.y)
-    {
-        shared_memory[i] = OPERATOR_GPU<TestDataType>::mult(
-            shared_memory[i], b_hat[offset + i], modulus);
-    }
-    __syncthreads();
-
+    Forward().for_each(shared_memory,
+                       [&](TestDataType& value, size_t index)
+                       {
+                           value = OPERATOR_GPU<TestDataType>::mult(
+                               value, poly_b_hat[index], modulus);
+                       });
     Inverse().execute(shared_memory, inverse_roots + root_offset, modulus);
-    Inverse().store(shared_memory, a + offset, modulus, n_inverses[prime]);
+    Inverse().store(shared_memory, poly, modulus, n_inverses[prime]);
 }
 
 template <typename T> T* to_device(const vector<T>& values)
