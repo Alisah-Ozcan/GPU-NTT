@@ -2,6 +2,9 @@ set(LIB_SOURCE_FILES
     lib/common/common.cu
     lib/common/nttparameters.cu
     lib/ntt_merge/ntt.cu
+    lib/ntt_merge/ntt_forward.cu
+    lib/ntt_merge/ntt_inverse.cu
+    lib/ntt_merge/ntt_ordered.cu
     lib/ntt_merge/ntt_cpu.cu
 )
 
