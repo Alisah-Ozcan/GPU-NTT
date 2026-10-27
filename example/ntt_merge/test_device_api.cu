@@ -224,9 +224,13 @@ int main(int argc, char* argv[])
         for (auto& x : input)
             x = dis(gen);
 
-        TestDataType* roots =
-            device_root_table(LargeForward::make_twiddles_host(
-                parameters.modulus, parameters.root_of_unity));
+        // The root table is built on the GPU, which is much faster than on
+        // the host for large N.
+        TestDataType* roots;
+        GPUNTT_CUDA_CHECK(cudaMalloc(&roots, LargeForward::twiddle_table_size *
+                                                 sizeof(TestDataType)));
+        LargeForward::make_twiddles(roots, parameters.modulus,
+                                    parameters.root_of_unity);
 
         TestDataType *in_device, *out_device;
         GPUNTT_CUDA_CHECK(

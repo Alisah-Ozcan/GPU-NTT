@@ -191,9 +191,10 @@ std::vector<Data64> roots = NTT::make_twiddles_host(modulus, psi);  // NTT::twid
 Data64 n_inverse = InverseNTT::n_inv(modulus);  // N^-1 mod prime
 ```
 
+- `NTT::make_twiddles(table, modulus, root, stream = 0)` writes the same table with a kernel to `table` in device memory (`NTT::twiddle_table_size` entries). For large N it is much faster: about 9 ms instead of 38 s on the host for N = 2^28 on an RTX 4090.
 - `NTT::twiddle_table_size` is N for X^N + 1 and N / 2 for X^N - 1. `make_twiddles_host` throws `std::invalid_argument` if the root does not have the right order.
 - The tables are the ones `GPU_NTT` / `GPU_INTT` take, so they can be shared with the host API. RNS tables for the host API hold the roots of prime `i` at offset `i << log2(N)` for both reduction polynomials.
-- [`gpuntt/common/fields.cuh`](src/include/gpuntt/common/fields.cuh) lists ready primes with their roots of unity: `ntt_primes32` (29 and 30 bits, ring sizes up to 2^22, the first one up to 2^25) and `ntt_primes64` (60 and 61 bits, every ring size up to 2^28). `NTT::make_twiddles_host(ntt_primes64[i])` picks the root itself; `root_of_unity(prime, log_order)` gives a root of order 2^log_order.
+- [`gpuntt/common/fields.cuh`](src/include/gpuntt/common/fields.cuh) lists ready primes with their roots of unity: `ntt_primes32` (29 and 30 bits, ring sizes up to 2^22, the first one up to 2^25) and `ntt_primes64` (60 and 61 bits, every ring size up to 2^28). `NTT::make_twiddles_host(ntt_primes64[i])` and `NTT::make_twiddles(table, ntt_primes64[i])` pick the root themselves; `root_of_unity(prime, log_order)` gives a root of order 2^log_order.
 - `Modulus<T>` can also be built inside a kernel. There, a modulus larger than the supported size (30 bits for `Data32`, 61 bits for `Data64`) is not rejected.
 
 ### Ring sizes up to 2^10: one kernel

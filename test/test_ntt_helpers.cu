@@ -4,9 +4,9 @@
 // Developer: Alişah Özcan
 
 // Tests the helpers around the device API: Modulus built in a kernel must
-// match the host one, the root tables and N^-1 of a description must match
-// the ones of NTTParameters, and every prime of fields.cuh must give the CPU
-// NTT result through GPU_NTT and GPU_INTT.
+// match the host one, the root tables (built on the host and on the GPU) and
+// N^-1 of a description must match the ones of NTTParameters, and every prime
+// of fields.cuh must give the CPU NTT result through GPU_NTT and GPU_INTT.
 
 #include "gpuntt/ntt_merge/descriptor.cuh"
 #include "gpuntt/ntt_merge/ntt.cuh"
@@ -111,6 +111,26 @@ namespace
                                    : "Modulus<Data64> built in a kernel");
     }
 
+    template <typename T> T* to_device(const std::vector<T>& values)
+    {
+        T* data;
+        check_cuda(cudaMalloc(&data, values.size() * sizeof(T)), "cudaMalloc");
+        check_cuda(cudaMemcpy(data, values.data(), values.size() * sizeof(T),
+                              cudaMemcpyHostToDevice),
+                   "cudaMemcpy");
+        return data;
+    }
+
+    template <typename T>
+    std::vector<T> from_device(const T* data, size_t count)
+    {
+        std::vector<T> values(count);
+        check_cuda(cudaMemcpy(values.data(), data, count * sizeof(T),
+                              cudaMemcpyDeviceToHost),
+                   "cudaMemcpy");
+        return values;
+    }
+
     template <typename NTT, typename = void>
     struct has_root_table : std::false_type
     {
@@ -146,6 +166,15 @@ namespace
             std::to_string(LogN) + (D == FORWARD ? " forward" : " inverse") +
             (R == X_N_plus ? " X^N+1" : " X^N-1");
         check(table == expected, (name + " root table").c_str());
+
+        T* device_table;
+        check_cuda(cudaMalloc(&device_table, table.size() * sizeof(T)),
+                   "cudaMalloc");
+        NTT::make_twiddles(device_table, parameters.modulus,
+                           parameters.root_of_unity);
+        check(from_device(device_table, table.size()) == expected,
+              (name + " root table built on the GPU").c_str());
+        cudaFree(device_table);
         check(NTT::n_inv(parameters.modulus) == parameters.n_inv,
               (name + " n_inv").c_str());
     }
@@ -186,26 +215,6 @@ namespace
         check(thrown, "root of the wrong order is rejected");
     }
 
-    template <typename T> T* to_device(const std::vector<T>& values)
-    {
-        T* data;
-        check_cuda(cudaMalloc(&data, values.size() * sizeof(T)), "cudaMalloc");
-        check_cuda(cudaMemcpy(data, values.data(), values.size() * sizeof(T),
-                              cudaMemcpyHostToDevice),
-                   "cudaMemcpy");
-        return data;
-    }
-
-    template <typename T>
-    std::vector<T> from_device(const T* data, size_t count)
-    {
-        std::vector<T> values(count);
-        check_cuda(cudaMemcpy(values.data(), data, count * sizeof(T),
-                              cudaMemcpyDeviceToHost),
-                   "cudaMemcpy");
-        return values;
-    }
-
     // NTT with the roots of prime against the CPU NTT, then INTT back.
     template <typename T> void test_prime(const NTTPrime<T>& prime)
     {
@@ -241,7 +250,11 @@ namespace
 
         T* data = to_device(input);
         T* forward_roots = to_device(Fwd::make_twiddles_host(prime));
-        T* inverse_roots = to_device(Inv::make_twiddles_host(prime));
+        T* inverse_roots;
+        check_cuda(
+            cudaMalloc(&inverse_roots, Inv::twiddle_table_size * sizeof(T)),
+            "cudaMalloc");
+        Inv::make_twiddles(inverse_roots, prime);
 
         ntt_configuration<T> cfg = {.n_power = log_n,
                                     .ntt_type = FORWARD,

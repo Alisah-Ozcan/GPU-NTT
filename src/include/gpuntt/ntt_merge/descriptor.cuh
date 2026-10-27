@@ -761,10 +761,40 @@ namespace gpuntt
         }
     };
 
-    // Root table of an NTT of ring size N, built on the host. root is a
-    // primitive 2N-th root of unity for X^N + 1 or a primitive N-th root for
-    // X^N - 1 (psi and omega of NTTParameters); the inverse table is built
-    // from root^-1. Descriptions without ReductionPoly have no root table.
+    // step^(2^b) for b < log_size; a root table has at most 2^28 entries.
+    template <typename T> struct TwiddleSquares
+    {
+        T value[28];
+    };
+
+    // table[i] = step^bitreverse(i) for i < 2^log_size: bit b of i selects
+    // step^(2^(log_size - 1 - b)).
+    template <typename T>
+    __global__ void TwiddleTableKernel(T* table, Modulus<T> modulus,
+                                       TwiddleSquares<T> squares, int log_size)
+    {
+        const int i = blockIdx.x * blockDim.x + threadIdx.x;
+        if (i >= (1 << log_size))
+        {
+            return;
+        }
+        T result = 1;
+        for (int b = 0; b < log_size; b++)
+        {
+            if ((i >> b) & 1)
+            {
+                result = OPERATOR_GPU<T>::mult(
+                    result, squares.value[log_size - 1 - b], modulus);
+            }
+        }
+        table[i] = result;
+    }
+
+    // Root table of an NTT of ring size N, built on the host or by a kernel.
+    // root is a primitive 2N-th root of unity for X^N + 1 or a primitive
+    // N-th root for X^N - 1 (psi and omega of NTTParameters); the inverse
+    // table is built from root^-1. Descriptions without ReductionPoly have no
+    // root table.
     template <typename T, int N, type D, bool HasReductionPoly,
               ReductionPolynomial R>
     struct NTTRootTable
@@ -783,20 +813,7 @@ namespace gpuntt
         static std::vector<T> make_twiddles_host(const Modulus<T>& modulus,
                                                  T root)
         {
-            // root^twiddle_table_size = -1 holds exactly for roots of order
-            // 2 * twiddle_table_size.
-            if (OPERATOR<T>::exp(root, twiddle_table_size, modulus) !=
-                modulus.value - 1)
-            {
-                throw std::invalid_argument(
-                    "Root " + std::to_string(root) + " is not a primitive " +
-                    std::to_string(2 * twiddle_table_size) +
-                    "-th root of unity modulo " +
-                    std::to_string(modulus.value) + ".");
-            }
-
-            const T step =
-                (D == FORWARD) ? root : OPERATOR<T>::modinv(root, modulus);
+            const T step = table_step(modulus, root);
             std::vector<T> powers(twiddle_table_size);
             powers[0] = 1;
             for (int i = 1; i < twiddle_table_size; i++)
@@ -804,14 +821,13 @@ namespace gpuntt
                 powers[i] = OPERATOR<T>::mult(powers[i - 1], step, modulus);
             }
 
-            const int log_size = log2_of_power_of_two(twiddle_table_size);
             std::vector<T> table(twiddle_table_size);
             for (int i = 0; i < twiddle_table_size; i++)
             {
                 int reversed = 0;
-                for (int b = 0; b < log_size; b++)
+                for (int b = 0; b < log_table_size; b++)
                 {
-                    reversed |= ((i >> b) & 1) << (log_size - 1 - b);
+                    reversed |= ((i >> b) & 1) << (log_table_size - 1 - b);
                 }
                 table[i] = powers[reversed];
             }
@@ -822,10 +838,63 @@ namespace gpuntt
         // of order 2 * twiddle_table_size.
         static std::vector<T> make_twiddles_host(const NTTPrime<T>& prime)
         {
-            return make_twiddles_host(
-                Modulus<T>(prime.value),
-                root_of_unity(prime,
-                              log2_of_power_of_two(2 * twiddle_table_size)));
+            return make_twiddles_host(Modulus<T>(prime.value),
+                                      prime_root(prime));
+        }
+
+        // The table of make_twiddles_host, written by a kernel to table,
+        // which holds twiddle_table_size entries in device memory. Faster
+        // than building it on the host for large N; the kernel runs on
+        // stream and table is ready when it finishes.
+        static void make_twiddles(T* table, const Modulus<T>& modulus, T root,
+                                  cudaStream_t stream = 0)
+        {
+            TwiddleSquares<T> squares = {};
+            T square = table_step(modulus, root);
+            for (int b = 0; b < log_table_size; b++)
+            {
+                squares.value[b] = square;
+                square = OPERATOR<T>::mult(square, square, modulus);
+            }
+            constexpr int threads = 256;
+            const int blocks = (twiddle_table_size + threads - 1) / threads;
+            TwiddleTableKernel<<<blocks, threads, 0, stream>>>(
+                table, modulus, squares, log_table_size);
+            GPUNTT_CUDA_CHECK(cudaGetLastError());
+        }
+
+        static void make_twiddles(T* table, const NTTPrime<T>& prime,
+                                  cudaStream_t stream = 0)
+        {
+            make_twiddles(table, Modulus<T>(prime.value), prime_root(prime),
+                          stream);
+        }
+
+      private:
+        static constexpr int log_table_size =
+            log2_of_power_of_two(twiddle_table_size);
+
+        // root (forward) or root^-1 (inverse), after checking that root has
+        // order 2 * twiddle_table_size: root^twiddle_table_size = -1 holds
+        // exactly for those roots.
+        static T table_step(const Modulus<T>& modulus, T root)
+        {
+            if (OPERATOR<T>::exp(root, twiddle_table_size, modulus) !=
+                modulus.value - 1)
+            {
+                throw std::invalid_argument(
+                    "Root " + std::to_string(root) + " is not a primitive " +
+                    std::to_string(2 * twiddle_table_size) +
+                    "-th root of unity modulo " +
+                    std::to_string(modulus.value) + ".");
+            }
+            return (D == FORWARD) ? root : OPERATOR<T>::modinv(root, modulus);
+        }
+
+        static T prime_root(const NTTPrime<T>& prime)
+        {
+            return root_of_unity(prime,
+                                 log2_of_power_of_two(2 * twiddle_table_size));
         }
     };
 
