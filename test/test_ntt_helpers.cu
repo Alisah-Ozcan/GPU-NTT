@@ -4,12 +4,16 @@
 // Developer: Alişah Özcan
 
 // Tests the helpers around the device API: Modulus built in a kernel must
-// match the host one.
+// match the host one, and the root tables and N^-1 of a description must
+// match the ones of NTTParameters.
 
-#include "gpuntt/common/modular_arith.cuh"
+#include "gpuntt/ntt_merge/descriptor.cuh"
 
 #include <cstdio>
 #include <random>
+#include <stdexcept>
+#include <string>
+#include <utility>
 #include <vector>
 
 using namespace gpuntt;
@@ -104,12 +108,94 @@ namespace
                                    : "Modulus<Data64> built in a kernel");
     }
 
+    template <typename NTT, typename = void>
+    struct has_root_table : std::false_type
+    {
+    };
+
+    template <typename NTT>
+    struct has_root_table<NTT, std::void_t<decltype(NTT::twiddle_table_size)>>
+        : std::true_type
+    {
+    };
+
+    static_assert(!has_root_table<decltype(Size<1024>() + Direction<FORWARD>() +
+                                           Precision<Data64>())>::value);
+
+    template <typename T, int LogN, type D, ReductionPolynomial R>
+    void test_root_table()
+    {
+        using NTT = decltype(Size<(1 << LogN)>() + Direction<D>() +
+                             Precision<T>() + ReductionPoly<R>());
+        static_assert(NTT::twiddle_table_size ==
+                      (R == X_N_plus ? (1 << LogN) : (1 << LogN) / 2));
+
+        NTTParameters<T> parameters(LogN, R);
+        const std::vector<Root<T>> expected =
+            parameters.gpu_root_of_unity_table_generator(
+                D == FORWARD ? parameters.forward_root_of_unity_table
+                             : parameters.inverse_root_of_unity_table);
+        const std::vector<Root<T>> table = NTT::make_twiddles_host(
+            parameters.modulus, parameters.root_of_unity);
+
+        const std::string name =
+            std::string(sizeof(T) == 4 ? "Data32" : "Data64") + " LogN " +
+            std::to_string(LogN) + (D == FORWARD ? " forward" : " inverse") +
+            (R == X_N_plus ? " X^N+1" : " X^N-1");
+        check(table == expected, (name + " root table").c_str());
+        check(NTT::n_inv(parameters.modulus) == parameters.n_inv,
+              (name + " n_inv").c_str());
+    }
+
+    template <typename T, int LogN> void test_root_tables()
+    {
+        test_root_table<T, LogN, FORWARD, X_N_plus>();
+        test_root_table<T, LogN, FORWARD, X_N_minus>();
+        test_root_table<T, LogN, INVERSE, X_N_plus>();
+        test_root_table<T, LogN, INVERSE, X_N_minus>();
+    }
+
+    template <typename T, int... LogN>
+    void test_root_tables(std::integer_sequence<int, LogN...>)
+    {
+        (test_root_tables<T, LogN + 1>(), ...);
+    }
+
+    // A root of the wrong order is rejected.
+    template <typename T> void test_wrong_root()
+    {
+        using NTT = decltype(Size<1024>() + Direction<FORWARD>() +
+                             Precision<T>() + ReductionPoly<X_N_plus>());
+        NTTParameters<T> parameters(10, X_N_plus);
+        // omega = psi^2 has order N instead of 2N.
+        const T omega =
+            OPERATOR<T>::mult(parameters.root_of_unity,
+                              parameters.root_of_unity, parameters.modulus);
+        bool thrown = false;
+        try
+        {
+            NTT::make_twiddles_host(parameters.modulus, omega);
+        }
+        catch (const std::invalid_argument&)
+        {
+            thrown = true;
+        }
+        check(thrown, "root of the wrong order is rejected");
+    }
+
 } // namespace
 
 int main()
 {
     test_device_modulus<Data32>();
     test_device_modulus<Data64>();
+
+    test_root_tables<Data32>(std::make_integer_sequence<int, 14>());
+    test_root_tables<Data64>(std::make_integer_sequence<int, 14>());
+    test_root_tables<Data32, 18>();
+    test_root_tables<Data64, 18>();
+    test_wrong_root<Data32>();
+    test_wrong_root<Data64>();
 
     std::printf("ntt_helpers: %d of %d cases passed\n", cases - failures,
                 cases);

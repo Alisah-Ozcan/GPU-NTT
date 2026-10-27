@@ -762,6 +762,64 @@ namespace gpuntt
         }
     };
 
+    // Root table of an NTT of ring size N, built on the host. root is a
+    // primitive 2N-th root of unity for X^N + 1 or a primitive N-th root for
+    // X^N - 1 (psi and omega of NTTParameters); the inverse table is built
+    // from root^-1. Descriptions without ReductionPoly have no root table.
+    template <typename T, int N, type D, bool HasReductionPoly,
+              ReductionPolynomial R>
+    struct NTTRootTable
+    {
+    };
+
+    template <typename T, int N, type D, ReductionPolynomial R>
+    struct NTTRootTable<T, N, D, true, R>
+    {
+        // Entries the kernels read. RNS root tables for the host API are N
+        // entries apart for both reduction polynomials.
+        static constexpr int twiddle_table_size = (R == X_N_plus) ? N : N / 2;
+
+        // The powers of root (forward) or root^-1 (inverse) in bit-reversed
+        // order, the table that execute and GPU_NTT / GPU_INTT take.
+        static std::vector<Root<T>>
+        make_twiddles_host(const Modulus<T>& modulus, T root)
+        {
+            // root^twiddle_table_size = -1 holds exactly for roots of order
+            // 2 * twiddle_table_size.
+            if (OPERATOR<T>::exp(root, twiddle_table_size, modulus) !=
+                modulus.value - 1)
+            {
+                throw std::invalid_argument(
+                    "Root " + std::to_string(root) + " is not a primitive " +
+                    std::to_string(2 * twiddle_table_size) +
+                    "-th root of unity modulo " +
+                    std::to_string(modulus.value) + ".");
+            }
+
+            const T step =
+                (D == FORWARD) ? root : OPERATOR<T>::modinv(root, modulus);
+            std::vector<T> powers(twiddle_table_size);
+            powers[0] = 1;
+            for (int i = 1; i < twiddle_table_size; i++)
+            {
+                powers[i] = OPERATOR<T>::mult(powers[i - 1], step, modulus);
+            }
+
+            const int log_size = log2_of_power_of_two(twiddle_table_size);
+            std::vector<Root<T>> table(twiddle_table_size);
+            for (int i = 0; i < twiddle_table_size; i++)
+            {
+                int reversed = 0;
+                for (int b = 0; b < log_size; b++)
+                {
+                    reversed |= ((i >> b) & 1) << (log_size - 1 - b);
+                }
+                table[i] = powers[reversed];
+            }
+            return table;
+        }
+    };
+
     // Values of a description that has Size, Direction and Precision.
     template <typename... Operators> struct NTTDescriptionValues
     {
@@ -848,6 +906,13 @@ namespace gpuntt
         static constexpr int log_size = get<NTTOperator::Size>::log_value;
         static constexpr type direction = get<NTTOperator::Direction>::value;
 
+        // N^-1 modulo a prime modulus, the n_inverse of the inverse store.
+        static value_type n_inv(const Modulus<value_type>& modulus)
+        {
+            return OPERATOR<value_type>::modinv(
+                static_cast<value_type>(size) % modulus.value, modulus);
+        }
+
       private:
         static constexpr KernelStages stages =
             (direction == FORWARD
@@ -892,6 +957,10 @@ namespace gpuntt
             NTTSingleKernel<value_type, direction, log_size, batches_per_block,
                             !std::is_void<reduction_op>::value,
                             reduction_value<reduction_op>()>;
+
+        using root_table = NTTRootTable<value_type, size, direction,
+                                        !std::is_void<reduction_op>::value,
+                                        reduction_value<reduction_op>()>;
     };
 
     struct NTTNoMembers
@@ -910,10 +979,12 @@ namespace gpuntt
     };
 
     // A description with a single kernel also has that kernel's launch
-    // parameters and device functions (see NTTSingleKernel).
+    // parameters and device functions (see NTTSingleKernel); one with
+    // ReductionPoly also has the root table helpers (see NTTRootTable).
     template <typename... Operators>
     struct NTTDescriptionMembers<true, Operators...>
         : NTTDescriptionValues<Operators...>,
+          NTTDescriptionValues<Operators...>::root_table,
           std::conditional_t<
               NTTDescriptionValues<Operators...>::num_stages == 1,
               typename NTTDescriptionValues<Operators...>::single_kernel,

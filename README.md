@@ -179,7 +179,21 @@ using NTT = decltype(Size<1024>() + Direction<FORWARD>() + Precision<Data64>() +
 | `Layout<PerPolynomial>` | no | Only `PerPolynomial` is supported. |
 | `SM<890>` | no | Accepted; all architectures currently use the same tuned kernel tables. |
 
-Each operator may appear once; invalid descriptions fail to compile with a `static_assert` message. The device functions live in headers and are inlined into your kernel, so the device API needs neither relocatable device code (`-rdc`) nor link-time optimization. The root tables, the modulus and N^-1 are the ones the host API takes, e.g. from `NTTParameters`: `gpu_root_of_unity_table_generator(forward_root_of_unity_table)` (or `inverse_root_of_unity_table`), `modulus` and `n_inv`.
+Each operator may appear once; invalid descriptions fail to compile with a `static_assert` message. The device functions live in headers and are inlined into your kernel, so the device API needs neither relocatable device code (`-rdc`) nor link-time optimization. The root tables, the modulus and N^-1 are the ones the host API takes.
+
+### Root tables and N^-1
+
+A description with `ReductionPoly` builds its root table on the host from a prime modulus and a root of unity: a primitive 2N-th root for X^N + 1 or a primitive N-th root for X^N - 1 (`psi` and `omega` of `NTTParameters`). The inverse description builds the inverse table from the same root.
+
+```cpp
+Modulus<Data64> modulus(prime);
+std::vector<Root<Data64>> roots = NTT::make_twiddles_host(modulus, psi);  // NTT::twiddle_table_size entries
+Data64 n_inverse = InverseNTT::n_inv(modulus);  // N^-1 mod prime
+```
+
+- `NTT::twiddle_table_size` is N for X^N + 1 and N / 2 for X^N - 1. `make_twiddles_host` throws `std::invalid_argument` if the root does not have the right order.
+- The tables are the ones `GPU_NTT` / `GPU_INTT` take, so they can be shared with the host API. RNS tables for the host API hold the roots of prime `i` at offset `i << log2(N)` for both reduction polynomials.
+- `Modulus<T>` can also be built inside a kernel. There, a modulus larger than the supported size (30 bits for `Data32`, 61 bits for `Data64`) is not rejected.
 
 ### Ring sizes up to 2^10: one kernel
 
