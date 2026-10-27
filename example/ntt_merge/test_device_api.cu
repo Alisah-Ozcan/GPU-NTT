@@ -113,16 +113,13 @@ void launch_large_stages(TestDataType* in, TestDataType* out,
     (launch_large_stage<I>(in, out, roots, modulus, batch), ...);
 }
 
-template <typename T>
-Root<T>* device_root_table(NTTParameters<T>& parameters, const vector<T>& table)
+template <typename T> Root<T>* device_root_table(const vector<Root<T>>& table)
 {
-    vector<Root<T>> gpu_table =
-        parameters.gpu_root_of_unity_table_generator(table);
     Root<T>* device_table;
     GPUNTT_CUDA_CHECK(
-        cudaMalloc(&device_table, gpu_table.size() * sizeof(Root<T>)));
-    GPUNTT_CUDA_CHECK(cudaMemcpy(device_table, gpu_table.data(),
-                                 gpu_table.size() * sizeof(Root<T>),
+        cudaMalloc(&device_table, table.size() * sizeof(Root<T>)));
+    GPUNTT_CUDA_CHECK(cudaMemcpy(device_table, table.data(),
+                                 table.size() * sizeof(Root<T>),
                                  cudaMemcpyHostToDevice));
     return device_table;
 }
@@ -134,13 +131,14 @@ int main(int argc, char* argv[])
     const int batch = (argc > 1) ? atoi(argv[1]) : 3;
     std::mt19937 gen(0);
 
-    // 1. Fused polynomial multiplication, N = 2^10.
+    // 1. Fused polynomial multiplication, N = 2^10, with a 61-bit prime of
+    //    fields.cuh.
     {
-        NTTParameters<TestDataType> parameters(kSmallLogN,
-                                               ReductionPolynomial::X_N_plus);
-        const int n = parameters.n;
-        std::uniform_int_distribution<std::uint64_t> dis(
-            0, parameters.modulus.value - 1);
+        const NTTPrime<TestDataType>& prime = ntt_primes64[1];
+        const Modulus<TestDataType> modulus(prime.value);
+        const TestDataType n_inverse = SmallInverse::n_inv(modulus);
+        const int n = SmallForward::size;
+        std::uniform_int_distribution<std::uint64_t> dis(0, modulus.value - 1);
 
         vector<TestDataType> a(size_t(batch) * n), b(size_t(batch) * n);
         for (auto& x : a)
@@ -148,10 +146,10 @@ int main(int argc, char* argv[])
         for (auto& x : b)
             x = dis(gen);
 
-        Root<TestDataType>* forward_roots = device_root_table(
-            parameters, parameters.forward_root_of_unity_table);
-        Root<TestDataType>* inverse_roots = device_root_table(
-            parameters, parameters.inverse_root_of_unity_table);
+        Root<TestDataType>* forward_roots =
+            device_root_table(SmallForward::make_twiddles_host(prime));
+        Root<TestDataType>* inverse_roots =
+            device_root_table(SmallInverse::make_twiddles_host(prime));
 
         TestDataType *a_device, *b_hat_device;
         GPUNTT_CUDA_CHECK(
@@ -171,15 +169,14 @@ int main(int argc, char* argv[])
             .ntt_type = FORWARD,
             .ntt_layout = PerPolynomial,
             .reduction_poly = ReductionPolynomial::X_N_plus,
-            .mod_inverse = parameters.n_inv,
+            .mod_inverse = n_inverse,
             .stream = 0};
-        GPU_NTT_Inplace(b_hat_device, forward_roots, parameters.modulus, cfg,
-                        batch);
+        GPU_NTT_Inplace(b_hat_device, forward_roots, modulus, cfg, batch);
 
         multiply_kernel<<<SmallForward::grid(batch), SmallForward::block_dim,
                           SmallForward::shared_memory_size>>>(
-            a_device, b_hat_device, forward_roots, inverse_roots,
-            parameters.modulus, parameters.n_inv, batch);
+            a_device, b_hat_device, forward_roots, inverse_roots, modulus,
+            n_inverse, batch);
         GPUNTT_CUDA_CHECK(cudaGetLastError());
 
         vector<TestDataType> product(a.size());
@@ -195,7 +192,7 @@ int main(int argc, char* argv[])
             vector<TestDataType> b_i(b.begin() + size_t(i) * n,
                                      b.begin() + size_t(i + 1) * n);
             vector<TestDataType> expected = schoolbook_poly_multiplication(
-                a_i, b_i, parameters.modulus, ReductionPolynomial::X_N_plus);
+                a_i, b_i, modulus, ReductionPolynomial::X_N_plus);
             correct = check_result(product.data() + size_t(i) * n,
                                    expected.data(), n);
             if (!correct)
@@ -228,8 +225,9 @@ int main(int argc, char* argv[])
         for (auto& x : input)
             x = dis(gen);
 
-        Root<TestDataType>* roots = device_root_table(
-            parameters, parameters.forward_root_of_unity_table);
+        Root<TestDataType>* roots =
+            device_root_table(LargeForward::make_twiddles_host(
+                parameters.modulus, parameters.root_of_unity));
 
         TestDataType *in_device, *out_device;
         GPUNTT_CUDA_CHECK(

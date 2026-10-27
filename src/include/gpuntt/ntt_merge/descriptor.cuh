@@ -7,6 +7,7 @@
 #ifndef NTT_DESCRIPTOR_H
 #define NTT_DESCRIPTOR_H
 
+#include "gpuntt/common/fields.cuh"
 #include "gpuntt/common/nttparameters.cuh"
 #include "gpuntt/ntt_merge/ntt_device.cuh"
 #include <cstddef>
@@ -817,6 +818,16 @@ namespace gpuntt
                 table[i] = powers[reversed];
             }
             return table;
+        }
+
+        // The same table for a prime of fields.cuh, with its root of unity
+        // of order 2 * twiddle_table_size.
+        static std::vector<Root<T>> make_twiddles_host(const NTTPrime<T>& prime)
+        {
+            return make_twiddles_host(
+                Modulus<T>(prime.value),
+                root_of_unity(prime,
+                              log2_of_power_of_two(2 * twiddle_table_size)));
         }
     };
 

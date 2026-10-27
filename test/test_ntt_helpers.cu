@@ -4,10 +4,13 @@
 // Developer: Alişah Özcan
 
 // Tests the helpers around the device API: Modulus built in a kernel must
-// match the host one, and the root tables and N^-1 of a description must
-// match the ones of NTTParameters.
+// match the host one, the root tables and N^-1 of a description must match
+// the ones of NTTParameters, and every prime of fields.cuh must give the CPU
+// NTT result through GPU_NTT and GPU_INTT.
 
 #include "gpuntt/ntt_merge/descriptor.cuh"
+#include "gpuntt/ntt_merge/ntt.cuh"
+#include "gpuntt/ntt_merge/ntt_cpu.cuh"
 
 #include <cstdio>
 #include <random>
@@ -183,6 +186,111 @@ namespace
         check(thrown, "root of the wrong order is rejected");
     }
 
+    template <typename T> T* to_device(const std::vector<T>& values)
+    {
+        T* data;
+        check_cuda(cudaMalloc(&data, values.size() * sizeof(T)), "cudaMalloc");
+        check_cuda(cudaMemcpy(data, values.data(), values.size() * sizeof(T),
+                              cudaMemcpyHostToDevice),
+                   "cudaMemcpy");
+        return data;
+    }
+
+    template <typename T>
+    std::vector<T> from_device(const T* data, size_t count)
+    {
+        std::vector<T> values(count);
+        check_cuda(cudaMemcpy(values.data(), data, count * sizeof(T),
+                              cudaMemcpyDeviceToHost),
+                   "cudaMemcpy");
+        return values;
+    }
+
+    // NTT with the roots of prime against the CPU NTT, then INTT back.
+    template <typename T> void test_prime(const NTTPrime<T>& prime)
+    {
+        constexpr int log_n = 12;
+        constexpr int n = 1 << log_n;
+        constexpr int batch = 2;
+        using Fwd = decltype(Size<n>() + Direction<FORWARD>() + Precision<T>() +
+                             ReductionPoly<X_N_plus>());
+        using Inv = decltype(Size<n>() + Direction<INVERSE>() + Precision<T>() +
+                             ReductionPoly<X_N_plus>());
+
+        const Modulus<T> modulus(prime.value);
+        const T psi = root_of_unity(prime, log_n + 1);
+        const T omega = OPERATOR<T>::mult(psi, psi, modulus);
+        NTTParameters<T> parameters(log_n, NTTFactors<T>(modulus, omega, psi),
+                                    X_N_plus);
+        NTTCPU<T> cpu(parameters);
+
+        std::mt19937_64 rng(prime.value);
+        std::vector<T> input(size_t(batch) * n);
+        for (T& x : input)
+        {
+            x = T(rng()) % prime.value;
+        }
+        std::vector<T> expected;
+        for (int i = 0; i < batch; i++)
+        {
+            std::vector<T> poly(input.begin() + size_t(i) * n,
+                                input.begin() + size_t(i + 1) * n);
+            const std::vector<T> result = cpu.ntt(poly);
+            expected.insert(expected.end(), result.begin(), result.end());
+        }
+
+        T* data = to_device(input);
+        Root<T>* forward_roots = to_device(Fwd::make_twiddles_host(prime));
+        Root<T>* inverse_roots = to_device(Inv::make_twiddles_host(prime));
+
+        ntt_configuration<T> cfg = {.n_power = log_n,
+                                    .ntt_type = FORWARD,
+                                    .ntt_layout = PerPolynomial,
+                                    .reduction_poly = X_N_plus,
+                                    .mod_inverse = Inv::n_inv(modulus),
+                                    .stream = 0};
+        GPU_NTT_Inplace(data, forward_roots, modulus, cfg, batch);
+        const std::vector<T> output = from_device(data, input.size());
+
+        cfg.ntt_type = INVERSE;
+        GPU_INTT_Inplace(data, inverse_roots, modulus, cfg, batch);
+        const std::vector<T> round_trip = from_device(data, input.size());
+
+        cudaFree(data);
+        cudaFree(forward_roots);
+        cudaFree(inverse_roots);
+
+        const std::string name = "prime " + std::to_string(prime.value);
+        check(output == expected, (name + " NTT").c_str());
+        check(round_trip == input, (name + " round trip").c_str());
+    }
+
+    // The root has the stated order and 2^log_max_order divides p - 1.
+    template <typename T> void test_prime_root(const NTTPrime<T>& prime)
+    {
+        const Modulus<T> modulus(prime.value);
+        const T p_minus_1 = prime.value - 1;
+        const bool order =
+            ((p_minus_1 >> prime.log_max_order) & 1) == 1 &&
+            (p_minus_1 & ((T(1) << prime.log_max_order) - 1)) == 0 &&
+            OPERATOR<T>::exp(prime.root, T(1) << (prime.log_max_order - 1),
+                             modulus) == p_minus_1;
+        check(order, ("prime " + std::to_string(prime.value) +
+                      " root of order 2^log_max_order")
+                         .c_str());
+
+        bool thrown = false;
+        try
+        {
+            root_of_unity(prime, prime.log_max_order + 1);
+        }
+        catch (const std::invalid_argument&)
+        {
+            thrown = true;
+        }
+        check(thrown, "root of too large order is rejected");
+    }
+
 } // namespace
 
 int main()
@@ -196,6 +304,17 @@ int main()
     test_root_tables<Data64, 18>();
     test_wrong_root<Data32>();
     test_wrong_root<Data64>();
+
+    for (const NTTPrime<Data32>& prime : ntt_primes32)
+    {
+        test_prime_root(prime);
+        test_prime(prime);
+    }
+    for (const NTTPrime<Data64>& prime : ntt_primes64)
+    {
+        test_prime_root(prime);
+        test_prime(prime);
+    }
 
     std::printf("ntt_helpers: %d of %d cases passed\n", cases - failures,
                 cases);

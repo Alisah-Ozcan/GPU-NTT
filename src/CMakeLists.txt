@@ -10,6 +10,7 @@ set(LIB_SOURCE_FILES
 
 set(LIB_HEADER_FILES
     include/gpuntt/common/common.cuh
+    include/gpuntt/common/fields.cuh
     include/gpuntt/common/nttparameters.cuh
     include/gpuntt/common/modular_arith.cuh
     include/gpuntt/ntt_merge/descriptor.cuh
