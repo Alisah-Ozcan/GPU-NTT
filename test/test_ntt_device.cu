@@ -216,6 +216,40 @@ namespace
         check_cuda(cudaGetLastError(), "launch");
     }
 
+    // The last forward stage, a pointwise product with b_hat and the first
+    // inverse stage in one kernel: the product runs on the entries of
+    // for_each, without a store and load in between.
+    template <typename Fwd, typename Inv>
+    __global__ void
+    fused_stage_kernel(typename Fwd::value_type* data,
+                       const typename Fwd::value_type* b_hat,
+                       const typename Fwd::value_type* roots,
+                       const typename Fwd::value_type* inverse_roots,
+                       Modulus<typename Fwd::value_type> modulus,
+                       typename Fwd::value_type n_inverse)
+    {
+        using T = typename Fwd::value_type;
+        using Last = typename Fwd::template stage<Fwd::num_stages - 1>;
+        using First = typename Inv::template stage<0>;
+        extern __shared__ char shared_memory_raw[];
+        T* shared_memory = reinterpret_cast<T*>(shared_memory_raw);
+
+        Last().load(shared_memory, data, modulus);
+        Last().execute(shared_memory, roots, modulus);
+        Last().for_each(
+            shared_memory, [&](T& value, size_t index)
+            { value = OPERATOR_GPU<T>::mult(value, b_hat[index], modulus); });
+        First().execute(shared_memory, inverse_roots, modulus);
+        if constexpr (First::last)
+        {
+            First().store(shared_memory, data, modulus, n_inverse);
+        }
+        else
+        {
+            First().store(shared_memory, data);
+        }
+    }
+
     template <typename NTT, typename TIn, typename TOut, int... I>
     void launch_stages(TIn* in, TOut* out,
                        const typename NTT::value_type* roots,
@@ -224,6 +258,19 @@ namespace
                        std::integer_sequence<int, I...>)
     {
         (launch_stage<NTT, I>(in, out, roots, modulus, n_inverse, batch), ...);
+    }
+
+    // Kernels First, First + 1, ... of a multi-kernel NTT.
+    template <typename NTT, int First, typename TIn, typename TOut, int... I>
+    void launch_stages_from(TIn* in, TOut* out,
+                            const typename NTT::value_type* roots,
+                            Modulus<typename NTT::value_type> modulus,
+                            typename NTT::value_type n_inverse, int batch,
+                            std::integer_sequence<int, I...>)
+    {
+        (launch_stage<NTT, First + I>(in, out, roots, modulus, n_inverse,
+                                      batch),
+         ...);
     }
 
     // RNS: polynomial z uses modulus z % mod_count and the roots at
@@ -573,6 +620,70 @@ namespace
     {
         (run_size<T, T, First + LogN, Staged>(), ...);
     }
+    // The same product for ring sizes with stage kernels: forward stages
+    // 0 ... S - 2, fused_stage_kernel, inverse stages 1 ... S - 1.
+    template <typename T, int LogN, ReductionPolynomial R>
+    void run_fused_stages(int batch)
+    {
+        using Fwd = decltype(Size<(1 << LogN)>() + Direction<FORWARD>() +
+                             Precision<T>() + ReductionPoly<R>() + Block());
+        using Inv = decltype(Size<(1 << LogN)>() + Direction<INVERSE>() +
+                             Precision<T>() + ReductionPoly<R>() + Block());
+        using Last = typename Fwd::template stage<Fwd::num_stages - 1>;
+        static_assert(Fwd::num_stages >= 2);
+
+        constexpr int n = 1 << LogN;
+        const size_t total = size_t(batch) * n;
+
+        const int max_bits = std::is_same<T, Data32>::value ? 30 : 61;
+        const T top = T(1) << (max_bits - 1);
+        const T p = top + (static_cast<T>(rng() % top) | 1);
+        const Modulus<T> modulus(p);
+        const T n_inverse = static_cast<T>(rng() % p);
+
+        DeviceBuffer<T> roots(random_below<T>(n, p));
+        DeviceBuffer<T> inverse_roots(random_below<T>(n, p));
+        DeviceBuffer<T> a(random_below<T>(total, p));
+        DeviceBuffer<T> b_hat(random_below<T>(total, p));
+
+        ntt_configuration<T> fwd_cfg = {.n_power = LogN,
+                                        .ntt_type = FORWARD,
+                                        .ntt_layout = PerPolynomial,
+                                        .reduction_poly = R,
+                                        .mod_inverse = n_inverse,
+                                        .stream = 0};
+        ntt_configuration<T> inv_cfg = fwd_cfg;
+        inv_cfg.ntt_type = INVERSE;
+
+        DeviceBuffer<T> expected(total), actual(total);
+        GPU_NTT(a.data, expected.data, roots.data, modulus, fwd_cfg, batch);
+        multiply_kernel<<<(total + 255) / 256, 256>>>(expected.data, b_hat.data,
+                                                      modulus, total);
+        GPU_INTT_Inplace(expected.data, inverse_roots.data, modulus, inv_cfg,
+                         batch);
+
+        launch_stages_from<Fwd, 0>(
+            a.data, actual.data, roots.data, modulus, n_inverse, batch,
+            std::make_integer_sequence<int, Fwd::num_stages - 1>());
+        fused_stage_kernel<Fwd, Inv>
+            <<<Last::grid(batch), Last::block_dim, Last::shared_memory_size>>>(
+                actual.data, b_hat.data, roots.data, inverse_roots.data,
+                modulus, n_inverse);
+        check_cuda(cudaGetLastError(), "launch");
+        launch_stages_from<Inv, 1>(
+            actual.data, actual.data, inverse_roots.data, modulus, n_inverse,
+            batch, std::make_integer_sequence<int, Inv::num_stages - 1>());
+
+        cases++;
+        if (expected.read() != actual.read())
+        {
+            failures++;
+            std::printf("FAIL fused stages %s logn=%d %s batch=%d\n",
+                        sizeof(T) == 4 ? "u32" : "u64", LogN,
+                        R == X_N_minus ? "X^N-1" : "X^N+1", batch);
+        }
+    }
+
 } // namespace
 
 int main()
@@ -615,6 +726,15 @@ int main()
     run_fused<Data64, 4, X_N_plus>();
     run_fused<Data64, 8, X_N_minus>();
     run_fused<Data64, 10, X_N_plus>();
+
+    // The same with stage kernels; the last forward and the first inverse
+    // stage run in one kernel. 2^25 swaps the grid axes in both.
+    run_fused_stages<Data32, 11, X_N_plus>(3);
+    run_fused_stages<Data32, 16, X_N_minus>(2);
+    run_fused_stages<Data32, 20, X_N_plus>(2);
+    run_fused_stages<Data64, 12, X_N_minus>(3);
+    run_fused_stages<Data64, 17, X_N_plus>(2);
+    run_fused_stages<Data64, 25, X_N_minus>(1);
 
     std::printf("ntt_device: %d of %d cases match the host API\n",
                 cases - failures, cases);

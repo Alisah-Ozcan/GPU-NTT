@@ -118,6 +118,29 @@ static_assert(same_dim(Mid::grid(7), 7, 1, 1));
 static_assert(same_dim(Mid::stage<0>::grid(7), 1, 1, 7));
 static_assert(Mid::shared_memory_size == 1024 * sizeof(Data64));
 
+// The last forward stage and the first inverse stage of every multi-kernel
+// ring size have the same launch parameters and thread mapping, so a kernel
+// can run both without storing in between (see NTTStage::for_each).
+template <typename T> constexpr bool last_forward_matches_first_inverse()
+{
+    for (int log_n = 11; log_n <= 28; log_n++)
+    {
+        const KernelStages forward = forward_kernel_table<T>[log_n];
+        const KernelConfig a = forward[forward.size() - 1];
+        const KernelConfig b = inverse_kernel_table<T>[log_n][0];
+        if (a.griddim_x != b.griddim_x || a.griddim_y != b.griddim_y ||
+            a.blockdim_x != b.blockdim_x || a.blockdim_y != b.blockdim_y ||
+            a.shared_memory != b.shared_memory || a.logm != b.k ||
+            a.outer_iteration_count != b.outer_iteration_count)
+        {
+            return false;
+        }
+    }
+    return true;
+}
+static_assert(last_forward_matches_first_inverse<Data32>());
+static_assert(last_forward_matches_first_inverse<Data64>());
+
 // Operator values are usable in device code.
 __global__ void use_in_kernel(int* out)
 {

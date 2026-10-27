@@ -10,6 +10,10 @@
 //    against schoolbook multiplication on the CPU.
 // 2. Forward NTT of N = 2^16 polynomials, one kernel per stage. Checked
 //    against the CPU NTT.
+// 3. Polynomial multiplication modulo X^N + 1 with stage kernels (N = 2^12,
+//    two stages per direction) in three kernels: the last forward stage,
+//    the pointwise product and the first inverse stage share one kernel.
+//    Checked against schoolbook multiplication on the CPU.
 //
 // Usage: gpu_device_api_examples [BATCH_SIZE]
 
@@ -111,6 +115,75 @@ void launch_large_stages(TestDataType* in, TestDataType* out,
                          std::integer_sequence<int, I...>)
 {
     (launch_large_stage<I>(in, out, roots, modulus, batch), ...);
+}
+
+// N = 2^12 runs as two stage kernels per direction. The last forward stage
+// and the first inverse stage keep the same coefficients in shared memory, so
+// they share a kernel with the pointwise product in between.
+constexpr int kStagedLogN = 12;
+using StagedForward =
+    decltype(Size<(1 << kStagedLogN)>() + Direction<FORWARD>() +
+             Precision<TestDataType>() + ReductionPoly<X_N_plus>() + Block());
+using StagedInverse =
+    decltype(Size<(1 << kStagedLogN)>() + Direction<INVERSE>() +
+             Precision<TestDataType>() + ReductionPoly<X_N_plus>() + Block());
+static_assert(StagedForward::num_stages == 2 && StagedInverse::num_stages == 2);
+
+// Kernel 1: first forward stage, a -> a.
+__global__ void staged_forward_kernel(TestDataType* a,
+                                      const TestDataType* forward_roots,
+                                      Modulus<TestDataType> modulus)
+{
+    extern __shared__ char shared_memory_raw[];
+    TestDataType* shared_memory =
+        reinterpret_cast<TestDataType*>(shared_memory_raw);
+
+    using Stage = StagedForward::stage<0>;
+    Stage().load(shared_memory, a, modulus);
+    Stage().execute(shared_memory, forward_roots, modulus);
+    Stage().store(shared_memory, a);
+}
+
+// Kernel 2: last forward stage, product with b_hat, first inverse stage. After
+// the forward execute, for_each gives every coefficient in shared memory with
+// its index in a, which is also its index in b_hat.
+__global__ void staged_multiply_kernel(TestDataType* a,
+                                       const TestDataType* b_hat,
+                                       const TestDataType* forward_roots,
+                                       const TestDataType* inverse_roots,
+                                       Modulus<TestDataType> modulus)
+{
+    extern __shared__ char shared_memory_raw[];
+    TestDataType* shared_memory =
+        reinterpret_cast<TestDataType*>(shared_memory_raw);
+
+    using Last = StagedForward::stage<1>;
+    using First = StagedInverse::stage<0>;
+    Last().load(shared_memory, a, modulus);
+    Last().execute(shared_memory, forward_roots, modulus);
+    Last().for_each(shared_memory,
+                    [&](TestDataType& value, size_t index) {
+                        value = OPERATOR_GPU<TestDataType>::mult(
+                            value, b_hat[index], modulus);
+                    });
+    First().execute(shared_memory, inverse_roots, modulus);
+    First().store(shared_memory, a);
+}
+
+// Kernel 3: last inverse stage, which multiplies by N^-1.
+__global__ void staged_inverse_kernel(TestDataType* a,
+                                      const TestDataType* inverse_roots,
+                                      Modulus<TestDataType> modulus,
+                                      TestDataType n_inverse)
+{
+    extern __shared__ char shared_memory_raw[];
+    TestDataType* shared_memory =
+        reinterpret_cast<TestDataType*>(shared_memory_raw);
+
+    using Stage = StagedInverse::stage<1>;
+    Stage().load(shared_memory, a, modulus);
+    Stage().execute(shared_memory, inverse_roots, modulus);
+    Stage().store(shared_memory, a, modulus, n_inverse);
 }
 
 template <typename T> T* device_root_table(const vector<T>& table)
@@ -272,6 +345,102 @@ int main(int argc, char* argv[])
         GPUNTT_CUDA_CHECK(cudaFree(in_device));
         GPUNTT_CUDA_CHECK(cudaFree(out_device));
         GPUNTT_CUDA_CHECK(cudaFree(roots));
+    }
+
+    // 3. Polynomial multiplication with stage kernels, N = 2^12.
+    {
+        const NTTPrime<TestDataType>& prime = ntt_primes64[1];
+        const Modulus<TestDataType> modulus(prime.value);
+        const TestDataType n_inverse = StagedInverse::n_inv(modulus);
+        const int n = StagedForward::size;
+        std::uniform_int_distribution<std::uint64_t> dis(0, modulus.value - 1);
+
+        vector<TestDataType> a(size_t(batch) * n), b(size_t(batch) * n);
+        for (auto& x : a)
+            x = dis(gen);
+        for (auto& x : b)
+            x = dis(gen);
+
+        TestDataType *forward_roots, *inverse_roots;
+        GPUNTT_CUDA_CHECK(
+            cudaMalloc(&forward_roots, StagedForward::twiddle_table_size *
+                                           sizeof(TestDataType)));
+        GPUNTT_CUDA_CHECK(
+            cudaMalloc(&inverse_roots, StagedInverse::twiddle_table_size *
+                                           sizeof(TestDataType)));
+        StagedForward::make_twiddles(forward_roots, prime);
+        StagedInverse::make_twiddles(inverse_roots, prime);
+
+        TestDataType *a_device, *b_hat_device;
+        GPUNTT_CUDA_CHECK(
+            cudaMalloc(&a_device, a.size() * sizeof(TestDataType)));
+        GPUNTT_CUDA_CHECK(
+            cudaMalloc(&b_hat_device, b.size() * sizeof(TestDataType)));
+        GPUNTT_CUDA_CHECK(cudaMemcpy(a_device, a.data(),
+                                     a.size() * sizeof(TestDataType),
+                                     cudaMemcpyHostToDevice));
+        GPUNTT_CUDA_CHECK(cudaMemcpy(b_hat_device, b.data(),
+                                     b.size() * sizeof(TestDataType),
+                                     cudaMemcpyHostToDevice));
+
+        // b_hat = NTT(b) with the host API.
+        ntt_configuration<TestDataType> cfg = {
+            .n_power = kStagedLogN,
+            .ntt_type = FORWARD,
+            .ntt_layout = PerPolynomial,
+            .reduction_poly = ReductionPolynomial::X_N_plus,
+            .mod_inverse = n_inverse,
+            .stream = 0};
+        GPU_NTT_Inplace(b_hat_device, forward_roots, modulus, cfg, batch);
+
+        using Stage0 = StagedForward::stage<0>;
+        using Stage1 = StagedForward::stage<1>;
+        using InverseStage1 = StagedInverse::stage<1>;
+        staged_forward_kernel<<<Stage0::grid(batch), Stage0::block_dim,
+                                Stage0::shared_memory_size>>>(
+            a_device, forward_roots, modulus);
+        GPUNTT_CUDA_CHECK(cudaGetLastError());
+        staged_multiply_kernel<<<Stage1::grid(batch), Stage1::block_dim,
+                                 Stage1::shared_memory_size>>>(
+            a_device, b_hat_device, forward_roots, inverse_roots, modulus);
+        GPUNTT_CUDA_CHECK(cudaGetLastError());
+        staged_inverse_kernel<<<InverseStage1::grid(batch),
+                                InverseStage1::block_dim,
+                                InverseStage1::shared_memory_size>>>(
+            a_device, inverse_roots, modulus, n_inverse);
+        GPUNTT_CUDA_CHECK(cudaGetLastError());
+
+        vector<TestDataType> product(a.size());
+        GPUNTT_CUDA_CHECK(cudaMemcpy(product.data(), a_device,
+                                     product.size() * sizeof(TestDataType),
+                                     cudaMemcpyDeviceToHost));
+
+        bool correct = true;
+        for (int i = 0; i < batch && correct; i++)
+        {
+            vector<TestDataType> a_i(a.begin() + size_t(i) * n,
+                                     a.begin() + size_t(i + 1) * n);
+            vector<TestDataType> b_i(b.begin() + size_t(i) * n,
+                                     b.begin() + size_t(i + 1) * n);
+            vector<TestDataType> expected = schoolbook_poly_multiplication(
+                a_i, b_i, modulus, ReductionPolynomial::X_N_plus);
+            correct = check_result(product.data() + size_t(i) * n,
+                                   expected.data(), n);
+            if (!correct)
+            {
+                cout << "(in " << i << ". Poly.)" << endl;
+            }
+        }
+        if (correct)
+        {
+            cout << "All Correct for staged polynomial multiplication, N = 2^"
+                 << kStagedLogN << " (3 kernels)." << endl;
+        }
+
+        GPUNTT_CUDA_CHECK(cudaFree(a_device));
+        GPUNTT_CUDA_CHECK(cudaFree(b_hat_device));
+        GPUNTT_CUDA_CHECK(cudaFree(forward_roots));
+        GPUNTT_CUDA_CHECK(cudaFree(inverse_roots));
     }
 
     return EXIT_SUCCESS;

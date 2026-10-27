@@ -260,7 +260,26 @@ my_stage<I><<<Stage::grid(batch), Stage::block_dim, Stage::shared_memory_size>>>
 ```
 
 - The last inverse stage (`BigNTT::stage<I>::last`) stores with `store(shared_memory, out, modulus, n_inverse)`.
-- A stage holds a strided part of each polynomial in shared memory, so element-wise work with other polynomials fits best in the single kernel sizes or in a separate kernel.
+- A stage holds a strided part of each polynomial in shared memory. `Stage().for_each(shared_memory, f)` calls `f(value, index)` for each entry of the thread, where `index` is the entry's position in `data` (the array `load` reads and `store` writes), so element-wise work with other arrays can run inside a stage kernel. It ends with a block barrier.
+- The last forward stage and the first inverse stage have the same launch parameters and keep the same coefficients in shared memory, so they can share a kernel with element-wise work in between, e.g. for a polynomial product a · b with b̂ = NTT(b):
+
+```cpp
+using BigInverseNTT = decltype(Size<(1 << 16)>() + Direction<INVERSE>() +
+                               Precision<Data64>() + ReductionPoly<X_N_plus>() + Block());
+using Last = BigNTT::stage<BigNTT::num_stages - 1>;
+using First = BigInverseNTT::stage<0>;
+
+Last().load(shared_memory, a, modulus);
+Last().execute(shared_memory, roots, modulus);
+Last().for_each(shared_memory, [&](Data64& value, size_t index) {
+    value = OPERATOR_GPU<Data64>::mult(value, b_hat[index], modulus);
+});
+First().execute(shared_memory, inverse_roots, modulus);
+First().store(shared_memory, a);  // with (modulus, n_inverse) if First::last
+// launched with Last::grid(batch), Last::block_dim, Last::shared_memory_size
+```
+
+  The other stages run in their own kernels as above. [`example/ntt_merge/test_device_api.cu`](example/ntt_merge/test_device_api.cu) multiplies polynomials with N = 2^12 this way.
 
 ### RNS
 
@@ -272,7 +291,7 @@ There is no separate RNS interface: pick the modulus of each polynomial yourself
 
 The `poly_mul` benchmark (see [Benchmarking](#benchmarking-gpu-ntt)) compares the fused kernel with three host API calls for about 2^22 coefficients. On an RTX 4090 the fused kernel is 1.3–1.4x faster for `Data32` (e.g. 74.7 µs instead of 100.9 µs at N = 2^10) and 1.3–1.5x faster for `Data64` (149.9 µs instead of 194.2 µs at N = 2^10, 119.5 µs instead of 179.7 µs at N = 2^8), since the data passes through global memory once instead of three times.
 
-A complete example (fused polynomial multiplication modulo X^N + 1, checked against schoolbook multiplication, and a staged NTT) is in [`example/ntt_merge/test_device_api.cu`](example/ntt_merge/test_device_api.cu); the device API tests are in [`test/test_ntt_device.cu`](test/test_ntt_device.cu).
+A complete example (polynomial multiplication modulo X^N + 1 in one kernel and with stage kernels, checked against schoolbook multiplication, and a staged NTT) is in [`example/ntt_merge/test_device_api.cu`](example/ntt_merge/test_device_api.cu); the device API tests are in [`test/test_ntt_device.cu`](test/test_ntt_device.cu).
 
 ## How to Cite GPU-NTT
 

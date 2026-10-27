@@ -458,6 +458,13 @@ namespace gpuntt
     // The last inverse kernel stores with store(shared_memory, out, modulus,
     // n_inverse). For RNS, pick the modulus of polynomial blockIdx.z and
     // pass roots + (prime_index << LogN) as the root table.
+    //
+    // for_each gives each entry with its position in data, for element-wise
+    // work inside a stage kernel. The last forward stage and the first
+    // inverse stage of a ring size have the same launch parameters and keep
+    // the same entries in shared memory, so one kernel can run the last
+    // forward execute, element-wise work and the first inverse execute
+    // without storing and loading in between.
     template <typename T, type D, int LogN, int I, int B, bool HasReductionPoly,
               ReductionPolynomial R>
     struct NTTStage
@@ -528,6 +535,24 @@ namespace gpuntt
                                     config.outer_iteration_count, LogN,
                                     x_n_minus);
             }
+        }
+
+        // Calls f(value, index) for the two shared memory entries of this
+        // thread; index is the entry's position in data, the array load
+        // reads and store writes. Between load and store an entry keeps its
+        // position, so after the last forward execute value is element index
+        // of the GPU_NTT output. Ends with a block barrier.
+        template <typename F>
+        __device__ __forceinline__ void for_each(T* shared_memory, F f) const
+        {
+            static_assert(!low_ring, "Use the single kernel API for Size up "
+                                     "to 2^9");
+            const StageThread<T> state = thread(Modulus<T>(), 0);
+            f(shared_memory[state.shared_address],
+              size_t(state.global_address));
+            f(shared_memory[state.shared_address + blockDim.x * blockDim.y],
+              size_t(state.global_address + state.offset));
+            __syncthreads();
         }
 
         __device__ __forceinline__ void store(T* shared_memory, T* data) const
