@@ -111,6 +111,8 @@ Benchmarks use [nvbench](https://github.com/NVIDIA/nvbench), which requires CMak
 - `merge_ntt_variants`: RNS, signed input/output and modulus/poly ordered NTT, `LogN` up to 26.
 - `merge_ntt_per_coefficient`: column-wise NTT/INTT with single modulus and RNS.
 
+`benchmark_device_api` holds `poly_mul`: polynomial multiplication modulo X^N + 1 with one operand in the NTT domain, a ← INTT(NTT(a) · b̂), for about 2^22 coefficients and `LogN` 1–10. `Method=fused` runs it in one kernel with the device API, `Method=separate` runs `GPU_NTT`, a pointwise product kernel and `GPU_INTT`.
+
 Configure + build:
 
 ```bash
@@ -262,6 +264,10 @@ my_stage<I><<<Stage::grid(batch), Stage::block_dim, Stage::shared_memory_size>>>
 ### RNS
 
 There is no separate RNS interface: pick the modulus of each polynomial yourself and pass the matching part of the root table, which holds the roots of prime `i` at offset `i << log2(N)`. For example, in a stage kernel `modulus = moduli[blockIdx.z % mod_count]` and `roots + (size_t(blockIdx.z % mod_count) << log2(N))`. In the single kernel API this needs `BatchesPerBlock<1>`, since all polynomials of a block share one modulus.
+
+### Performance of fusion
+
+The `poly_mul` benchmark (see [Benchmarking](#benchmarking-gpu-ntt)) compares the fused kernel with three host API calls for about 2^22 coefficients. On an RTX 4090 the fused kernel is 1.3–1.4x faster for `Data32` (e.g. 74.7 µs instead of 100.9 µs at N = 2^10) and 1.3–1.5x faster for `Data64` (149.9 µs instead of 194.2 µs at N = 2^10, 119.5 µs instead of 179.7 µs at N = 2^8), since the data passes through global memory once instead of three times.
 
 A complete example (fused polynomial multiplication modulo X^N + 1, checked against schoolbook multiplication, and a staged NTT) is in [`example/ntt_merge/test_device_api.cu`](example/ntt_merge/test_device_api.cu); the device API tests are in [`test/test_ntt_device.cu`](test/test_ntt_device.cu).
 

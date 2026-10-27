@@ -61,4 +61,73 @@ template <typename T> struct random_functor
     }
 };
 
+// Primes within the Barrett reduction limits. The run time only depends on
+// the size of the modulus, so the root tables hold random values.
+template <typename T> T bench_prime()
+{
+    if constexpr (std::is_same<T, gpuntt::Data32>::value)
+    {
+        return 469762049;
+    }
+    else
+    {
+        return 576460756061519873ULL;
+    }
+}
+
+template <typename T> struct mod_functor
+{
+    T prime;
+
+    __host__ __device__ T operator()(const T value) const
+    {
+        return value % prime;
+    }
+};
+
+template <typename T>
+thrust::device_vector<T> random_vector(size_t count, T prime,
+                                       std::uint32_t seed)
+{
+    thrust::device_vector<T> values(count);
+    thrust::transform(thrust::counting_iterator<int>(0),
+                      thrust::counting_iterator<int>(count), values.begin(),
+                      random_functor<T>(seed));
+    thrust::transform(values.begin(), values.end(), values.begin(),
+                      mod_functor<T>{prime});
+    return values;
+}
+
+template <typename T> T* ptr(thrust::device_vector<T>& values)
+{
+    return thrust::raw_pointer_cast(values.data());
+}
+
+class BenchStream
+{
+  public:
+    explicit BenchStream(nvbench::state& state)
+    {
+        cudaStreamCreate(&stream_);
+        state.set_cuda_stream(nvbench::make_cuda_stream_view(stream_));
+    }
+
+    ~BenchStream()
+    {
+        cudaStreamSynchronize(stream_);
+        cudaStreamDestroy(stream_);
+    }
+
+    cudaStream_t get() const { return stream_; }
+
+  private:
+    cudaStream_t stream_;
+};
+
+// Around 2^22 coefficients for the "bulk" workload.
+inline int bulk_batch(int logn, int at_least)
+{
+    return std::max(at_least, std::max(1, (1 << 22) >> logn));
+}
+
 #endif // BENCH_UTIL_H
