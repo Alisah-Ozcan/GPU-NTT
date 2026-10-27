@@ -66,7 +66,7 @@ namespace gpuntt
         T omega;
         T psi;
 
-        Ninverse<T> n_inv;
+        T n_inv;
 
         T root_of_unity;
         T inverse_root_of_unity;

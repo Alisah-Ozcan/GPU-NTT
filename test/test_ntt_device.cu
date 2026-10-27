@@ -93,7 +93,7 @@ namespace
     __global__ void inverse_kernel(typename NTT::value_type* in, TOut* out,
                                    const Root<typename NTT::value_type>* roots,
                                    Modulus<typename NTT::value_type> modulus,
-                                   Ninverse<typename NTT::value_type> n_inverse,
+                                   typename NTT::value_type n_inverse,
                                    int batch)
     {
         using T = typename NTT::value_type;
@@ -112,13 +112,14 @@ namespace
     // Polynomial multiplication in one kernel: forward NTT of a, pointwise
     // product with b_hat (b in the NTT domain) in shared memory, inverse NTT.
     template <typename Fwd, typename Inv>
-    __global__ void fused_multiply_kernel(
-        typename Fwd::value_type* a, const typename Fwd::value_type* b_hat,
-        typename Fwd::value_type* out,
-        const Root<typename Fwd::value_type>* roots,
-        const Root<typename Fwd::value_type>* inverse_roots,
-        Modulus<typename Fwd::value_type> modulus,
-        Ninverse<typename Fwd::value_type> n_inverse, int batch)
+    __global__ void
+    fused_multiply_kernel(typename Fwd::value_type* a,
+                          const typename Fwd::value_type* b_hat,
+                          typename Fwd::value_type* out,
+                          const Root<typename Fwd::value_type>* roots,
+                          const Root<typename Fwd::value_type>* inverse_roots,
+                          Modulus<typename Fwd::value_type> modulus,
+                          typename Fwd::value_type n_inverse, int batch)
     {
         using T = typename Fwd::value_type;
         extern __shared__ char shared_memory_raw[];
@@ -162,7 +163,7 @@ namespace
     __global__ void stage_kernel(TIn* in, TOut* out,
                                  const Root<typename NTT::value_type>* roots,
                                  Modulus<typename NTT::value_type> modulus,
-                                 Ninverse<typename NTT::value_type> n_inverse)
+                                 typename NTT::value_type n_inverse)
     {
         using T = typename NTT::value_type;
         using Stage = typename NTT::template stage<I>;
@@ -185,7 +186,7 @@ namespace
     void launch_stage(TIn* in, TOut* out,
                       const Root<typename NTT::value_type>* roots,
                       Modulus<typename NTT::value_type> modulus,
-                      Ninverse<typename NTT::value_type> n_inverse, int batch)
+                      typename NTT::value_type n_inverse, int batch)
     {
         using T = typename NTT::value_type;
         using Stage = typename NTT::template stage<I>;
@@ -222,7 +223,7 @@ namespace
     void launch_stages(TIn* in, TOut* out,
                        const Root<typename NTT::value_type>* roots,
                        Modulus<typename NTT::value_type> modulus,
-                       Ninverse<typename NTT::value_type> n_inverse, int batch,
+                       typename NTT::value_type n_inverse, int batch,
                        std::integer_sequence<int, I...>)
     {
         (launch_stage<NTT, I>(in, out, roots, modulus, n_inverse, batch), ...);
@@ -231,11 +232,12 @@ namespace
     // RNS: polynomial z uses modulus z % mod_count and the roots at
     // roots + (prime << log2(N)), picked by the kernel itself.
     template <typename NTT>
-    __global__ void rns_single_kernel(
-        typename NTT::value_type* in, typename NTT::value_type* out,
-        const Root<typename NTT::value_type>* roots,
-        const Modulus<typename NTT::value_type>* moduli,
-        const Ninverse<typename NTT::value_type>* n_inverses, int mod_count)
+    __global__ void
+    rns_single_kernel(typename NTT::value_type* in,
+                      typename NTT::value_type* out,
+                      const Root<typename NTT::value_type>* roots,
+                      const Modulus<typename NTT::value_type>* moduli,
+                      const typename NTT::value_type* n_inverses, int mod_count)
     {
         using T = typename NTT::value_type;
         static_assert(NTT::batches_per_block == 1);
@@ -261,11 +263,12 @@ namespace
     }
 
     template <typename NTT, int I>
-    __global__ void rns_stage_kernel(
-        typename NTT::value_type* in, typename NTT::value_type* out,
-        const Root<typename NTT::value_type>* roots,
-        const Modulus<typename NTT::value_type>* moduli,
-        const Ninverse<typename NTT::value_type>* n_inverses, int mod_count)
+    __global__ void
+    rns_stage_kernel(typename NTT::value_type* in,
+                     typename NTT::value_type* out,
+                     const Root<typename NTT::value_type>* roots,
+                     const Modulus<typename NTT::value_type>* moduli,
+                     const typename NTT::value_type* n_inverses, int mod_count)
     {
         using T = typename NTT::value_type;
         using Stage = typename NTT::template stage<I>;
@@ -293,7 +296,7 @@ namespace
                            typename NTT::value_type* out,
                            const Root<typename NTT::value_type>* roots,
                            const Modulus<typename NTT::value_type>* moduli,
-                           const Ninverse<typename NTT::value_type>* n_inverses,
+                           const typename NTT::value_type* n_inverses,
                            int mod_count, int batch,
                            std::integer_sequence<int, I...>)
     {

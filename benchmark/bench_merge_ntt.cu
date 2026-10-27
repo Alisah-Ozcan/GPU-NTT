@@ -176,8 +176,7 @@ namespace
         auto roots = random_vector<T>(prime_count * n, prime, 4321);
         thrust::device_vector<Modulus<T>> moduli(prime_count,
                                                  Modulus<T>(prime));
-        thrust::device_vector<Ninverse<T>> n_inverse(prime_count,
-                                                     static_cast<T>(12345));
+        thrust::device_vector<T> n_inverse(prime_count, static_cast<T>(12345));
 
         std::vector<int> host_order;
         if (variant == "modulus_ordered")
@@ -285,8 +284,7 @@ namespace
         auto roots = random_vector<T>(mod_count * n, prime, 4321);
         const Modulus<T> modulus(prime);
         thrust::device_vector<Modulus<T>> moduli(mod_count, modulus);
-        thrust::device_vector<Ninverse<T>> n_inverse(mod_count,
-                                                     static_cast<T>(12345));
+        thrust::device_vector<T> n_inverse(mod_count, static_cast<T>(12345));
         add_memory_traffic<T>(state, n * batch, mod_count * n);
 
         BenchStream stream(state);

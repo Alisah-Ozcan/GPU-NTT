@@ -48,7 +48,7 @@ __global__ void multiply_kernel(TestDataType* a, const TestDataType* b_hat,
                                 const Root<TestDataType>* forward_roots,
                                 const Root<TestDataType>* inverse_roots,
                                 Modulus<TestDataType> modulus,
-                                Ninverse<TestDataType> n_inverse, int batch)
+                                TestDataType n_inverse, int batch)
 {
     extern __shared__ char shared_memory_raw[];
     TestDataType* shared_memory =

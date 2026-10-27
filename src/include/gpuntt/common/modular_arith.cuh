@@ -203,13 +203,11 @@ namespace gpuntt
     typedef OPERATOR<Data32> OPERATOR32;
     typedef OPERATOR<Data64> OPERATOR64;
 
-    template <typename T>
-    using Root = typename std::conditional<std::is_same<T, Data32>::value,
-                                           Root32, Root64>::type;
+    // Root table entries and N^-1 have the coefficient type. Ninverse is kept
+    // for existing code; Root names the type of a root table entry.
+    template <typename T> using Root = T;
 
-    template <typename T>
-    using Ninverse = typename std::conditional<std::is_same<T, Data32>::value,
-                                               Ninverse32, Ninverse64>::type;
+    template <typename T> using Ninverse = T;
 
     namespace modular_operation_gpu
     {

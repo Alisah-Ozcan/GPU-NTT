@@ -518,14 +518,14 @@ namespace
                         try
                         {
                             std::vector<Modulus<T>> moduli;
-                            std::vector<Ninverse<T>> n_inverse;
+                            std::vector<T> n_inverse;
                             for (auto& p : params)
                             {
                                 moduli.push_back(p.modulus);
                                 n_inverse.push_back(p.n_inv);
                             }
                             DeviceBuffer<Modulus<T>> d_moduli(moduli);
-                            DeviceBuffer<Ninverse<T>> d_n_inverse(n_inverse);
+                            DeviceBuffer<T> d_n_inverse(n_inverse);
                             DeviceBuffer<Root<T>> roots(
                                 concat_root_tables(params, dir == INVERSE, n));
 
@@ -603,15 +603,14 @@ namespace
                             try
                             {
                                 std::vector<Modulus<T>> moduli;
-                                std::vector<Ninverse<T>> n_inverse;
+                                std::vector<T> n_inverse;
                                 for (auto& p : params)
                                 {
                                     moduli.push_back(p.modulus);
                                     n_inverse.push_back(p.n_inv);
                                 }
                                 DeviceBuffer<Modulus<T>> d_moduli(moduli);
-                                DeviceBuffer<Ninverse<T>> d_n_inverse(
-                                    n_inverse);
+                                DeviceBuffer<T> d_n_inverse(n_inverse);
                                 DeviceBuffer<Root<T>> roots(concat_root_tables(
                                     params, dir == INVERSE, n));
 
@@ -719,14 +718,14 @@ namespace
                         try
                         {
                             std::vector<Modulus<T>> moduli;
-                            std::vector<Ninverse<T>> n_inverse;
+                            std::vector<T> n_inverse;
                             for (auto& p : params)
                             {
                                 moduli.push_back(p.modulus);
                                 n_inverse.push_back(p.n_inv);
                             }
                             DeviceBuffer<Modulus<T>> d_moduli(moduli);
-                            DeviceBuffer<Ninverse<T>> d_n_inverse(n_inverse);
+                            DeviceBuffer<T> d_n_inverse(n_inverse);
                             DeviceBuffer<Root<T>> roots(
                                 concat_root_tables(params, dir == INVERSE, n));
 
@@ -876,14 +875,14 @@ namespace
                         try
                         {
                             std::vector<Modulus<T>> moduli;
-                            std::vector<Ninverse<T>> n_inverse;
+                            std::vector<T> n_inverse;
                             for (auto& p : params)
                             {
                                 moduli.push_back(p.modulus);
                                 n_inverse.push_back(p.n_inv);
                             }
                             DeviceBuffer<Modulus<T>> d_moduli(moduli);
-                            DeviceBuffer<Ninverse<T>> d_n_inverse(n_inverse);
+                            DeviceBuffer<T> d_n_inverse(n_inverse);
                             DeviceBuffer<int> d_order(order);
                             DeviceBuffer<Root<T>> roots(
                                 concat_root_tables(params, dir == INVERSE, n));
@@ -961,14 +960,14 @@ namespace
                         try
                         {
                             std::vector<Modulus<T>> moduli;
-                            std::vector<Ninverse<T>> n_inverse;
+                            std::vector<T> n_inverse;
                             for (auto& p : params)
                             {
                                 moduli.push_back(p.modulus);
                                 n_inverse.push_back(p.n_inv);
                             }
                             DeviceBuffer<Modulus<T>> d_moduli(moduli);
-                            DeviceBuffer<Ninverse<T>> d_n_inverse(n_inverse);
+                            DeviceBuffer<T> d_n_inverse(n_inverse);
                             DeviceBuffer<int> d_order(order);
                             DeviceBuffer<Root<T>> roots(
                                 concat_root_tables(params, dir == INVERSE, n));
@@ -1049,7 +1048,7 @@ namespace
                 {
                     std::vector<NTTParameters<T>> params;
                     std::vector<Modulus<T>> moduli;
-                    std::vector<Ninverse<T>> n_inverse;
+                    std::vector<T> n_inverse;
                     for (const auto& f : fields)
                     {
                         params.push_back(f.parameters(logn, poly));
@@ -1057,7 +1056,7 @@ namespace
                         n_inverse.push_back(params.back().n_inv);
                     }
                     DeviceBuffer<Modulus<T>> d_moduli(moduli);
-                    DeviceBuffer<Ninverse<T>> d_n_inverse(n_inverse);
+                    DeviceBuffer<T> d_n_inverse(n_inverse);
                     DeviceBuffer<int> d_modulus_order(modulus_order);
                     DeviceBuffer<int> d_poly_order(poly_order);
                     // The single modulus cases use the first table.

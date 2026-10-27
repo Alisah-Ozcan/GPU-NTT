@@ -33,7 +33,7 @@ namespace gpuntt
         type ntt_type;
         NTTLayout ntt_layout;
         ReductionPolynomial reduction_poly;
-        Ninverse<T> mod_inverse;
+        T mod_inverse;
         cudaStream_t stream;
     };
 
@@ -43,7 +43,7 @@ namespace gpuntt
         type ntt_type;
         NTTLayout ntt_layout;
         ReductionPolynomial reduction_poly;
-        Ninverse<T>* mod_inverse;
+        T* mod_inverse;
         cudaStream_t stream;
     };
 
@@ -94,7 +94,7 @@ namespace gpuntt
         const Root<typename std::make_unsigned<
             T>::type>* __restrict__ inverse_root_of_unity_table,
         Modulus<typename std::make_unsigned<T>::type> modulus,
-        Ninverse<typename std::make_unsigned<T>::type> n_inverse, int log_row,
+        typename std::make_unsigned<T>::type n_inverse, int log_row,
         int log_column, bool reduction_poly_check);
 
     template <typename T>
@@ -103,7 +103,7 @@ namespace gpuntt
         const Root<typename std::make_unsigned<
             T>::type>* __restrict__ inverse_root_of_unity_table,
         Modulus<typename std::make_unsigned<T>::type>* modulus,
-        Ninverse<typename std::make_unsigned<T>::type>* n_inverse, int log_row,
+        typename std::make_unsigned<T>::type* n_inverse, int log_row,
         int log_column, bool reduction_poly_check, int mod_count);
 
     /**

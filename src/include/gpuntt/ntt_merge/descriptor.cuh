@@ -549,7 +549,7 @@ namespace gpuntt
         template <typename TOut>
         __device__ __forceinline__ void store(T* shared_memory, TOut* data,
                                               Modulus<T> modulus,
-                                              Ninverse<T> n_inverse) const
+                                              T n_inverse) const
         {
             static_assert(!low_ring, "Use the single kernel API for Size up "
                                      "to 2^9");
@@ -566,7 +566,7 @@ namespace gpuntt
 
       private:
         __device__ __forceinline__ static StageThread<T>
-        thread(Modulus<T> modulus, Ninverse<T> n_inverse)
+        thread(Modulus<T> modulus, T n_inverse)
         {
             return StageThreadState<swap_grid_axes, D == INVERSE, T>(
                 SingleModulus<T>{modulus, n_inverse}, SequentialPolys{},
@@ -692,9 +692,9 @@ namespace gpuntt
         }
 
         template <typename TOut>
-        __device__ __forceinline__ void
-        store(T* shared_memory, TOut* data, Modulus<T> modulus,
-              Ninverse<T> n_inverse, int num_polys = B) const
+        __device__ __forceinline__ void store(T* shared_memory, TOut* data,
+                                              Modulus<T> modulus, T n_inverse,
+                                              int num_polys = B) const
         {
             static_assert(D == INVERSE,
                           "Only the inverse store takes modulus and n_inverse");
@@ -719,8 +719,7 @@ namespace gpuntt
         // Thread (x, y) owns coefficients x and x + N/2 of polynomial y of
         // the block. Rows y >= num_polys read polynomial 0 and store nothing.
         __device__ __forceinline__ static LowRingThread<T>
-        low_ring_thread(Modulus<T> modulus, Ninverse<T> n_inverse,
-                        int num_polys)
+        low_ring_thread(Modulus<T> modulus, T n_inverse, int num_polys)
         {
             const int idx_x = threadIdx.x;
             const int idx_y = threadIdx.y;
@@ -742,7 +741,7 @@ namespace gpuntt
         // The single stage kernel transforms one polynomial per block, as in
         // StageThreadState with block (0, 0).
         __device__ __forceinline__ static StageThread<T>
-        stage_thread(Modulus<T> modulus, Ninverse<T> n_inverse)
+        stage_thread(Modulus<T> modulus, T n_inverse)
         {
             const int idx_x = threadIdx.x;
             const int idx_y = threadIdx.y;

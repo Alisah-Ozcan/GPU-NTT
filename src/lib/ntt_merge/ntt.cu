@@ -82,7 +82,7 @@ namespace gpuntt
         const Root<typename std::make_unsigned<
             T>::type>* __restrict__ inverse_root_of_unity_table,
         Modulus<typename std::make_unsigned<T>::type> modulus,
-        Ninverse<typename std::make_unsigned<T>::type> n_inverse, int log_row,
+        typename std::make_unsigned<T>::type n_inverse, int log_row,
         int log_column, bool reduction_poly_check)
     {
         using TU = typename std::make_unsigned<T>::type;
@@ -107,7 +107,7 @@ namespace gpuntt
         const Root<typename std::make_unsigned<
             T>::type>* __restrict__ inverse_root_of_unity_table,
         Modulus<typename std::make_unsigned<T>::type>* modulus,
-        Ninverse<typename std::make_unsigned<T>::type>* n_inverse, int log_row,
+        typename std::make_unsigned<T>::type* n_inverse, int log_row,
         int log_column, bool reduction_poly_check, int mod_count)
     {
         using TU = typename std::make_unsigned<T>::type;
@@ -510,7 +510,7 @@ namespace gpuntt
         type ntt_type;
         NTTLayout ntt_layout;
         ReductionPolynomial reduction_poly;
-        Ninverse<Data32> mod_inverse;
+        Data32 mod_inverse;
         cudaStream_t stream;
     };
 
@@ -520,7 +520,7 @@ namespace gpuntt
         type ntt_type;
         NTTLayout ntt_layout;
         ReductionPolynomial reduction_poly;
-        Ninverse<Data64> mod_inverse;
+        Data64 mod_inverse;
         cudaStream_t stream;
     };
 
@@ -530,7 +530,7 @@ namespace gpuntt
         type ntt_type;
         NTTLayout ntt_layout;
         ReductionPolynomial reduction_poly;
-        Ninverse<Data32>* mod_inverse;
+        Data32* mod_inverse;
         cudaStream_t stream;
     };
 
@@ -540,7 +540,7 @@ namespace gpuntt
         type ntt_type;
         NTTLayout ntt_layout;
         ReductionPolynomial reduction_poly;
-        Ninverse<Data64>* mod_inverse;
+        Data64* mod_inverse;
         cudaStream_t stream;
     };
 
@@ -558,11 +558,10 @@ namespace gpuntt
         const Modulus<UnsignedOf<T>>*, int, int, bool, int);                   \
     template __global__ void InverseCoreTranspose<T>(                          \
         UnsignedOf<T>*, T*, const Root<UnsignedOf<T>>* __restrict__,           \
-        Modulus<UnsignedOf<T>>, Ninverse<UnsignedOf<T>>, int, int, bool);      \
+        Modulus<UnsignedOf<T>>, UnsignedOf<T>, int, int, bool);                \
     template __global__ void InverseCoreTranspose<T>(                          \
         UnsignedOf<T>*, T*, const Root<UnsignedOf<T>>* __restrict__,           \
-        Modulus<UnsignedOf<T>>*, Ninverse<UnsignedOf<T>>*, int, int, bool,     \
-        int);                                                                  \
+        Modulus<UnsignedOf<T>>*, UnsignedOf<T>*, int, int, bool, int);         \
     template __host__ void GPU_NTT<T>(                                         \
         T*, UnsignedOf<T>*, Root<UnsignedOf<T>>*, Modulus<UnsignedOf<T>>,      \
         ntt_configuration<UnsignedOf<T>>, int);                                \

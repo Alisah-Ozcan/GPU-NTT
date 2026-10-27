@@ -135,14 +135,13 @@ int main(int argc, char* argv[])
                                      sizeof(Modulus<TestDataType>),
                                      cudaMemcpyHostToDevice));
 
-        Ninverse<TestDataType>* test_ninverse;
-        GPUNTT_CUDA_CHECK(
-            cudaMalloc(&test_ninverse, sizeof(Ninverse<TestDataType>)));
+        TestDataType* test_ninverse;
+        GPUNTT_CUDA_CHECK(cudaMalloc(&test_ninverse, sizeof(TestDataType)));
 
-        Ninverse<TestDataType> test_ninverse_[1] = {parameters.n_inv};
+        TestDataType test_ninverse_[1] = {parameters.n_inv};
 
         GPUNTT_CUDA_CHECK(cudaMemcpy(test_ninverse, test_ninverse_,
-                                     sizeof(Ninverse<TestDataType>),
+                                     sizeof(TestDataType),
                                      cudaMemcpyHostToDevice));
 
         ntt_rns_configuration<TestDataType> cfg_intt = {
@@ -320,14 +319,13 @@ int main(int argc, char* argv[])
                                      sizeof(Modulus<TestDataType>),
                                      cudaMemcpyHostToDevice));
 
-        Ninverse<TestDataType>* test_ninverse;
-        GPUNTT_CUDA_CHECK(
-            cudaMalloc(&test_ninverse, sizeof(Ninverse<TestDataType>)));
+        TestDataType* test_ninverse;
+        GPUNTT_CUDA_CHECK(cudaMalloc(&test_ninverse, sizeof(TestDataType)));
 
-        Ninverse<TestDataType> test_ninverse_[1] = {parameters.n_inv};
+        TestDataType test_ninverse_[1] = {parameters.n_inv};
 
         GPUNTT_CUDA_CHECK(cudaMemcpy(test_ninverse, test_ninverse_,
-                                     sizeof(Ninverse<TestDataType>),
+                                     sizeof(TestDataType),
                                      cudaMemcpyHostToDevice));
 
         ntt_rns_configuration<TestDataType> cfg_intt = {

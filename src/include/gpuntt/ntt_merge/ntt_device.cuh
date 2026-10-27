@@ -26,7 +26,7 @@ namespace gpuntt
     template <typename TU> struct SingleModulus
     {
         Modulus<TU> modulus;
-        Ninverse<TU> n_inverse;
+        TU n_inverse;
 
         __device__ __forceinline__ int prime_index(int) const { return 0; }
 
@@ -35,7 +35,7 @@ namespace gpuntt
             return modulus;
         }
 
-        __device__ __forceinline__ Ninverse<TU> get_n_inverse(int) const
+        __device__ __forceinline__ TU get_n_inverse(int) const
         {
             return n_inverse;
         }
@@ -46,7 +46,7 @@ namespace gpuntt
     {
         const Modulus<TU>* modulus;
         int mod_count;
-        const Ninverse<TU>* n_inverse;
+        const TU* n_inverse;
 
         __device__ __forceinline__ int prime_index(int poly) const
         {
@@ -58,7 +58,7 @@ namespace gpuntt
             return modulus[prime];
         }
 
-        __device__ __forceinline__ Ninverse<TU> get_n_inverse(int prime) const
+        __device__ __forceinline__ TU get_n_inverse(int prime) const
         {
             return n_inverse[prime];
         }
@@ -70,7 +70,7 @@ namespace gpuntt
         const Modulus<TU>* modulus;
         int mod_count;
         const int* order;
-        const Ninverse<TU>* n_inverse;
+        const TU* n_inverse;
 
         __device__ __forceinline__ int prime_index(int poly) const
         {
@@ -82,7 +82,7 @@ namespace gpuntt
             return modulus[prime];
         }
 
-        __device__ __forceinline__ Ninverse<TU> get_n_inverse(int prime) const
+        __device__ __forceinline__ TU get_n_inverse(int prime) const
         {
             return n_inverse[prime];
         }
@@ -119,7 +119,7 @@ namespace gpuntt
         bool active_batch;
         int prime_index;
         Modulus<TU> modulus;
-        Ninverse<TU> n_inverse;
+        TU n_inverse;
         location_t global_address;
         int half_n;
         int row_base;
@@ -143,7 +143,7 @@ namespace gpuntt
 
         const int prime_index = modulus_policy.prime_index(batch_index_safe);
         const Modulus<TU> modulus = modulus_policy.get_modulus(prime_index);
-        Ninverse<TU> n_inverse = 0;
+        TU n_inverse = 0;
         if constexpr (WithNinverse)
         {
             n_inverse = modulus_policy.get_n_inverse(prime_index);
@@ -416,7 +416,7 @@ namespace gpuntt
     {
         int prime_index;
         Modulus<TU> modulus;
-        Ninverse<TU> n_inverse;
+        TU n_inverse;
         location_t offset;
         location_t global_address;
         location_t omega_address;
@@ -442,7 +442,7 @@ namespace gpuntt
         const int poly_index = poly_policy.poly_index(block_z);
 
         const Modulus<TU> modulus = modulus_policy.get_modulus(prime_index);
-        Ninverse<TU> n_inverse = 0;
+        TU n_inverse = 0;
         if constexpr (WithNinverse)
         {
             n_inverse = modulus_policy.get_n_inverse(prime_index);
@@ -821,7 +821,7 @@ namespace gpuntt
         // Modulus and N^-1 of the column the thread loads and stores.
         int io_prime_index;
         Modulus<TU> io_modulus;
-        Ninverse<TU> io_n_inverse;
+        TU io_n_inverse;
         location_t global_address;
         location_t global_offset;
         int transpose_block;
@@ -858,7 +858,7 @@ namespace gpuntt
         const Modulus<TU> modulus = modulus_policy.get_modulus(prime_index);
         const Modulus<TU> io_modulus =
             modulus_policy.get_modulus(io_prime_index);
-        Ninverse<TU> io_n_inverse = 0;
+        TU io_n_inverse = 0;
         if constexpr (WithNinverse)
         {
             io_n_inverse = modulus_policy.get_n_inverse(io_prime_index);
