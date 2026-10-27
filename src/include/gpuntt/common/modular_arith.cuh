@@ -39,10 +39,12 @@ namespace gpuntt
         static constexpr int max_bit =
             std::is_same<T1, Data32>::value ? 30 : 61;
 
-        // Constructor to initialize the Modulus
-        __host__ Modulus(T1 mod) : value(mod)
+        // Constructor to initialize the Modulus. It can also run in a kernel;
+        // there a modulus larger than max_bit is not rejected.
+        __host__ __device__ Modulus(T1 mod) : value(mod)
         {
             bit = bit_generator();
+#ifndef __CUDA_ARCH__
             if (bit > max_bit)
             {
                 throw std::invalid_argument(
@@ -51,6 +53,7 @@ namespace gpuntt
                     std::to_string(max_bit) + "-bit moduli for " +
                     (std::is_same<T1, Data32>::value ? "Data32." : "Data64."));
             }
+#endif
             mu = mu_generator();
         }
 
@@ -59,17 +62,28 @@ namespace gpuntt
       private:
         // Bit length of the modulus. It is computed with integers since log2 on
         // a double rounds up for 64-bit values close to a power of two.
-        __host__ T1 bit_generator() const
+        __host__ __device__ T1 bit_generator() const
         {
+#ifdef __CUDA_ARCH__
+            if constexpr (std::is_same<T1, Data32>::value)
+            {
+                return 32 - __clz(static_cast<int>(value));
+            }
+            else
+            {
+                return 64 - __clzll(static_cast<long long>(value));
+            }
+#else
             T1 bits = 0;
             for (T1 v = value; v != 0; v >>= 1)
             {
                 bits++;
             }
             return bits;
+#endif
         }
 
-        __host__ T1 mu_generator() const
+        __host__ __device__ T1 mu_generator() const
         {
             using T2 =
                 typename std::conditional<std::is_same<T1, Data32>::value,
