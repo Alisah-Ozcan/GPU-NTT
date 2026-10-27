@@ -172,6 +172,81 @@ namespace
                     num_polys);
     }
 
+    // The same with entries: each thread reads its two b_hat values into
+    // registers before the forward execute and multiplies its own entries
+    // after it.
+    template <typename Fwd, typename Inv>
+    __global__ void fused_multiply_entries_kernel(
+        typename Fwd::value_type* a, const typename Fwd::value_type* b_hat,
+        typename Fwd::value_type* out, const typename Fwd::value_type* roots,
+        const typename Fwd::value_type* inverse_roots,
+        Modulus<typename Fwd::value_type> modulus,
+        typename Fwd::value_type n_inverse, int batch)
+    {
+        using T = typename Fwd::value_type;
+        T* shared_memory = Fwd::shared_memory();
+        const T* block_b_hat = Fwd::block_data(b_hat);
+        const int num_polys = Fwd::num_polys(batch);
+        const ThreadEntries entries = Fwd().entries(num_polys);
+
+        Fwd().load(shared_memory, Fwd::block_data(a), modulus, num_polys);
+        T b_values[ThreadEntries::count] = {};
+        if (entries.valid)
+        {
+            for (int k = 0; k < ThreadEntries::count; k++)
+            {
+                b_values[k] = block_b_hat[entries.index[k]];
+            }
+        }
+        Fwd().execute(shared_memory, roots, modulus);
+        if (entries.valid)
+        {
+            for (int k = 0; k < ThreadEntries::count; k++)
+            {
+                T& value = shared_memory[entries.position[k]];
+                value = OPERATOR_GPU<T>::mult(value, b_values[k], modulus);
+            }
+        }
+        __syncthreads();
+        Inv().execute(shared_memory, inverse_roots, modulus);
+        Inv().store(shared_memory, Fwd::block_data(out), modulus, n_inverse,
+                    num_polys);
+    }
+
+    // NTT(a) + NTT(b) in one kernel without extra shared memory: each thread
+    // keeps its two entries of NTT(b) in registers while the same shared
+    // memory transforms a.
+    template <typename Fwd>
+    __global__ void two_ntt_sum_kernel(
+        const typename Fwd::value_type* a, const typename Fwd::value_type* b,
+        typename Fwd::value_type* out, const typename Fwd::value_type* roots,
+        Modulus<typename Fwd::value_type> modulus, int batch)
+    {
+        using T = typename Fwd::value_type;
+        T* shared_memory = Fwd::shared_memory();
+        const int num_polys = Fwd::num_polys(batch);
+        const ThreadEntries entries = Fwd().entries(num_polys);
+
+        Fwd().load(shared_memory, Fwd::block_data(b), modulus, num_polys);
+        Fwd().execute(shared_memory, roots, modulus);
+        T b_hat[ThreadEntries::count];
+        for (int k = 0; k < ThreadEntries::count; k++)
+        {
+            b_hat[k] = shared_memory[entries.position[k]];
+        }
+        __syncthreads();
+
+        Fwd().load(shared_memory, Fwd::block_data(a), modulus, num_polys);
+        Fwd().execute(shared_memory, roots, modulus);
+        for (int k = 0; k < ThreadEntries::count; k++)
+        {
+            T& value = shared_memory[entries.position[k]];
+            value = OPERATOR_GPU<T>::add(value, b_hat[k], modulus);
+        }
+        __syncthreads();
+        Fwd().store(shared_memory, Fwd::block_data(out), num_polys);
+    }
+
     template <typename T>
     __global__ void multiply_kernel(T* a, const T* b, Modulus<T> modulus,
                                     size_t total)
@@ -284,6 +359,47 @@ namespace
         Last().for_each(
             shared_memory, [&](T& value, size_t index)
             { value = OPERATOR_GPU<T>::mult(value, b_hat[index], modulus); });
+        First().execute(shared_memory, inverse_roots, modulus);
+        if constexpr (First::last)
+        {
+            First().store(shared_memory, data, modulus, n_inverse);
+        }
+        else
+        {
+            First().store(shared_memory, data);
+        }
+    }
+
+    // The same with entries: the b_hat values are read into registers before
+    // the last forward execute.
+    template <typename Fwd, typename Inv>
+    __global__ void
+    fused_stage_entries_kernel(typename Fwd::value_type* data,
+                               const typename Fwd::value_type* b_hat,
+                               const typename Fwd::value_type* roots,
+                               const typename Fwd::value_type* inverse_roots,
+                               Modulus<typename Fwd::value_type> modulus,
+                               typename Fwd::value_type n_inverse)
+    {
+        using T = typename Fwd::value_type;
+        using Last = typename Fwd::template stage<Fwd::num_stages - 1>;
+        using First = typename Inv::template stage<0>;
+        T* shared_memory = Last::shared_memory();
+        const ThreadEntries entries = Last().entries();
+
+        Last().load(shared_memory, data, modulus);
+        T b_values[ThreadEntries::count];
+        for (int k = 0; k < ThreadEntries::count; k++)
+        {
+            b_values[k] = b_hat[entries.index[k]];
+        }
+        Last().execute(shared_memory, roots, modulus);
+        for (int k = 0; k < ThreadEntries::count; k++)
+        {
+            T& value = shared_memory[entries.position[k]];
+            value = OPERATOR_GPU<T>::mult(value, b_values[k], modulus);
+        }
+        __syncthreads();
         First().execute(shared_memory, inverse_roots, modulus);
         if constexpr (First::last)
         {
@@ -560,10 +676,18 @@ namespace
                 inverse_roots.data, modulus, n_inverse, batch);
         check_cuda(cudaGetLastError(), "launch");
 
+        DeviceBuffer<T> with_entries(total);
+        fused_multiply_entries_kernel<Fwd, Inv>
+            <<<Fwd::grid(batch), Fwd::block_dim, Fwd::shared_memory_size>>>(
+                a.data, b_hat.data, with_entries.data, roots.data,
+                inverse_roots.data, modulus, n_inverse, batch);
+        check_cuda(cudaGetLastError(), "launch");
+
         const std::vector<T> expected_values = expected.read();
-        const char* const variants[] = {"", " with helpers"};
-        const std::vector<T> results[] = {actual.read(), with_helpers.read()};
-        for (int v = 0; v < 2; v++)
+        const char* const variants[] = {"", " with helpers", " with entries"};
+        const std::vector<T> results[] = {actual.read(), with_helpers.read(),
+                                          with_entries.read()};
+        for (int v = 0; v < 3; v++)
         {
             cases++;
             if (results[v] != expected_values)
@@ -678,6 +802,7 @@ namespace
     {
         (run_size<T, T, First + LogN, Staged>(), ...);
     }
+
     // The same product for ring sizes with stage kernels: forward stages
     // 0 ... S - 2, fused_stage_kernel, inverse stages 1 ... S - 1.
     template <typename T, int LogN, ReductionPolynomial R>
@@ -752,11 +877,81 @@ namespace
             actual.data, actual.data, inverse_roots.data, modulus, n_inverse,
             batch, std::make_integer_sequence<int, Inv::num_stages - 1>());
 
+        DeviceBuffer<T> with_entries(total);
+        launch_stages_from<Fwd, 0>(
+            a.data, with_entries.data, roots.data, modulus, n_inverse, batch,
+            std::make_integer_sequence<int, Fwd::num_stages - 1>());
+        fused_stage_entries_kernel<Fwd, Inv>
+            <<<Last::grid(batch), Last::block_dim, Last::shared_memory_size>>>(
+                with_entries.data, b_hat.data, roots.data, inverse_roots.data,
+                modulus, n_inverse);
+        check_cuda(cudaGetLastError(), "launch");
+        launch_stages_from<Inv, 1>(
+            with_entries.data, with_entries.data, inverse_roots.data, modulus,
+            n_inverse, batch,
+            std::make_integer_sequence<int, Inv::num_stages - 1>());
+
+        const std::vector<T> expected_values = expected.read();
+        const char* const variants[] = {"", " with entries"};
+        const std::vector<T> results[] = {actual.read(), with_entries.read()};
+        for (int v = 0; v < 2; v++)
+        {
+            cases++;
+            if (results[v] != expected_values)
+            {
+                failures++;
+                std::printf("FAIL fused stages%s %s logn=%d %s batch=%d\n",
+                            variants[v], sizeof(T) == 4 ? "u32" : "u64", LogN,
+                            R == X_N_minus ? "X^N-1" : "X^N+1", batch);
+            }
+        }
+    }
+
+    // NTT(a) + NTT(b) with two_ntt_sum_kernel against two GPU_NTT calls.
+    template <typename T, int LogN, ReductionPolynomial R> void run_two_ntts()
+    {
+        using Fwd = decltype(Size<(1 << LogN)>() + Direction<FORWARD>() +
+                             Precision<T>() + ReductionPoly<R>() + Block());
+        constexpr int n = 1 << LogN;
+        const int batch = 2 * Fwd::batches_per_block + 1;
+        const size_t total = size_t(batch) * n;
+
+        const int max_bits = std::is_same<T, Data32>::value ? 30 : 61;
+        const T top = T(1) << (max_bits - 1);
+        const T p = top + (static_cast<T>(rng() % top) | 1);
+        const Modulus<T> modulus(p);
+
+        DeviceBuffer<T> roots(random_below<T>(n, p));
+        DeviceBuffer<T> a(random_below<T>(total, p));
+        DeviceBuffer<T> b(random_below<T>(total, p));
+        DeviceBuffer<T> a_hat(total), b_hat(total), actual(total);
+
+        ntt_configuration<T> cfg = {.n_power = LogN,
+                                    .ntt_type = FORWARD,
+                                    .ntt_layout = PerPolynomial,
+                                    .reduction_poly = R,
+                                    .mod_inverse = 1,
+                                    .stream = 0};
+        GPU_NTT(a.data, a_hat.data, roots.data, modulus, cfg, batch);
+        GPU_NTT(b.data, b_hat.data, roots.data, modulus, cfg, batch);
+        two_ntt_sum_kernel<Fwd>
+            <<<Fwd::grid(batch), Fwd::block_dim, Fwd::shared_memory_size>>>(
+                a.data, b.data, actual.data, roots.data, modulus, batch);
+        check_cuda(cudaGetLastError(), "launch");
+
+        const std::vector<T> a_values = a_hat.read();
+        const std::vector<T> b_values = b_hat.read();
+        std::vector<T> expected(total);
+        for (size_t i = 0; i < total; i++)
+        {
+            expected[i] = OPERATOR<T>::add(a_values[i], b_values[i], modulus);
+        }
+
         cases++;
-        if (expected.read() != actual.read())
+        if (actual.read() != expected)
         {
             failures++;
-            std::printf("FAIL fused stages %s logn=%d %s batch=%d\n",
+            std::printf("FAIL two NTTs with entries %s logn=%d %s batch=%d\n",
                         sizeof(T) == 4 ? "u32" : "u64", LogN,
                         R == X_N_minus ? "X^N-1" : "X^N+1", batch);
         }
@@ -804,6 +999,12 @@ int main()
     run_fused<Data64, 4, X_N_plus>();
     run_fused<Data64, 8, X_N_minus>();
     run_fused<Data64, 10, X_N_plus>();
+
+    // NTT(a) + NTT(b) in one kernel, NTT(b) kept in registers.
+    run_two_ntts<Data32, 4, X_N_plus>();
+    run_two_ntts<Data32, 9, X_N_minus>();
+    run_two_ntts<Data64, 8, X_N_plus>();
+    run_two_ntts<Data64, 10, X_N_minus>();
 
     // The same with stage kernels; the last forward and the first inverse
     // stage run in one kernel. 2^25 swaps the grid axes in both.

@@ -288,6 +288,32 @@ First().store(shared_memory, a);  // with (modulus, n_inverse) if First::last
 
   The other stages run in their own kernels as above. [`example/ntt_merge/test_device_api.cu`](example/ntt_merge/test_device_api.cu) multiplies polynomials with N = 2^12 this way.
 
+### Entries of a thread
+
+Every thread of a single kernel or a stage kernel owns two entries of shared memory: `load` fills them, `store` writes them back, and they keep their positions in between. `NTT().entries(num_polys)` (single kernel) and `Stage().entries()` return them as a `ThreadEntries`: entry `k` (`k < ThreadEntries::count`, which is 2) is `shared_memory[position[k]]` and belongs at `data[index[k]]`, the index that `for_each` passes. In a last single kernel block that is not full, the threads of the missing polynomials have `valid == false`. `for_each` is built on `entries`.
+
+With the entries a thread works on its own values directly, e.g. reads the values of another array into registers before `execute`:
+
+```cpp
+const ThreadEntries entries = NTT().entries(num_polys);
+NTT().load(shared_memory, polys, modulus, num_polys);
+Data64 other_values[ThreadEntries::count] = {};
+if (entries.valid)
+    for (int k = 0; k < ThreadEntries::count; k++)
+        other_values[k] = other_polys[entries.index[k]];
+NTT().execute(shared_memory, roots, modulus);
+if (entries.valid)
+    for (int k = 0; k < ThreadEntries::count; k++) {
+        Data64& value = shared_memory[entries.position[k]];
+        value = OPERATOR_GPU<Data64>::mult(value, other_values[k], modulus);
+    }
+NTT().store(shared_memory, polys, num_polys);
+```
+
+- `store` writes the thread's own entries, so changing them needs no barrier before `store`; before another `execute`, end with `__syncthreads()`.
+- `position` also addresses the same entry in a second shared memory buffer of the same layout, e.g. one filled by a second `load`.
+- A thread can keep its two entries of one transform in registers while the same shared memory transforms another polynomial, e.g. NTT(a) + NTT(b) in one kernel without extra shared memory ([`test/test_ntt_device.cu`](test/test_ntt_device.cu), `two_ntt_sum_kernel`).
+
 ### RNS
 
 There is no separate RNS interface: pick the modulus of each polynomial yourself and pass the matching part of the root table, which holds the roots of prime `i` at offset `i << log2(N)`. For example, in a stage kernel `modulus = moduli[blockIdx.z % mod_count]` and `roots + (size_t(blockIdx.z % mod_count) << log2(N))`. In the single kernel API this needs `BatchesPerBlock<1>` (the default for N = 2^10), since all polynomials of a block share one modulus.

@@ -450,6 +450,20 @@ namespace gpuntt
         return reinterpret_cast<T*>(gpuntt_shared_memory);
     }
 
+    // The shared memory entries of one thread: entry k is
+    // shared_memory[position[k]] and belongs at data[index[k]], where data is
+    // the array load reads and store writes. load fills exactly these entries
+    // and they keep their positions until store. In a last single kernel
+    // block that is not full, the threads of the missing polynomials have
+    // valid == false.
+    struct ThreadEntries
+    {
+        static constexpr int count = 2;
+        bool valid;
+        int position[count];
+        size_t index[count];
+    };
+
     // Launch parameters and device functions of kernel I of an NTT of ring
     // size 2^LogN. Ring sizes up to 2^kLowRingMaxLogN use the low ring
     // kernel, which transforms B polynomials per block (use the single kernel
@@ -555,21 +569,34 @@ namespace gpuntt
             }
         }
 
-        // Calls f(value, index) for the two shared memory entries of this
-        // thread; index is the entry's position in data, the array load
-        // reads and store writes. Between load and store an entry keeps its
-        // position, so after the last forward execute value is element index
-        // of the GPU_NTT output. Ends with a block barrier.
-        template <typename F>
-        __device__ __forceinline__ void for_each(T* shared_memory, F f) const
+        // This thread's two entries (see ThreadEntries).
+        __device__ __forceinline__ ThreadEntries entries() const
         {
             static_assert(!low_ring, "Use the single kernel API for Size up "
                                      "to 2^9");
             const StageThread<T> state = thread(Modulus<T>(), 0);
-            f(shared_memory[state.shared_address],
-              size_t(state.global_address));
-            f(shared_memory[state.shared_address + blockDim.x * blockDim.y],
-              size_t(state.global_address + state.offset));
+            const int position = int(state.shared_address);
+            return ThreadEntries{
+                true,
+                {position, position + int(blockDim.x * blockDim.y)},
+                {size_t(state.global_address),
+                 size_t(state.global_address + state.offset)}};
+        }
+
+        // Calls f(value, index) for the entries of this thread (see
+        // entries); index is the entry's position in data. Between load and
+        // store an entry keeps its position, so after the last forward
+        // execute value is element index of the GPU_NTT output. Ends with a
+        // block barrier.
+        template <typename F>
+        __device__ __forceinline__ void for_each(T* shared_memory, F f) const
+        {
+            const ThreadEntries thread_entries = entries();
+            for (int k = 0; k < ThreadEntries::count; k++)
+            {
+                f(shared_memory[thread_entries.position[k]],
+                  thread_entries.index[k]);
+            }
             __syncthreads();
         }
 
@@ -742,18 +769,50 @@ namespace gpuntt
             }
         }
 
+        // This thread's two entries (see ThreadEntries). Shared memory holds
+        // the block's polynomials in the order of data, so position and
+        // index are equal.
+        __device__ __forceinline__ ThreadEntries
+        entries(int num_polys = B) const
+        {
+            if constexpr (low_ring)
+            {
+                const LowRingThread<T> state =
+                    low_ring_thread(Modulus<T>(), 0, num_polys);
+                return ThreadEntries{
+                    state.active_batch,
+                    {state.shared_address0, state.shared_address1},
+                    {size_t(state.shared_address0),
+                     size_t(state.shared_address1)}};
+            }
+            else
+            {
+                const StageThread<T> state = stage_thread(Modulus<T>(), 0);
+                const int position = int(state.shared_address);
+                return ThreadEntries{
+                    true,
+                    {position, position + int(blockDim.x * blockDim.y)},
+                    {size_t(state.global_address),
+                     size_t(state.global_address + state.offset)}};
+            }
+        }
+
         // Calls f(value, index) for the entries of the block's num_polys
-        // polynomials, spread over the threads; index is the entry's position
-        // in data, the array load reads and store writes. Ends with a block
-        // barrier.
+        // polynomials, each by the thread that owns it (see entries); index
+        // is the entry's position in data, the array load reads and store
+        // writes. Ends with a block barrier.
         template <typename F>
         __device__ __forceinline__ void for_each(T* shared_memory, F f,
                                                  int num_polys = B) const
         {
-            for (int i = threadIdx.x + threadIdx.y * blockDim.x;
-                 i < (num_polys << LogN); i += blockDim.x * blockDim.y)
+            const ThreadEntries thread_entries = entries(num_polys);
+            if (thread_entries.valid)
             {
-                f(shared_memory[i], size_t(i));
+                for (int k = 0; k < ThreadEntries::count; k++)
+                {
+                    f(shared_memory[thread_entries.position[k]],
+                      thread_entries.index[k]);
+                }
             }
             __syncthreads();
         }
