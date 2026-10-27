@@ -149,9 +149,11 @@ find_package(GPUNTT CONFIG REQUIRED)
 # ...
 target_link_libraries(<your-target> (PRIVATE|PUBLIC|INTERFACE) GPUNTT::ntt CUDA::cudart)
 # ...
-set_target_properties(<your-target> PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
-# ...
 ```
+
+- Neither relocatable device code (`CUDA_SEPARABLE_COMPILATION`, `-rdc`) nor device link-time optimization is needed, also for the device API.
+- `GPUNTT_CUDA_ARCHITECTURES` holds the GPU architectures the installed library was compiled for.
+- The installed `gpuntt/config.cuh` records the build settings (`GPUNTT_CC_89_KERNEL_CONFIG`, version, architectures), so code compiled without CMake, e.g. `nvcc -I<prefix>/include/GPUNTT-1.0 ... -L<prefix>/lib -lntt-1.0`, uses the same kernel tables as the library.
 
 All GPU-NTT types and functions are in the `gpuntt` namespace. For compatibility, the arithmetic types (`Data32`, `Data64`, `Modulus`, `OPERATOR`, `OPERATOR_GPU`, ...) are also available in the global namespace; define `GPUNTT_NO_GLOBAL_ALIASES` to disable them.
 

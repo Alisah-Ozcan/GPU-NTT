@@ -47,9 +47,11 @@ target_compile_options(ntt PRIVATE
 option(GPUNTT_CC_89_KERNEL_CONFIG
     "Use the kernel configuration tuned for compute capability 8.9 for 2^27 and 2^28 ring sizes"
     ON)
-if(GPUNTT_CC_89_KERNEL_CONFIG)
-    target_compile_definitions(ntt PUBLIC GPUNTT_CC_89_KERNEL_CONFIG)
-endif()
+
+# gpuntt/config.cuh holds the settings above for code that uses the headers.
+set(GPUNTT_CONFIG_INCLUDE_DIR ${CMAKE_CURRENT_BINARY_DIR}/include)
+configure_file(${PROJECT_SOURCE_DIR}/cmake/config.cuh.in
+               ${GPUNTT_CONFIG_INCLUDE_DIR}/gpuntt/config.cuh)
 
 option(GPUNTT_ENABLE_WARNINGS "Enable extra warnings for GPUNTT" OFF)
 if(GPUNTT_ENABLE_WARNINGS)
@@ -71,6 +73,7 @@ target_include_directories(
     ntt
     PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<BUILD_INTERFACE:${GPUNTT_CONFIG_INCLUDE_DIR}>
     $<INSTALL_INTERFACE:include/GPUNTT-${PROJECT_VERSION}>
 )
 
@@ -92,4 +95,8 @@ install(TARGETS ntt
 install(
     DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/
     DESTINATION ${INCLUDES_INSTALL_DIR}
+)
+install(
+    FILES ${GPUNTT_CONFIG_INCLUDE_DIR}/gpuntt/config.cuh
+    DESTINATION ${INCLUDES_INSTALL_DIR}/gpuntt
 )

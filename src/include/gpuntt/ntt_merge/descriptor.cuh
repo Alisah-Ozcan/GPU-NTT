@@ -7,6 +7,7 @@
 #ifndef NTT_DESCRIPTOR_H
 #define NTT_DESCRIPTOR_H
 
+#include "gpuntt/config.cuh"
 #include "gpuntt/common/fields.cuh"
 #include "gpuntt/common/nttparameters.cuh"
 #include "gpuntt/ntt_merge/ntt_device.cuh"
@@ -63,9 +64,9 @@ namespace gpuntt
     }
 
     // Kernel parameters per log2(ring size), indexed by log2(ring size).
-    // GPUNTT_CC_89_KERNEL_CONFIG (CMake option, ON by default) selects the
-    // configuration tuned for compute capability 8.9 for log2(ring size) 27
-    // and 28.
+    // GPUNTT_CC_89_KERNEL_CONFIG (CMake option, ON by default, recorded in
+    // gpuntt/config.cuh) selects the configuration tuned for compute
+    // capability 8.9 for log2(ring size) 27 and 28.
     template <typename T>
     inline constexpr KernelStages forward_kernel_table[] = {
         KernelStages{},

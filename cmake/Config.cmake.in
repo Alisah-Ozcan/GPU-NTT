@@ -2,4 +2,8 @@ include(CMakeFindDependencyMacro)
 
 find_dependency(CUDAToolkit REQUIRED)
 
+# GPU architectures libntt is compiled for (CMAKE_CUDA_ARCHITECTURES of the
+# GPU-NTT build).
+set(GPUNTT_CUDA_ARCHITECTURES "@CMAKE_CUDA_ARCHITECTURES@")
+
 include("${CMAKE_CURRENT_LIST_DIR}/@GPUNTT_TARGETS_EXPORT_NAME@.cmake")
