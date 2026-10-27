@@ -48,8 +48,8 @@ namespace gpuntt
     };
 
     template <typename T>
-    __device__ __forceinline__ void
-    CooleyTukeyUnit(T& U, T& V, const Root<T>& root, const Modulus<T>& modulus)
+    __device__ __forceinline__ void CooleyTukeyUnit(T& U, T& V, const T& root,
+                                                    const Modulus<T>& modulus)
     {
         T u_ = U;
         T v_ = OPERATOR_GPU<T>::mult(V, root, modulus);
@@ -60,8 +60,7 @@ namespace gpuntt
 
     template <typename T>
     __device__ __forceinline__ void
-    GentlemanSandeUnit(T& U, T& V, const Root<T>& root,
-                       const Modulus<T>& modulus)
+    GentlemanSandeUnit(T& U, T& V, const T& root, const Modulus<T>& modulus)
     {
         T u_ = U;
         T v_ = V;
@@ -75,24 +74,24 @@ namespace gpuntt
     template <typename T>
     __global__ void ForwardCoreTranspose(
         T* polynomial_in, typename std::make_unsigned<T>::type* polynomial_out,
-        const Root<typename std::make_unsigned<
-            T>::type>* __restrict__ root_of_unity_table,
+        const typename std::make_unsigned<
+            T>::type* __restrict__ root_of_unity_table,
         const Modulus<typename std::make_unsigned<T>::type> modulus,
         int log_row, int log_column, bool reduction_poly_check);
 
     template <typename T>
     __global__ void ForwardCoreTranspose(
         T* polynomial_in, typename std::make_unsigned<T>::type* polynomial_out,
-        const Root<typename std::make_unsigned<
-            T>::type>* __restrict__ root_of_unity_table,
+        const typename std::make_unsigned<
+            T>::type* __restrict__ root_of_unity_table,
         const Modulus<typename std::make_unsigned<T>::type>* modulus,
         int log_row, int log_column, bool reduction_poly_check, int mod_count);
 
     template <typename T>
     __global__ void InverseCoreTranspose(
         typename std::make_unsigned<T>::type* polynomial_in, T* polynomial_out,
-        const Root<typename std::make_unsigned<
-            T>::type>* __restrict__ inverse_root_of_unity_table,
+        const typename std::make_unsigned<
+            T>::type* __restrict__ inverse_root_of_unity_table,
         Modulus<typename std::make_unsigned<T>::type> modulus,
         typename std::make_unsigned<T>::type n_inverse, int log_row,
         int log_column, bool reduction_poly_check);
@@ -100,8 +99,8 @@ namespace gpuntt
     template <typename T>
     __global__ void InverseCoreTranspose(
         typename std::make_unsigned<T>::type* polynomial_in, T* polynomial_out,
-        const Root<typename std::make_unsigned<
-            T>::type>* __restrict__ inverse_root_of_unity_table,
+        const typename std::make_unsigned<
+            T>::type* __restrict__ inverse_root_of_unity_table,
         Modulus<typename std::make_unsigned<T>::type>* modulus,
         typename std::make_unsigned<T>::type* n_inverse, int log_row,
         int log_column, bool reduction_poly_check, int mod_count);
@@ -162,7 +161,7 @@ namespace gpuntt
     template <typename T>
     __host__ void
     GPU_NTT(T* device_in, typename std::make_unsigned<T>::type* device_out,
-            Root<typename std::make_unsigned<T>::type>* root_of_unity_table,
+            typename std::make_unsigned<T>::type* root_of_unity_table,
             Modulus<typename std::make_unsigned<T>::type> modulus,
             ntt_configuration<typename std::make_unsigned<T>::type> cfg,
             int batch_size);
@@ -170,19 +169,18 @@ namespace gpuntt
     template <typename T>
     __host__ void
     GPU_INTT(typename std::make_unsigned<T>::type* device_in, T* device_out,
-             Root<typename std::make_unsigned<T>::type>* root_of_unity_table,
+             typename std::make_unsigned<T>::type* root_of_unity_table,
              Modulus<typename std::make_unsigned<T>::type> modulus,
              ntt_configuration<typename std::make_unsigned<T>::type> cfg,
              int batch_size);
 
     template <typename T>
-    __host__ void GPU_NTT_Inplace(T* device_inout, Root<T>* root_of_unity_table,
+    __host__ void GPU_NTT_Inplace(T* device_inout, T* root_of_unity_table,
                                   Modulus<T> modulus, ntt_configuration<T> cfg,
                                   int batch_size);
 
     template <typename T>
-    __host__ void GPU_INTT_Inplace(T* device_inout,
-                                   Root<T>* root_of_unity_table,
+    __host__ void GPU_INTT_Inplace(T* device_inout, T* root_of_unity_table,
                                    Modulus<T> modulus, ntt_configuration<T> cfg,
                                    int batch_size);
 
@@ -242,7 +240,7 @@ namespace gpuntt
     template <typename T>
     __host__ void
     GPU_NTT(T* device_in, typename std::make_unsigned<T>::type* device_out,
-            Root<typename std::make_unsigned<T>::type>* root_of_unity_table,
+            typename std::make_unsigned<T>::type* root_of_unity_table,
             Modulus<typename std::make_unsigned<T>::type>* modulus,
             ntt_rns_configuration<typename std::make_unsigned<T>::type> cfg,
             int batch_size, int mod_count);
@@ -250,22 +248,22 @@ namespace gpuntt
     template <typename T>
     __host__ void
     GPU_INTT(typename std::make_unsigned<T>::type* device_in, T* device_out,
-             Root<typename std::make_unsigned<T>::type>* root_of_unity_table,
+             typename std::make_unsigned<T>::type* root_of_unity_table,
              Modulus<typename std::make_unsigned<T>::type>* modulus,
              ntt_rns_configuration<typename std::make_unsigned<T>::type> cfg,
              int batch_size, int mod_count);
 
     template <typename T>
-    __host__ void GPU_NTT_Inplace(T* device_inout, Root<T>* root_of_unity_table,
+    __host__ void GPU_NTT_Inplace(T* device_inout, T* root_of_unity_table,
                                   Modulus<T>* modulus,
                                   ntt_rns_configuration<T> cfg, int batch_size,
                                   int mod_count);
 
     template <typename T>
-    __host__ void
-    GPU_INTT_Inplace(T* device_inout, Root<T>* root_of_unity_table,
-                     Modulus<T>* modulus, ntt_rns_configuration<T> cfg,
-                     int batch_size, int mod_count);
+    __host__ void GPU_INTT_Inplace(T* device_inout, T* root_of_unity_table,
+                                   Modulus<T>* modulus,
+                                   ntt_rns_configuration<T> cfg, int batch_size,
+                                   int mod_count);
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -301,17 +299,15 @@ namespace gpuntt
      */
     template <typename T>
     __host__ void
-    GPU_NTT_Modulus_Ordered(T* device_in, T* device_out,
-                            Root<T>* root_of_unity_table, Modulus<T>* modulus,
-                            ntt_rns_configuration<T> cfg, int batch_size,
-                            int mod_count, int* order);
+    GPU_NTT_Modulus_Ordered(T* device_in, T* device_out, T* root_of_unity_table,
+                            Modulus<T>* modulus, ntt_rns_configuration<T> cfg,
+                            int batch_size, int mod_count, int* order);
     template <typename T>
-    __host__ void GPU_NTT_Modulus_Ordered_Inplace(T* device_inout,
-                                                  Root<T>* root_of_unity_table,
-                                                  Modulus<T>* modulus,
-                                                  ntt_rns_configuration<T> cfg,
-                                                  int batch_size, int mod_count,
-                                                  int* order);
+    __host__ void
+    GPU_NTT_Modulus_Ordered_Inplace(T* device_inout, T* root_of_unity_table,
+                                    Modulus<T>* modulus,
+                                    ntt_rns_configuration<T> cfg,
+                                    int batch_size, int mod_count, int* order);
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -358,13 +354,12 @@ namespace gpuntt
      */
     template <typename T>
     __host__ void
-    GPU_NTT_Poly_Ordered(T* device_in, T* device_out,
-                         Root<T>* root_of_unity_table, Modulus<T>* modulus,
-                         ntt_rns_configuration<T> cfg, int batch_size,
-                         int mod_count, int* order);
+    GPU_NTT_Poly_Ordered(T* device_in, T* device_out, T* root_of_unity_table,
+                         Modulus<T>* modulus, ntt_rns_configuration<T> cfg,
+                         int batch_size, int mod_count, int* order);
     template <typename T>
     __host__ void
-    GPU_NTT_Poly_Ordered_Inplace(T* device_inout, Root<T>* root_of_unity_table,
+    GPU_NTT_Poly_Ordered_Inplace(T* device_inout, T* root_of_unity_table,
                                  Modulus<T>* modulus,
                                  ntt_rns_configuration<T> cfg, int batch_size,
                                  int mod_count, int* order);

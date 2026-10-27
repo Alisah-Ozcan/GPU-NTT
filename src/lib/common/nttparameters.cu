@@ -172,7 +172,7 @@ namespace gpuntt
     }
 
     template <typename T>
-    std::vector<Root<T>>
+    std::vector<T>
     NTTParameters<T>::gpu_root_of_unity_table_generator(std::vector<T> table)
     {
         // Taking Bitreverse order of root of unity table

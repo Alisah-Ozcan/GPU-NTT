@@ -215,10 +215,9 @@ namespace
             const std::string name = case_name(variant, dir, logn, poly, batch);
             try
             {
-                DeviceBuffer<Root<T>> roots(
-                    params.gpu_root_of_unity_table_generator(
-                        dir == FORWARD ? params.forward_root_of_unity_table
-                                       : params.inverse_root_of_unity_table));
+                DeviceBuffer<T> roots(params.gpu_root_of_unity_table_generator(
+                    dir == FORWARD ? params.forward_root_of_unity_table
+                                   : params.inverse_root_of_unity_table));
 
                 DeviceBuffer<T> in(input);
                 DeviceBuffer<T> out(total);
@@ -420,7 +419,7 @@ namespace
             };
 
             T* null_data = nullptr;
-            Root<T>* null_roots = nullptr;
+            T* null_roots = nullptr;
             Modulus<T>* null_moduli = nullptr;
             int* null_order = nullptr;
             for (const Case& c : cases)
@@ -526,7 +525,7 @@ namespace
                             }
                             DeviceBuffer<Modulus<T>> d_moduli(moduli);
                             DeviceBuffer<T> d_n_inverse(n_inverse);
-                            DeviceBuffer<Root<T>> roots(
+                            DeviceBuffer<T> roots(
                                 concat_root_tables(params, dir == INVERSE, n));
 
                             ntt_rns_configuration<T> cfg = {
@@ -611,7 +610,7 @@ namespace
                                 }
                                 DeviceBuffer<Modulus<T>> d_moduli(moduli);
                                 DeviceBuffer<T> d_n_inverse(n_inverse);
-                                DeviceBuffer<Root<T>> roots(concat_root_tables(
+                                DeviceBuffer<T> roots(concat_root_tables(
                                     params, dir == INVERSE, n));
 
                                 ntt_configuration<T> cfg = {
@@ -726,7 +725,7 @@ namespace
                             }
                             DeviceBuffer<Modulus<T>> d_moduli(moduli);
                             DeviceBuffer<T> d_n_inverse(n_inverse);
-                            DeviceBuffer<Root<T>> roots(
+                            DeviceBuffer<T> roots(
                                 concat_root_tables(params, dir == INVERSE, n));
 
                             ntt_configuration<T> cfg = {
@@ -884,7 +883,7 @@ namespace
                             DeviceBuffer<Modulus<T>> d_moduli(moduli);
                             DeviceBuffer<T> d_n_inverse(n_inverse);
                             DeviceBuffer<int> d_order(order);
-                            DeviceBuffer<Root<T>> roots(
+                            DeviceBuffer<T> roots(
                                 concat_root_tables(params, dir == INVERSE, n));
 
                             ntt_rns_configuration<T> cfg = {
@@ -969,7 +968,7 @@ namespace
                             DeviceBuffer<Modulus<T>> d_moduli(moduli);
                             DeviceBuffer<T> d_n_inverse(n_inverse);
                             DeviceBuffer<int> d_order(order);
-                            DeviceBuffer<Root<T>> roots(
+                            DeviceBuffer<T> roots(
                                 concat_root_tables(params, dir == INVERSE, n));
 
                             ntt_rns_configuration<T> cfg = {
@@ -1060,12 +1059,12 @@ namespace
                     DeviceBuffer<int> d_modulus_order(modulus_order);
                     DeviceBuffer<int> d_poly_order(poly_order);
                     // The single modulus cases use the first table.
-                    DeviceBuffer<Root<T>> forward_rns(
+                    DeviceBuffer<T> forward_rns(
                         concat_root_tables(params, false, n));
-                    DeviceBuffer<Root<T>> inverse_rns(
+                    DeviceBuffer<T> inverse_rns(
                         concat_root_tables(params, true, n));
-                    Root<T>* forward_single = forward_rns.get();
-                    Root<T>* inverse_single = inverse_rns.get();
+                    T* forward_single = forward_rns.get();
+                    T* inverse_single = inverse_rns.get();
 
                     auto cfg = [&](type dir)
                     {

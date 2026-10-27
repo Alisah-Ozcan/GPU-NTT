@@ -194,7 +194,7 @@ namespace gpuntt
     template <typename TU>
     __device__ __forceinline__ void
     ForwardLowRingExecute(const LowRingThread<TU>& thread, TU* shared_memory,
-                          const Root<TU>* root_of_unity_table, int shared_index,
+                          const TU* root_of_unity_table, int shared_index,
                           int N_power, bool reduction_poly_check)
     {
         const int idx_x = threadIdx.x;
@@ -252,8 +252,8 @@ namespace gpuntt
     template <typename TU>
     __device__ __forceinline__ void
     InverseLowRingExecute(const LowRingThread<TU>& thread, TU* shared_memory,
-                          const Root<TU>* inverse_root_of_unity_table,
-                          int N_power, bool reduction_poly_check)
+                          const TU* inverse_root_of_unity_table, int N_power,
+                          bool reduction_poly_check)
     {
         const int idx_x = threadIdx.x;
 
@@ -364,7 +364,7 @@ namespace gpuntt
     template <typename T, typename ModulusPolicy>
     __device__ __forceinline__ void ForwardCoreLowRingBody(
         T* polynomial_in, typename std::make_unsigned<T>::type* polynomial_out,
-        const Root<typename std::make_unsigned<T>::type>* root_of_unity_table,
+        const typename std::make_unsigned<T>::type* root_of_unity_table,
         ModulusPolicy modulus_policy, int shared_index, int N_power,
         bool reduction_poly_check, int total_batch)
     {
@@ -384,8 +384,7 @@ namespace gpuntt
     template <typename T, typename ModulusPolicy>
     __device__ __forceinline__ void InverseCoreLowRingBody(
         typename std::make_unsigned<T>::type* polynomial_in, T* polynomial_out,
-        const Root<typename std::make_unsigned<T>::type>*
-            inverse_root_of_unity_table,
+        const typename std::make_unsigned<T>::type* inverse_root_of_unity_table,
         ModulusPolicy modulus_policy, int shared_index, int N_power,
         bool reduction_poly_check, int total_batch)
     {
@@ -507,7 +506,7 @@ namespace gpuntt
     template <typename TU>
     __device__ __forceinline__ void
     ForwardStageExecute(const StageThread<TU>& thread, TU* shared_memory,
-                        const Root<TU>* root_of_unity_table, int shared_index,
+                        const TU* root_of_unity_table, int shared_index,
                         int logm, int outer_iteration_count, int N_power,
                         bool not_last_kernel, bool reduction_poly_check)
     {
@@ -592,7 +591,7 @@ namespace gpuntt
             // barrier between the levels is enough. The warp barriers also
             // order global memory accesses, so the roots of these levels are
             // loaded up front to keep the loads overlapped.
-            Root<TU> last_roots[6];
+            TU last_roots[6];
 #pragma unroll
             for (int lp = 0; lp < 6; lp++)
             {
@@ -641,9 +640,9 @@ namespace gpuntt
     template <typename TU>
     __device__ __forceinline__ void
     InverseStageExecute(const StageThread<TU>& thread, TU* shared_memory,
-                        const Root<TU>* inverse_root_of_unity_table,
-                        int shared_index, int logm, int outer_iteration_count,
-                        int N_power, bool reduction_poly_check)
+                        const TU* inverse_root_of_unity_table, int shared_index,
+                        int logm, int outer_iteration_count, int N_power,
+                        bool reduction_poly_check)
     {
         const location_t shared_address = thread.shared_address;
         const location_t omega_address = thread.omega_address;
@@ -664,12 +663,12 @@ namespace gpuntt
                        : level_m + (omega_address >> level_shift) +
                              prime_offset;
         };
-        Root<TU> next_root = inverse_root_of_unity_table[root_index(t_2, m)];
+        TU next_root = inverse_root_of_unity_table[root_index(t_2, m)];
 #pragma unroll
         for (int lp = 0; lp < loops; lp++)
         {
             __syncthreads();
-            const Root<TU> root = next_root;
+            const TU root = next_root;
             if (lp + 1 < loops)
             {
                 next_root =
@@ -753,7 +752,7 @@ namespace gpuntt
               typename PolyPolicy>
     __device__ __forceinline__ void ForwardCoreBody(
         T* polynomial_in, typename std::make_unsigned<T>::type* polynomial_out,
-        const Root<typename std::make_unsigned<T>::type>* root_of_unity_table,
+        const typename std::make_unsigned<T>::type* root_of_unity_table,
         ModulusPolicy modulus_policy, PolyPolicy poly_policy, int shared_index,
         int logm, int outer_iteration_count, int N_power, bool not_last_kernel,
         bool reduction_poly_check)
@@ -778,8 +777,7 @@ namespace gpuntt
               typename PolyPolicy>
     __device__ __forceinline__ void InverseCoreBody(
         typename std::make_unsigned<T>::type* polynomial_in, T* polynomial_out,
-        const Root<typename std::make_unsigned<T>::type>*
-            inverse_root_of_unity_table,
+        const typename std::make_unsigned<T>::type* inverse_root_of_unity_table,
         ModulusPolicy modulus_policy, PolyPolicy poly_policy, int shared_index,
         int logm, int k, int outer_iteration_count, int N_power,
         bool last_kernel, bool reduction_poly_check)
@@ -882,7 +880,7 @@ namespace gpuntt
     // Single modulus: the threads of column 0 load the one root table.
     template <typename TU>
     __device__ __forceinline__ void
-    TransposeLoadRoots(TU* shared_memory, const Root<TU>* root_of_unity_table,
+    TransposeLoadRoots(TU* shared_memory, const TU* root_of_unity_table,
                        bool reduction_poly_check)
     {
         const int idx_x = threadIdx.x;
@@ -910,9 +908,8 @@ namespace gpuntt
     template <typename TU>
     __device__ __forceinline__ void
     TransposeLoadColumnRoots(const TransposeThread<TU>& thread,
-                             TU* shared_memory,
-                             const Root<TU>* root_of_unity_table, int log_row,
-                             bool reduction_poly_check)
+                             TU* shared_memory, const TU* root_of_unity_table,
+                             int log_row, bool reduction_poly_check)
     {
         const int idx_x = threadIdx.x;
         const int idx_y = threadIdx.y;
@@ -1002,7 +999,7 @@ namespace gpuntt
                     m + (omega_address >> t_) + thread.root_offset;
             }
 
-            Root<TU> root = root_shared_memory[current_root_index];
+            TU root = root_shared_memory[current_root_index];
 
             CooleyTukeyUnit(shared_memory[group_in_shared_address],
                             shared_memory[group_in_shared_address + t], root,
@@ -1035,7 +1032,7 @@ namespace gpuntt
                     m + (omega_address >> t_) + thread.root_offset;
             }
 
-            Root<TU> root = root_shared_memory[current_root_index];
+            TU root = root_shared_memory[current_root_index];
 
             CooleyTukeyUnit(shared_memory[group_in_shared_address],
                             shared_memory[group_in_shared_address + t], root,
@@ -1090,7 +1087,7 @@ namespace gpuntt
                     m + (omega_address >> t_) + thread.root_offset;
             }
 
-            Root<TU> root = root_shared_memory[current_root_index];
+            TU root = root_shared_memory[current_root_index];
 
             GentlemanSandeUnit(shared_memory[group_in_shared_address],
                                shared_memory[group_in_shared_address + t], root,

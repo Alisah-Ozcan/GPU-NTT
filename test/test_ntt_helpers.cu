@@ -134,11 +134,11 @@ namespace
                       (R == X_N_plus ? (1 << LogN) : (1 << LogN) / 2));
 
         NTTParameters<T> parameters(LogN, R);
-        const std::vector<Root<T>> expected =
+        const std::vector<T> expected =
             parameters.gpu_root_of_unity_table_generator(
                 D == FORWARD ? parameters.forward_root_of_unity_table
                              : parameters.inverse_root_of_unity_table);
-        const std::vector<Root<T>> table = NTT::make_twiddles_host(
+        const std::vector<T> table = NTT::make_twiddles_host(
             parameters.modulus, parameters.root_of_unity);
 
         const std::string name =
@@ -240,8 +240,8 @@ namespace
         }
 
         T* data = to_device(input);
-        Root<T>* forward_roots = to_device(Fwd::make_twiddles_host(prime));
-        Root<T>* inverse_roots = to_device(Inv::make_twiddles_host(prime));
+        T* forward_roots = to_device(Fwd::make_twiddles_host(prime));
+        T* inverse_roots = to_device(Inv::make_twiddles_host(prime));
 
         ntt_configuration<T> cfg = {.n_power = log_n,
                                     .ntt_type = FORWARD,

@@ -19,7 +19,7 @@ namespace gpuntt
     template <typename T, typename ModulusPolicy>
     void forward_per_polynomial(
         T* device_in, typename std::make_unsigned<T>::type* device_out,
-        Root<typename std::make_unsigned<T>::type>* root_of_unity_table,
+        typename std::make_unsigned<T>::type* root_of_unity_table,
         ModulusPolicy modulus_policy, int n_power,
         ReductionPolynomial reduction_poly, int batch_size,
         cudaStream_t stream);
@@ -27,14 +27,13 @@ namespace gpuntt
     template <typename T, typename ModulusPolicy>
     void inverse_per_polynomial(
         typename std::make_unsigned<T>::type* device_in, T* device_out,
-        Root<typename std::make_unsigned<T>::type>* root_of_unity_table,
+        typename std::make_unsigned<T>::type* root_of_unity_table,
         ModulusPolicy modulus_policy, int n_power,
         ReductionPolynomial reduction_poly, int batch_size,
         cudaStream_t stream);
 
     template <typename T, typename ModulusPolicy, typename PolyPolicy>
-    void ordered_stages(T* device_in, T* device_out,
-                        Root<T>* root_of_unity_table,
+    void ordered_stages(T* device_in, T* device_out, T* root_of_unity_table,
                         ModulusPolicy modulus_policy, PolyPolicy poly_policy,
                         type ntt_type, int n_power,
                         ReductionPolynomial reduction_poly, int batch_size,

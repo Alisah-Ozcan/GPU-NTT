@@ -12,12 +12,11 @@ namespace gpuntt
 
 #define GPUNTT_INSTANTIATE_FORWARD(T)                                          \
     template void forward_per_polynomial<T>(                                   \
-        T*, UnsignedOf<T>*, Root<UnsignedOf<T>>*,                              \
-        SingleModulus<UnsignedOf<T>>, int, ReductionPolynomial, int,           \
-        cudaStream_t);                                                         \
+        T*, UnsignedOf<T>*, UnsignedOf<T>*, SingleModulus<UnsignedOf<T>>, int, \
+        ReductionPolynomial, int, cudaStream_t);                               \
     template void forward_per_polynomial<T>(                                   \
-        T*, UnsignedOf<T>*, Root<UnsignedOf<T>>*, RnsModulus<UnsignedOf<T>>,   \
-        int, ReductionPolynomial, int, cudaStream_t);
+        T*, UnsignedOf<T>*, UnsignedOf<T>*, RnsModulus<UnsignedOf<T>>, int,    \
+        ReductionPolynomial, int, cudaStream_t);
 
     GPUNTT_INSTANTIATE_FORWARD(Data32)
     GPUNTT_INSTANTIATE_FORWARD(Data64)

@@ -12,12 +12,11 @@ namespace gpuntt
 
 #define GPUNTT_INSTANTIATE_INVERSE(T)                                          \
     template void inverse_per_polynomial<T>(                                   \
-        UnsignedOf<T>*, T*, Root<UnsignedOf<T>>*,                              \
-        SingleModulus<UnsignedOf<T>>, int, ReductionPolynomial, int,           \
-        cudaStream_t);                                                         \
+        UnsignedOf<T>*, T*, UnsignedOf<T>*, SingleModulus<UnsignedOf<T>>, int, \
+        ReductionPolynomial, int, cudaStream_t);                               \
     template void inverse_per_polynomial<T>(                                   \
-        UnsignedOf<T>*, T*, Root<UnsignedOf<T>>*, RnsModulus<UnsignedOf<T>>,   \
-        int, ReductionPolynomial, int, cudaStream_t);
+        UnsignedOf<T>*, T*, UnsignedOf<T>*, RnsModulus<UnsignedOf<T>>, int,    \
+        ReductionPolynomial, int, cudaStream_t);
 
     GPUNTT_INSTANTIATE_INVERSE(Data32)
     GPUNTT_INSTANTIATE_INVERSE(Data64)

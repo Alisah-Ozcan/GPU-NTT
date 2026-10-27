@@ -109,19 +109,19 @@ int main(int argc, char* argv[])
 
         ////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-        Root<TestDataType>* Inverse_Omega_Table_Device;
+        TestDataType* Inverse_Omega_Table_Device;
 
-        GPUNTT_CUDA_CHECK(cudaMalloc(&Inverse_Omega_Table_Device,
-                                     parameters.root_of_unity_size *
-                                         sizeof(Root<TestDataType>)));
+        GPUNTT_CUDA_CHECK(
+            cudaMalloc(&Inverse_Omega_Table_Device,
+                       parameters.root_of_unity_size * sizeof(TestDataType)));
 
-        vector<Root<TestDataType>> inverse_omega_table =
+        vector<TestDataType> inverse_omega_table =
             parameters.gpu_root_of_unity_table_generator(
                 parameters.inverse_root_of_unity_table);
-        GPUNTT_CUDA_CHECK(cudaMemcpy(
-            Inverse_Omega_Table_Device, inverse_omega_table.data(),
-            parameters.root_of_unity_size * sizeof(Root<TestDataType>),
-            cudaMemcpyHostToDevice));
+        GPUNTT_CUDA_CHECK(
+            cudaMemcpy(Inverse_Omega_Table_Device, inverse_omega_table.data(),
+                       parameters.root_of_unity_size * sizeof(TestDataType),
+                       cudaMemcpyHostToDevice));
 
         ////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -293,19 +293,19 @@ int main(int argc, char* argv[])
 
         ////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-        Root<TestDataType>* Inverse_Omega_Table_Device;
+        TestDataType* Inverse_Omega_Table_Device;
 
-        GPUNTT_CUDA_CHECK(cudaMalloc(&Inverse_Omega_Table_Device,
-                                     parameters.root_of_unity_size *
-                                         sizeof(Root<TestDataType>)));
+        GPUNTT_CUDA_CHECK(
+            cudaMalloc(&Inverse_Omega_Table_Device,
+                       parameters.root_of_unity_size * sizeof(TestDataType)));
 
-        vector<Root<TestDataType>> inverse_omega_table =
+        vector<TestDataType> inverse_omega_table =
             parameters.gpu_root_of_unity_table_generator(
                 parameters.inverse_root_of_unity_table);
-        GPUNTT_CUDA_CHECK(cudaMemcpy(
-            Inverse_Omega_Table_Device, inverse_omega_table.data(),
-            parameters.root_of_unity_size * sizeof(Root<TestDataType>),
-            cudaMemcpyHostToDevice));
+        GPUNTT_CUDA_CHECK(
+            cudaMemcpy(Inverse_Omega_Table_Device, inverse_omega_table.data(),
+                       parameters.root_of_unity_size * sizeof(TestDataType),
+                       cudaMemcpyHostToDevice));
 
         ////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -430,19 +430,19 @@ int main(int argc, char* argv[])
 
         ////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-        Root<TestDataType>* Inverse_Omega_Table_Device;
+        TestDataType* Inverse_Omega_Table_Device;
 
-        GPUNTT_CUDA_CHECK(cudaMalloc(&Inverse_Omega_Table_Device,
-                                     parameters.root_of_unity_size *
-                                         sizeof(Root<TestDataType>)));
+        GPUNTT_CUDA_CHECK(
+            cudaMalloc(&Inverse_Omega_Table_Device,
+                       parameters.root_of_unity_size * sizeof(TestDataType)));
 
-        vector<Root<TestDataType>> inverse_omega_table =
+        vector<TestDataType> inverse_omega_table =
             parameters.gpu_root_of_unity_table_generator(
                 parameters.inverse_root_of_unity_table);
-        GPUNTT_CUDA_CHECK(cudaMemcpy(
-            Inverse_Omega_Table_Device, inverse_omega_table.data(),
-            parameters.root_of_unity_size * sizeof(Root<TestDataType>),
-            cudaMemcpyHostToDevice));
+        GPUNTT_CUDA_CHECK(
+            cudaMemcpy(Inverse_Omega_Table_Device, inverse_omega_table.data(),
+                       parameters.root_of_unity_size * sizeof(TestDataType),
+                       cudaMemcpyHostToDevice));
 
         ////////////////////////////////////////////////////////////////////////////////////////////////////////////
 

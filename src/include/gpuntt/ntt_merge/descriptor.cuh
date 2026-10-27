@@ -505,9 +505,8 @@ namespace gpuntt
             StageLoad(thread(modulus, 0), shared_memory, data);
         }
 
-        __device__ __forceinline__ void execute(T* shared_memory,
-                                                const Root<T>* roots,
-                                                Modulus<T> modulus) const
+        __device__ __forceinline__ void
+        execute(T* shared_memory, const T* roots, Modulus<T> modulus) const
         {
             static_assert(!low_ring, "Use the single kernel API for Size up "
                                      "to 2^9");
@@ -634,9 +633,8 @@ namespace gpuntt
             }
         }
 
-        __device__ __forceinline__ void execute(T* shared_memory,
-                                                const Root<T>* roots,
-                                                Modulus<T> modulus) const
+        __device__ __forceinline__ void
+        execute(T* shared_memory, const T* roots, Modulus<T> modulus) const
         {
             static_assert(HasReductionPoly,
                           "execute needs the ReductionPoly operator");
@@ -782,8 +780,8 @@ namespace gpuntt
 
         // The powers of root (forward) or root^-1 (inverse) in bit-reversed
         // order, the table that execute and GPU_NTT / GPU_INTT take.
-        static std::vector<Root<T>>
-        make_twiddles_host(const Modulus<T>& modulus, T root)
+        static std::vector<T> make_twiddles_host(const Modulus<T>& modulus,
+                                                 T root)
         {
             // root^twiddle_table_size = -1 holds exactly for roots of order
             // 2 * twiddle_table_size.
@@ -807,7 +805,7 @@ namespace gpuntt
             }
 
             const int log_size = log2_of_power_of_two(twiddle_table_size);
-            std::vector<Root<T>> table(twiddle_table_size);
+            std::vector<T> table(twiddle_table_size);
             for (int i = 0; i < twiddle_table_size; i++)
             {
                 int reversed = 0;
@@ -822,7 +820,7 @@ namespace gpuntt
 
         // The same table for a prime of fields.cuh, with its root of unity
         // of order 2 * twiddle_table_size.
-        static std::vector<Root<T>> make_twiddles_host(const NTTPrime<T>& prime)
+        static std::vector<T> make_twiddles_host(const NTTPrime<T>& prime)
         {
             return make_twiddles_host(
                 Modulus<T>(prime.value),

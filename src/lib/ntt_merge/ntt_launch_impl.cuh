@@ -36,8 +36,8 @@ namespace gpuntt
     __global__ void
     ForwardLowRing(T* polynomial_in,
                    typename std::make_unsigned<T>::type* polynomial_out,
-                   const Root<typename std::make_unsigned<
-                       T>::type>* __restrict__ root_of_unity_table,
+                   const typename std::make_unsigned<
+                       T>::type* __restrict__ root_of_unity_table,
                    ModulusPolicy modulus_policy, bool reduction_poly_check,
                    int total_batch)
     {
@@ -54,8 +54,8 @@ namespace gpuntt
     __global__ void
     InverseLowRing(typename std::make_unsigned<T>::type* polynomial_in,
                    T* polynomial_out,
-                   const Root<typename std::make_unsigned<
-                       T>::type>* __restrict__ inverse_root_of_unity_table,
+                   const typename std::make_unsigned<
+                       T>::type* __restrict__ inverse_root_of_unity_table,
                    ModulusPolicy modulus_policy, bool reduction_poly_check,
                    int total_batch)
     {
@@ -74,8 +74,8 @@ namespace gpuntt
     __global__ void
     ForwardStage(T* polynomial_in,
                  typename std::make_unsigned<T>::type* polynomial_out,
-                 const Root<typename std::make_unsigned<
-                     T>::type>* __restrict__ root_of_unity_table,
+                 const typename std::make_unsigned<
+                     T>::type* __restrict__ root_of_unity_table,
                  ModulusPolicy modulus_policy, PolyPolicy poly_policy,
                  bool reduction_poly_check)
     {
@@ -96,8 +96,8 @@ namespace gpuntt
     __global__ void
     InverseStage(typename std::make_unsigned<T>::type* polynomial_in,
                  T* polynomial_out,
-                 const Root<typename std::make_unsigned<
-                     T>::type>* __restrict__ inverse_root_of_unity_table,
+                 const typename std::make_unsigned<
+                     T>::type* __restrict__ inverse_root_of_unity_table,
                  ModulusPolicy modulus_policy, PolyPolicy poly_policy,
                  bool reduction_poly_check)
     {
@@ -139,7 +139,7 @@ namespace gpuntt
     template <int LogN, typename T, typename ModulusPolicy>
     void forward_low_ring(
         T* device_in, typename std::make_unsigned<T>::type* device_out,
-        Root<typename std::make_unsigned<T>::type>* root_of_unity_table,
+        typename std::make_unsigned<T>::type* root_of_unity_table,
         ModulusPolicy modulus_policy, ReductionPolynomial reduction_poly,
         int batch_size, cudaStream_t stream)
     {
@@ -157,7 +157,7 @@ namespace gpuntt
     template <int LogN, typename T, typename ModulusPolicy>
     void inverse_low_ring(
         typename std::make_unsigned<T>::type* device_in, T* device_out,
-        Root<typename std::make_unsigned<T>::type>* root_of_unity_table,
+        typename std::make_unsigned<T>::type* root_of_unity_table,
         ModulusPolicy modulus_policy, ReductionPolynomial reduction_poly,
         int batch_size, cudaStream_t stream)
     {
@@ -178,7 +178,7 @@ namespace gpuntt
     template <int LogN, typename T, typename ModulusPolicy, typename PolyPolicy>
     void forward_stages(
         T* device_in, typename std::make_unsigned<T>::type* device_out,
-        Root<typename std::make_unsigned<T>::type>* root_of_unity_table,
+        typename std::make_unsigned<T>::type* root_of_unity_table,
         ModulusPolicy modulus_policy, PolyPolicy poly_policy,
         ReductionPolynomial reduction_poly, int batch_size, cudaStream_t stream)
     {
@@ -219,7 +219,7 @@ namespace gpuntt
     template <int LogN, typename T, typename ModulusPolicy, typename PolyPolicy>
     void inverse_stages(
         typename std::make_unsigned<T>::type* device_in, T* device_out,
-        Root<typename std::make_unsigned<T>::type>* root_of_unity_table,
+        typename std::make_unsigned<T>::type* root_of_unity_table,
         ModulusPolicy modulus_policy, PolyPolicy poly_policy,
         ReductionPolynomial reduction_poly, int batch_size, cudaStream_t stream)
     {
@@ -265,7 +265,7 @@ namespace gpuntt
     template <typename T, typename ModulusPolicy>
     void forward_per_polynomial(
         T* device_in, typename std::make_unsigned<T>::type* device_out,
-        Root<typename std::make_unsigned<T>::type>* root_of_unity_table,
+        typename std::make_unsigned<T>::type* root_of_unity_table,
         ModulusPolicy modulus_policy, int n_power,
         ReductionPolynomial reduction_poly, int batch_size, cudaStream_t stream)
     {
@@ -293,7 +293,7 @@ namespace gpuntt
     template <typename T, typename ModulusPolicy>
     void inverse_per_polynomial(
         typename std::make_unsigned<T>::type* device_in, T* device_out,
-        Root<typename std::make_unsigned<T>::type>* root_of_unity_table,
+        typename std::make_unsigned<T>::type* root_of_unity_table,
         ModulusPolicy modulus_policy, int n_power,
         ReductionPolynomial reduction_poly, int batch_size, cudaStream_t stream)
     {
@@ -320,8 +320,7 @@ namespace gpuntt
 
     // Ordered RNS transforms (ring sizes 2^10 to 2^28, stage kernels only).
     template <typename T, typename ModulusPolicy, typename PolyPolicy>
-    void ordered_stages(T* device_in, T* device_out,
-                        Root<T>* root_of_unity_table,
+    void ordered_stages(T* device_in, T* device_out, T* root_of_unity_table,
                         ModulusPolicy modulus_policy, PolyPolicy poly_policy,
                         type ntt_type, int n_power,
                         ReductionPolynomial reduction_poly, int batch_size,

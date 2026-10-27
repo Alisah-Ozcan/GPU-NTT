@@ -222,14 +222,13 @@ namespace gpuntt_test
 
     // Root of unity tables of several moduli, one table per `stride` entries.
     template <typename T>
-    std::vector<Root<T>>
-    concat_root_tables(std::vector<NTTParameters<T>>& parameters, bool inverse,
-                       size_t stride)
+    std::vector<T> concat_root_tables(std::vector<NTTParameters<T>>& parameters,
+                                      bool inverse, size_t stride)
     {
-        std::vector<Root<T>> table(stride * parameters.size(), 0);
+        std::vector<T> table(stride * parameters.size(), 0);
         for (size_t m = 0; m < parameters.size(); m++)
         {
-            std::vector<Root<T>> single =
+            std::vector<T> single =
                 parameters[m].gpu_root_of_unity_table_generator(
                     inverse ? parameters[m].inverse_root_of_unity_table
                             : parameters[m].forward_root_of_unity_table);

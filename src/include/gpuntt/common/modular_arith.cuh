@@ -20,13 +20,9 @@ namespace gpuntt
 {
     typedef std::int32_t Data32s; // signed 32-bit integer
     typedef std::uint32_t Data32; // unsigned 32-bit integer
-    typedef std::uint32_t Root32;
-    typedef std::uint32_t Ninverse32;
 
     typedef std::int64_t Data64s; // signed 64-bit integer
     typedef std::uint64_t Data64; // unsigned 64-bit integer
-    typedef std::uint64_t Root64;
-    typedef std::uint64_t Ninverse64;
 
     template <typename T1> struct Modulus
     {
@@ -202,12 +198,6 @@ namespace gpuntt
 
     typedef OPERATOR<Data32> OPERATOR32;
     typedef OPERATOR<Data64> OPERATOR64;
-
-    // Root table entries and N^-1 have the coefficient type. Ninverse is kept
-    // for existing code; Root names the type of a root table entry.
-    template <typename T> using Root = T;
-
-    template <typename T> using Ninverse = T;
 
     namespace modular_operation_gpu
     {
@@ -511,18 +501,12 @@ using gpuntt::Data64s;
 using gpuntt::Modulus;
 using gpuntt::Modulus32;
 using gpuntt::Modulus64;
-using gpuntt::Ninverse;
-using gpuntt::Ninverse32;
-using gpuntt::Ninverse64;
 using gpuntt::OPERATOR;
 using gpuntt::OPERATOR32;
 using gpuntt::OPERATOR64;
 using gpuntt::OPERATOR_GPU;
 using gpuntt::OPERATOR_GPU_32;
 using gpuntt::OPERATOR_GPU_64;
-using gpuntt::Root;
-using gpuntt::Root32;
-using gpuntt::Root64;
 namespace modular_operation_cpu = gpuntt::modular_operation_cpu;
 namespace modular_operation_gpu = gpuntt::modular_operation_gpu;
 #endif // GPUNTT_NO_GLOBAL_ALIASES

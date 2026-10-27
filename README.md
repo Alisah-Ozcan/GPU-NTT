@@ -153,7 +153,7 @@ set_target_properties(<your-target> PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
 # ...
 ```
 
-All GPU-NTT types and functions are in the `gpuntt` namespace. For compatibility, the arithmetic types (`Data32`, `Data64`, `Modulus`, `OPERATOR`, `OPERATOR_GPU`, `Root`, `Ninverse`, ...) are also available in the global namespace; define `GPUNTT_NO_GLOBAL_ALIASES` to disable them.
+All GPU-NTT types and functions are in the `gpuntt` namespace. For compatibility, the arithmetic types (`Data32`, `Data64`, `Modulus`, `OPERATOR`, `OPERATOR_GPU`, ...) are also available in the global namespace; define `GPUNTT_NO_GLOBAL_ALIASES` to disable them.
 
 ## Device API
 
@@ -187,7 +187,7 @@ A description with `ReductionPoly` builds its root table on the host from a prim
 
 ```cpp
 Modulus<Data64> modulus(prime);
-std::vector<Root<Data64>> roots = NTT::make_twiddles_host(modulus, psi);  // NTT::twiddle_table_size entries
+std::vector<Data64> roots = NTT::make_twiddles_host(modulus, psi);  // NTT::twiddle_table_size entries
 Data64 n_inverse = InverseNTT::n_inv(modulus);  // N^-1 mod prime
 ```
 
@@ -201,7 +201,7 @@ Data64 n_inverse = InverseNTT::n_inv(modulus);  // N^-1 mod prime
 Block `b` transforms the `B = NTT::batches_per_block` polynomials that start at `data + b * B * N`:
 
 ```cpp
-__global__ void my_ntt(Data64* data, const Root<Data64>* roots,
+__global__ void my_ntt(Data64* data, const Data64* roots,
                        Modulus<Data64> modulus, int batch)
 {
     extern __shared__ char shared_memory_raw[];
@@ -235,7 +235,7 @@ using BigNTT = decltype(Size<(1 << 16)>() + Direction<FORWARD>() +
                         Precision<Data64>() + ReductionPoly<X_N_plus>() + Block());
 
 template <int I>
-__global__ void my_stage(Data64* in, Data64* out, const Root<Data64>* roots,
+__global__ void my_stage(Data64* in, Data64* out, const Data64* roots,
                          Modulus<Data64> modulus)
 {
     extern __shared__ char shared_memory_raw[];

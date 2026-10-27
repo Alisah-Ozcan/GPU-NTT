@@ -45,8 +45,8 @@ using LargeForward =
 // a <- INTT(NTT(a) * b_hat) for every polynomial; b_hat is already in the NTT
 // domain. Block x handles polynomials x * B, ..., x * B + B - 1.
 __global__ void multiply_kernel(TestDataType* a, const TestDataType* b_hat,
-                                const Root<TestDataType>* forward_roots,
-                                const Root<TestDataType>* inverse_roots,
+                                const TestDataType* forward_roots,
+                                const TestDataType* inverse_roots,
                                 Modulus<TestDataType> modulus,
                                 TestDataType n_inverse, int batch)
 {
@@ -79,7 +79,7 @@ __global__ void multiply_kernel(TestDataType* a, const TestDataType* b_hat,
 // which the later stages read and write in place.
 template <int I>
 __global__ void large_stage_kernel(TestDataType* in, TestDataType* out,
-                                   const Root<TestDataType>* roots,
+                                   const TestDataType* roots,
                                    Modulus<TestDataType> modulus)
 {
     extern __shared__ char shared_memory_raw[];
@@ -94,7 +94,7 @@ __global__ void large_stage_kernel(TestDataType* in, TestDataType* out,
 
 template <int I>
 void launch_large_stage(TestDataType* in, TestDataType* out,
-                        const Root<TestDataType>* roots,
+                        const TestDataType* roots,
                         Modulus<TestDataType> modulus, int batch)
 {
     using Stage = LargeForward::stage<I>;
@@ -106,20 +106,19 @@ void launch_large_stage(TestDataType* in, TestDataType* out,
 
 template <int... I>
 void launch_large_stages(TestDataType* in, TestDataType* out,
-                         const Root<TestDataType>* roots,
+                         const TestDataType* roots,
                          Modulus<TestDataType> modulus, int batch,
                          std::integer_sequence<int, I...>)
 {
     (launch_large_stage<I>(in, out, roots, modulus, batch), ...);
 }
 
-template <typename T> Root<T>* device_root_table(const vector<Root<T>>& table)
+template <typename T> T* device_root_table(const vector<T>& table)
 {
-    Root<T>* device_table;
-    GPUNTT_CUDA_CHECK(
-        cudaMalloc(&device_table, table.size() * sizeof(Root<T>)));
+    T* device_table;
+    GPUNTT_CUDA_CHECK(cudaMalloc(&device_table, table.size() * sizeof(T)));
     GPUNTT_CUDA_CHECK(cudaMemcpy(device_table, table.data(),
-                                 table.size() * sizeof(Root<T>),
+                                 table.size() * sizeof(T),
                                  cudaMemcpyHostToDevice));
     return device_table;
 }
@@ -146,9 +145,9 @@ int main(int argc, char* argv[])
         for (auto& x : b)
             x = dis(gen);
 
-        Root<TestDataType>* forward_roots =
+        TestDataType* forward_roots =
             device_root_table(SmallForward::make_twiddles_host(prime));
-        Root<TestDataType>* inverse_roots =
+        TestDataType* inverse_roots =
             device_root_table(SmallInverse::make_twiddles_host(prime));
 
         TestDataType *a_device, *b_hat_device;
@@ -225,7 +224,7 @@ int main(int argc, char* argv[])
         for (auto& x : input)
             x = dis(gen);
 
-        Root<TestDataType>* roots =
+        TestDataType* roots =
             device_root_table(LargeForward::make_twiddles_host(
                 parameters.modulus, parameters.root_of_unity));
 

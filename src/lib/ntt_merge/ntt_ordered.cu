@@ -11,12 +11,12 @@ namespace gpuntt
     // Modulus ordered and poly ordered RNS transforms.
 
 #define GPUNTT_INSTANTIATE_ORDERED(T)                                          \
-    template void ordered_stages<T>(T*, T*, Root<T>*, OrderedRnsModulus<T>,    \
+    template void ordered_stages<T>(T*, T*, T*, OrderedRnsModulus<T>,          \
                                     SequentialPolys, type, int,                \
                                     ReductionPolynomial, int, cudaStream_t);   \
-    template void ordered_stages<T>(T*, T*, Root<T>*, RnsModulus<T>,           \
-                                    OrderedPolys, type, int,                   \
-                                    ReductionPolynomial, int, cudaStream_t);
+    template void ordered_stages<T>(T*, T*, T*, RnsModulus<T>, OrderedPolys,   \
+                                    type, int, ReductionPolynomial, int,       \
+                                    cudaStream_t);
 
     GPUNTT_INSTANTIATE_ORDERED(Data32)
     GPUNTT_INSTANTIATE_ORDERED(Data64)

@@ -99,8 +99,7 @@ namespace gpuntt
         void n_inverse_generator();
 
       public:
-        std::vector<Root<T>>
-        gpu_root_of_unity_table_generator(std::vector<T> table);
+        std::vector<T> gpu_root_of_unity_table_generator(std::vector<T> table);
     };
 
 } // namespace gpuntt
