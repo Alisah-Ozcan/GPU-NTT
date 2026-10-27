@@ -84,10 +84,11 @@ Run GPU examples:
 # Example: ./build/bin/example/gpu_merge_ntt_examples 12 1
 ```
 
-Run the device API example (see [Device API](#device-api)):
+Run the device API examples (see [Device API](#device-api)):
 
 ```bash
 ./build/bin/example/gpu_device_api_examples <BATCH_SIZE>
+./build/bin/example/gpu_device_api_rns_examples <RNS_POLY_COUNT>
 ```
 
 #### Tests
@@ -263,7 +264,9 @@ my_stage<I><<<Stage::grid(batch), Stage::block_dim, Stage::shared_memory_size>>>
 
 ### RNS
 
-There is no separate RNS interface: pick the modulus of each polynomial yourself and pass the matching part of the root table, which holds the roots of prime `i` at offset `i << log2(N)`. For example, in a stage kernel `modulus = moduli[blockIdx.z % mod_count]` and `roots + (size_t(blockIdx.z % mod_count) << log2(N))`. In the single kernel API this needs `BatchesPerBlock<1>`, since all polynomials of a block share one modulus.
+There is no separate RNS interface: pick the modulus of each polynomial yourself and pass the matching part of the root table, which holds the roots of prime `i` at offset `i << log2(N)`. For example, in a stage kernel `modulus = moduli[blockIdx.z % mod_count]` and `roots + (size_t(blockIdx.z % mod_count) << log2(N))`. In the single kernel API this needs `BatchesPerBlock<1>` (the default for N = 2^10), since all polynomials of a block share one modulus.
+
+[`example/ntt_merge/test_device_api_rns.cu`](example/ntt_merge/test_device_api_rns.cu) multiplies RNS polynomials modulo X^N + 1 and three primes of `fields.cuh` in one kernel: residue `i` of RNS polynomial `j` is polynomial `j * mod_count + i`, the layout of the host RNS API, and the root tables of all primes are built on the GPU with `make_twiddles`.
 
 ### Performance of fusion
 
