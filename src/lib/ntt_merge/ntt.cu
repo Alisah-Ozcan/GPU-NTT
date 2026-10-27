@@ -8,6 +8,8 @@
 #include "gpuntt/ntt_merge/ntt.cuh"
 #include "gpuntt/ntt_merge/descriptor.cuh"
 #include "gpuntt/ntt_merge/ntt_device.cuh"
+#include <type_traits>
+#include <utility>
 
 namespace gpuntt
 {
@@ -345,267 +347,327 @@ namespace gpuntt
         InverseTransposeStore(thread, shared_memory, polynomial_out);
     }
 
-    // n_power must be in [1, 28]; the host API checks it before the lookup.
-    template <typename T>
-    const KernelStages& forward_kernel_configs(int n_power)
-    {
-        return forward_kernel_table<T>[n_power];
-    }
+    // The host API runs every transform with kernels that take the ring size
+    // as a template parameter and read their launch parameters from the
+    // kernel tables at compile time, like the device API. The modulus and
+    // polynomial policies select the single modulus, RNS and ordered
+    // variants.
 
-    template <typename T>
-    const KernelStages& inverse_kernel_configs(int n_power)
-    {
-        return inverse_kernel_table<T>[n_power];
-    }
+    // Launch parameters of kernel I of a transform of ring size 2^LogN.
+    template <typename TU, type D, int LogN, int I = 0>
+    using StageConfig = NTTStage<TU, D, LogN, I, 1, false, X_N_minus>;
 
-    // Launchers for the multi-stage kernel families. swapped selects the _
-    // variant, which swaps the roles of blockIdx.x and blockIdx.y.
-    struct MergeKernels
-    {
-        template <typename TIn, typename TOut, typename... Args>
-        static void forward(bool swapped, dim3 grid, dim3 block,
-                            size_t shared_memory, cudaStream_t stream, TIn* in,
-                            TOut* out, Args... args)
-        {
-            if (swapped)
-            {
-                ForwardCore_<<<grid, block, shared_memory, stream>>>(in, out,
-                                                                     args...);
-            }
-            else
-            {
-                ForwardCore<<<grid, block, shared_memory, stream>>>(in, out,
-                                                                    args...);
-            }
-        }
-
-        template <typename TIn, typename TOut, typename... Args>
-        static void inverse(bool swapped, dim3 grid, dim3 block,
-                            size_t shared_memory, cudaStream_t stream, TIn* in,
-                            TOut* out, Args... args)
-        {
-            if (swapped)
-            {
-                InverseCore_<<<grid, block, shared_memory, stream>>>(in, out,
-                                                                     args...);
-            }
-            else
-            {
-                InverseCore<<<grid, block, shared_memory, stream>>>(in, out,
-                                                                    args...);
-            }
-        }
-    };
-
-    struct ModulusOrderedKernels
-    {
-        template <typename TIn, typename TOut, typename... Args>
-        static void forward(bool swapped, dim3 grid, dim3 block,
-                            size_t shared_memory, cudaStream_t stream, TIn* in,
-                            TOut* out, Args... args)
-        {
-            if (swapped)
-            {
-                ForwardCoreModulusOrdered_<<<grid, block, shared_memory,
-                                             stream>>>(in, out, args...);
-            }
-            else
-            {
-                ForwardCoreModulusOrdered<<<grid, block, shared_memory,
-                                            stream>>>(in, out, args...);
-            }
-        }
-
-        template <typename TIn, typename TOut, typename... Args>
-        static void inverse(bool swapped, dim3 grid, dim3 block,
-                            size_t shared_memory, cudaStream_t stream, TIn* in,
-                            TOut* out, Args... args)
-        {
-            if (swapped)
-            {
-                InverseCoreModulusOrdered_<<<grid, block, shared_memory,
-                                             stream>>>(in, out, args...);
-            }
-            else
-            {
-                InverseCoreModulusOrdered<<<grid, block, shared_memory,
-                                            stream>>>(in, out, args...);
-            }
-        }
-    };
-
-    struct PolyOrderedKernels
-    {
-        template <typename TIn, typename TOut, typename... Args>
-        static void forward(bool swapped, dim3 grid, dim3 block,
-                            size_t shared_memory, cudaStream_t stream, TIn* in,
-                            TOut* out, Args... args)
-        {
-            if (swapped)
-            {
-                ForwardCorePolyOrdered_<<<grid, block, shared_memory, stream>>>(
-                    in, out, args...);
-            }
-            else
-            {
-                ForwardCorePolyOrdered<<<grid, block, shared_memory, stream>>>(
-                    in, out, args...);
-            }
-        }
-
-        template <typename TIn, typename TOut, typename... Args>
-        static void inverse(bool swapped, dim3 grid, dim3 block,
-                            size_t shared_memory, cudaStream_t stream, TIn* in,
-                            TOut* out, Args... args)
-        {
-            if (swapped)
-            {
-                InverseCorePolyOrdered_<<<grid, block, shared_memory, stream>>>(
-                    in, out, args...);
-            }
-            else
-            {
-                InverseCorePolyOrdered<<<grid, block, shared_memory, stream>>>(
-                    in, out, args...);
-            }
-        }
-    };
-
-    // Runs the multi-stage forward NTT kernels of one transform. Kernel i
-    // reads the output of kernel i - 1 (the first one reads device_in) and
-    // writes device_out. For log2(N) >= 25 the last kernel is the _ variant.
-    // extra holds the trailing kernel arguments of the family (mod_count,
-    // order).
-    template <typename Kernels, typename T, typename ModulusArg,
-              typename... Extra>
-    void forward_stages(
-        T* device_in, typename std::make_unsigned<T>::type* device_out,
-        Root<typename std::make_unsigned<T>::type>* root_of_unity_table,
-        ModulusArg modulus, int n_power, ReductionPolynomial reduction_poly,
-        int batch_size, cudaStream_t stream, Extra... extra)
+    // Low ring sizes: one kernel that transforms blockDim.y polynomials per
+    // block.
+    template <int LogN, typename T, typename ModulusPolicy>
+    __global__ void ForwardLowRing(
+        T* polynomial_in, typename std::make_unsigned<T>::type* polynomial_out,
+        const Root<typename std::make_unsigned<
+            T>::type>* __restrict__ root_of_unity_table,
+        ModulusPolicy modulus_policy, bool reduction_poly_check,
+        int total_batch)
     {
         using TU = typename std::make_unsigned<T>::type;
+        using Config = StageConfig<TU, FORWARD, LogN>;
 
-        const KernelStages& kernels = forward_kernel_configs<TU>(n_power);
-        const bool swap_last = (n_power >= 25);
-        const bool x_n_minus =
-            (reduction_poly == ReductionPolynomial::X_N_minus);
-
-        for (int i = 0; i < kernels.size(); i++)
-        {
-            const KernelConfig& k = kernels[i];
-            const dim3 grid(k.griddim_x, k.griddim_y, batch_size);
-            const dim3 block(k.blockdim_x, k.blockdim_y);
-            const bool swapped = swap_last && (i + 1 == kernels.size());
-            if (i == 0)
-            {
-                Kernels::forward(swapped, grid, block, k.shared_memory, stream,
-                                 device_in, device_out, root_of_unity_table,
-                                 modulus, k.shared_index, k.logm,
-                                 k.outer_iteration_count, n_power,
-                                 k.not_last_kernel, x_n_minus, extra...);
-            }
-            else
-            {
-                Kernels::forward(swapped, grid, block, k.shared_memory, stream,
-                                 device_out, device_out, root_of_unity_table,
-                                 modulus, k.shared_index, k.logm,
-                                 k.outer_iteration_count, n_power,
-                                 k.not_last_kernel, x_n_minus, extra...);
-            }
-            GPUNTT_CUDA_CHECK(cudaGetLastError());
-        }
+        ForwardCoreLowRingBody(polynomial_in, polynomial_out,
+                               root_of_unity_table, modulus_policy,
+                               Config::config.shared_index, LogN,
+                               reduction_poly_check, total_batch);
     }
 
-    // Inverse counterpart of forward_stages. Only the last kernel writes T
-    // (signed output); the others keep unsigned values in device_out. For
-    // log2(N) >= 25 the first kernel is the _ variant. The inverse kernel
-    // table stores the last_kernel flag in not_last_kernel.
-    template <typename Kernels, typename T, typename ModulusArg,
-              typename NinverseArg, typename... Extra>
-    void inverse_stages(
-        typename std::make_unsigned<T>::type* device_in, T* device_out,
-        Root<typename std::make_unsigned<T>::type>* root_of_unity_table,
-        ModulusArg modulus, NinverseArg n_inverse, int n_power,
-        ReductionPolynomial reduction_poly, int batch_size, cudaStream_t stream,
-        Extra... extra)
+    template <int LogN, typename T, typename ModulusPolicy>
+    __global__ void InverseLowRing(
+        typename std::make_unsigned<T>::type* polynomial_in, T* polynomial_out,
+        const Root<typename std::make_unsigned<
+            T>::type>* __restrict__ inverse_root_of_unity_table,
+        ModulusPolicy modulus_policy, bool reduction_poly_check,
+        int total_batch)
     {
         using TU = typename std::make_unsigned<T>::type;
+        using Config = StageConfig<TU, INVERSE, LogN>;
 
-        TU* device_out_unsigned = reinterpret_cast<TU*>(device_out);
-        const KernelStages& kernels = inverse_kernel_configs<TU>(n_power);
-        const bool swap_first = (n_power >= 25);
-        const bool x_n_minus =
-            (reduction_poly == ReductionPolynomial::X_N_minus);
+        InverseCoreLowRingBody(polynomial_in, polynomial_out,
+                               inverse_root_of_unity_table, modulus_policy,
+                               Config::config.shared_index, LogN,
+                               reduction_poly_check, total_batch);
+    }
 
-        for (int i = 0; i < kernels.size(); i++)
+    // Stage I of a transform that spans several kernels.
+    template <int LogN, int I, typename T, typename ModulusPolicy,
+              typename PolyPolicy>
+    __global__ void ForwardStage(
+        T* polynomial_in, typename std::make_unsigned<T>::type* polynomial_out,
+        const Root<typename std::make_unsigned<
+            T>::type>* __restrict__ root_of_unity_table,
+        ModulusPolicy modulus_policy, PolyPolicy poly_policy,
+        bool reduction_poly_check)
+    {
+        using TU = typename std::make_unsigned<T>::type;
+        using Config = StageConfig<TU, FORWARD, LogN, I>;
+        constexpr KernelConfig k = Config::config;
+
+        ForwardCoreBody<Config::swap_grid_axes>(
+            polynomial_in, polynomial_out, root_of_unity_table, modulus_policy,
+            poly_policy, k.shared_index, k.logm, k.outer_iteration_count, LogN,
+            k.not_last_kernel, reduction_poly_check);
+    }
+
+    // The inverse kernel table stores the last_kernel flag in
+    // not_last_kernel.
+    template <int LogN, int I, typename T, typename ModulusPolicy,
+              typename PolyPolicy>
+    __global__ void InverseStage(
+        typename std::make_unsigned<T>::type* polynomial_in, T* polynomial_out,
+        const Root<typename std::make_unsigned<
+            T>::type>* __restrict__ inverse_root_of_unity_table,
+        ModulusPolicy modulus_policy, PolyPolicy poly_policy,
+        bool reduction_poly_check)
+    {
+        using TU = typename std::make_unsigned<T>::type;
+        using Config = StageConfig<TU, INVERSE, LogN, I>;
+        constexpr KernelConfig k = Config::config;
+
+        InverseCoreBody<Config::swap_grid_axes, true>(
+            polynomial_in, polynomial_out, inverse_root_of_unity_table,
+            modulus_policy, poly_policy, k.shared_index, k.logm, k.k,
+            k.outer_iteration_count, LogN, k.not_last_kernel,
+            reduction_poly_check);
+    }
+
+    // Calls f(std::integral_constant<int, n_power>()) if n_power is in
+    // [LogN, MaxLogN]; the host API checks the range before.
+    template <int LogN, int MaxLogN, typename F>
+    void dispatch_log_n(int n_power, F&& f)
+    {
+        if constexpr (LogN <= MaxLogN)
         {
-            const KernelConfig& k = kernels[i];
-            const dim3 grid(k.griddim_x, k.griddim_y, batch_size);
-            const dim3 block(k.blockdim_x, k.blockdim_y);
-            const bool swapped = swap_first && (i == 0);
-            TU* in = (i == 0) ? device_in : device_out_unsigned;
-            if (i + 1 == kernels.size())
+            if (n_power == LogN)
             {
-                Kernels::inverse(swapped, grid, block, k.shared_memory, stream,
-                                 in, device_out, root_of_unity_table, modulus,
-                                 k.shared_index, k.logm, k.k,
-                                 k.outer_iteration_count, n_power, n_inverse,
-                                 k.not_last_kernel, x_n_minus, extra...);
+                f(std::integral_constant<int, LogN>());
             }
             else
             {
-                Kernels::inverse(swapped, grid, block, k.shared_memory, stream,
-                                 in, device_out_unsigned, root_of_unity_table,
-                                 modulus, k.shared_index, k.logm, k.k,
-                                 k.outer_iteration_count, n_power, n_inverse,
-                                 k.not_last_kernel, x_n_minus, extra...);
+                dispatch_log_n<LogN + 1, MaxLogN>(n_power, f);
             }
-            GPUNTT_CUDA_CHECK(cudaGetLastError());
         }
     }
 
-    // Runs the low ring size forward kernel, which transforms several
-    // polynomials per block.
-    template <typename T, typename ModulusArg, typename... Extra>
+    template <typename F, int... I>
+    void for_each_stage(F&& f, std::integer_sequence<int, I...>)
+    {
+        (f(std::integral_constant<int, I>()), ...);
+    }
+
+    template <int LogN, typename T, typename ModulusPolicy>
     void forward_low_ring(
         T* device_in, typename std::make_unsigned<T>::type* device_out,
         Root<typename std::make_unsigned<T>::type>* root_of_unity_table,
-        ModulusArg modulus, int n_power, ReductionPolynomial reduction_poly,
-        int batch_size, cudaStream_t stream, Extra... extra)
+        ModulusPolicy modulus_policy, ReductionPolynomial reduction_poly,
+        int batch_size, cudaStream_t stream)
     {
         using TU = typename std::make_unsigned<T>::type;
+        constexpr KernelConfig k = StageConfig<TU, FORWARD, LogN>::config;
 
-        const KernelConfig& k = forward_kernel_configs<TU>(n_power)[0];
-        ForwardCoreLowRing<<<
+        ForwardLowRing<LogN><<<
             dim3((batch_size + (k.blockdim_y - 1)) / k.blockdim_y, 1, 1),
             dim3(k.blockdim_x, k.blockdim_y), k.shared_memory, stream>>>(
-            device_in, device_out, root_of_unity_table, modulus, k.shared_index,
-            n_power, (reduction_poly == ReductionPolynomial::X_N_minus),
-            batch_size, extra...);
+            device_in, device_out, root_of_unity_table, modulus_policy,
+            (reduction_poly == ReductionPolynomial::X_N_minus), batch_size);
         GPUNTT_CUDA_CHECK(cudaGetLastError());
     }
 
-    template <typename T, typename ModulusArg, typename NinverseArg,
-              typename... Extra>
+    template <int LogN, typename T, typename ModulusPolicy>
     void inverse_low_ring(
         typename std::make_unsigned<T>::type* device_in, T* device_out,
         Root<typename std::make_unsigned<T>::type>* root_of_unity_table,
-        ModulusArg modulus, NinverseArg n_inverse, int n_power,
-        ReductionPolynomial reduction_poly, int batch_size, cudaStream_t stream,
-        Extra... extra)
+        ModulusPolicy modulus_policy, ReductionPolynomial reduction_poly,
+        int batch_size, cudaStream_t stream)
     {
         using TU = typename std::make_unsigned<T>::type;
+        constexpr KernelConfig k = StageConfig<TU, INVERSE, LogN>::config;
 
-        const KernelConfig& k = inverse_kernel_configs<TU>(n_power)[0];
-        InverseCoreLowRing<<<
+        InverseLowRing<LogN><<<
             dim3((batch_size + (k.blockdim_y - 1)) / k.blockdim_y, 1, 1),
             dim3(k.blockdim_x, k.blockdim_y), k.shared_memory, stream>>>(
-            device_in, device_out, root_of_unity_table, modulus, k.shared_index,
-            n_power, n_inverse,
-            (reduction_poly == ReductionPolynomial::X_N_minus), batch_size,
-            extra...);
+            device_in, device_out, root_of_unity_table, modulus_policy,
+            (reduction_poly == ReductionPolynomial::X_N_minus), batch_size);
         GPUNTT_CUDA_CHECK(cudaGetLastError());
+    }
+
+    // Runs the stage kernels of one forward transform. Stage i reads the
+    // output of stage i - 1 (the first one reads device_in) and writes
+    // device_out.
+    template <int LogN, typename T, typename ModulusPolicy, typename PolyPolicy>
+    void forward_stages(
+        T* device_in, typename std::make_unsigned<T>::type* device_out,
+        Root<typename std::make_unsigned<T>::type>* root_of_unity_table,
+        ModulusPolicy modulus_policy, PolyPolicy poly_policy,
+        ReductionPolynomial reduction_poly, int batch_size, cudaStream_t stream)
+    {
+        using TU = typename std::make_unsigned<T>::type;
+        const bool x_n_minus =
+            (reduction_poly == ReductionPolynomial::X_N_minus);
+
+        for_each_stage(
+            [&](auto stage)
+            {
+                constexpr int I = decltype(stage)::value;
+                constexpr KernelConfig k =
+                    StageConfig<TU, FORWARD, LogN, I>::config;
+                const dim3 grid(k.griddim_x, k.griddim_y, batch_size);
+                const dim3 block(k.blockdim_x, k.blockdim_y);
+                if constexpr (I == 0)
+                {
+                    ForwardStage<LogN, I>
+                        <<<grid, block, k.shared_memory, stream>>>(
+                            device_in, device_out, root_of_unity_table,
+                            modulus_policy, poly_policy, x_n_minus);
+                }
+                else
+                {
+                    ForwardStage<LogN, I>
+                        <<<grid, block, k.shared_memory, stream>>>(
+                            device_out, device_out, root_of_unity_table,
+                            modulus_policy, poly_policy, x_n_minus);
+                }
+                GPUNTT_CUDA_CHECK(cudaGetLastError());
+            },
+            std::make_integer_sequence<
+                int, forward_kernel_table<TU>[LogN].size()>());
+    }
+
+    // Inverse counterpart of forward_stages. Only the last stage writes T
+    // (signed output); the others keep unsigned values in device_out.
+    template <int LogN, typename T, typename ModulusPolicy, typename PolyPolicy>
+    void inverse_stages(
+        typename std::make_unsigned<T>::type* device_in, T* device_out,
+        Root<typename std::make_unsigned<T>::type>* root_of_unity_table,
+        ModulusPolicy modulus_policy, PolyPolicy poly_policy,
+        ReductionPolynomial reduction_poly, int batch_size, cudaStream_t stream)
+    {
+        using TU = typename std::make_unsigned<T>::type;
+        constexpr int num_stages = inverse_kernel_table<TU>[LogN].size();
+        TU* device_out_unsigned = reinterpret_cast<TU*>(device_out);
+        const bool x_n_minus =
+            (reduction_poly == ReductionPolynomial::X_N_minus);
+
+        for_each_stage(
+            [&](auto stage)
+            {
+                constexpr int I = decltype(stage)::value;
+                constexpr KernelConfig k =
+                    StageConfig<TU, INVERSE, LogN, I>::config;
+                const dim3 grid(k.griddim_x, k.griddim_y, batch_size);
+                const dim3 block(k.blockdim_x, k.blockdim_y);
+                TU* in = (I == 0) ? device_in : device_out_unsigned;
+                if constexpr (I + 1 == num_stages)
+                {
+                    InverseStage<LogN, I>
+                        <<<grid, block, k.shared_memory, stream>>>(
+                            in, device_out, root_of_unity_table,
+                            modulus_policy, poly_policy, x_n_minus);
+                }
+                else
+                {
+                    InverseStage<LogN, I>
+                        <<<grid, block, k.shared_memory, stream>>>(
+                            in, device_out_unsigned, root_of_unity_table,
+                            modulus_policy, poly_policy, x_n_minus);
+                }
+                GPUNTT_CUDA_CHECK(cudaGetLastError());
+            },
+            std::make_integer_sequence<int, num_stages>());
+    }
+
+    // PerPolynomial transforms. Ring sizes below kForwardMinStageLogN
+    // (forward) and kInverseMinStageLogN (inverse) use the low ring kernel.
+    constexpr int kForwardMinStageLogN = 10;
+    constexpr int kInverseMinStageLogN = 11;
+
+    template <typename T, typename ModulusPolicy>
+    void forward_per_polynomial(
+        T* device_in, typename std::make_unsigned<T>::type* device_out,
+        Root<typename std::make_unsigned<T>::type>* root_of_unity_table,
+        ModulusPolicy modulus_policy, int n_power,
+        ReductionPolynomial reduction_poly, int batch_size, cudaStream_t stream)
+    {
+        dispatch_log_n<1, 28>(
+            n_power,
+            [&](auto log_n)
+            {
+                constexpr int LogN = decltype(log_n)::value;
+                if constexpr (LogN < kForwardMinStageLogN)
+                {
+                    forward_low_ring<LogN>(device_in, device_out,
+                                           root_of_unity_table, modulus_policy,
+                                           reduction_poly, batch_size, stream);
+                }
+                else
+                {
+                    forward_stages<LogN>(device_in, device_out,
+                                         root_of_unity_table, modulus_policy,
+                                         SequentialPolys{}, reduction_poly,
+                                         batch_size, stream);
+                }
+            });
+    }
+
+    template <typename T, typename ModulusPolicy>
+    void inverse_per_polynomial(
+        typename std::make_unsigned<T>::type* device_in, T* device_out,
+        Root<typename std::make_unsigned<T>::type>* root_of_unity_table,
+        ModulusPolicy modulus_policy, int n_power,
+        ReductionPolynomial reduction_poly, int batch_size, cudaStream_t stream)
+    {
+        dispatch_log_n<1, 28>(
+            n_power,
+            [&](auto log_n)
+            {
+                constexpr int LogN = decltype(log_n)::value;
+                if constexpr (LogN < kInverseMinStageLogN)
+                {
+                    inverse_low_ring<LogN>(device_in, device_out,
+                                           root_of_unity_table, modulus_policy,
+                                           reduction_poly, batch_size, stream);
+                }
+                else
+                {
+                    inverse_stages<LogN>(device_in, device_out,
+                                         root_of_unity_table, modulus_policy,
+                                         SequentialPolys{}, reduction_poly,
+                                         batch_size, stream);
+                }
+            });
+    }
+
+    // Ordered RNS transforms (ring sizes 2^10 to 2^28, stage kernels only).
+    template <typename T, typename ModulusPolicy, typename PolyPolicy>
+    void ordered_stages(T* device_in, T* device_out,
+                        Root<T>* root_of_unity_table,
+                        ModulusPolicy modulus_policy, PolyPolicy poly_policy,
+                        ntt_rns_configuration<T> cfg, int batch_size)
+    {
+        dispatch_log_n<10, 28>(
+            cfg.n_power,
+            [&](auto log_n)
+            {
+                constexpr int LogN = decltype(log_n)::value;
+                if (cfg.ntt_type == FORWARD)
+                {
+                    forward_stages<LogN>(device_in, device_out,
+                                         root_of_unity_table, modulus_policy,
+                                         poly_policy, cfg.reduction_poly,
+                                         batch_size, cfg.stream);
+                }
+                else
+                {
+                    inverse_stages<LogN>(device_in, device_out,
+                                         root_of_unity_table, modulus_policy,
+                                         poly_policy, cfg.reduction_poly,
+                                         batch_size, cfg.stream);
+                }
+            });
     }
 
     template <typename T>
@@ -616,6 +678,8 @@ namespace gpuntt
             ntt_configuration<typename std::make_unsigned<T>::type> cfg,
             int batch_size)
     {
+        using TU = typename std::make_unsigned<T>::type;
+
         check_batch_size(cfg.n_power, batch_size);
 
         switch (cfg.ntt_layout)
@@ -627,19 +691,10 @@ namespace gpuntt
                     throw std::invalid_argument("Invalid n_power range!");
                 }
 
-                if (cfg.n_power < 10)
-                {
-                    forward_low_ring(device_in, device_out, root_of_unity_table,
-                                     modulus, cfg.n_power, cfg.reduction_poly,
-                                     batch_size, cfg.stream);
-                }
-                else
-                {
-                    forward_stages<MergeKernels>(
-                        device_in, device_out, root_of_unity_table, modulus,
-                        cfg.n_power, cfg.reduction_poly, batch_size,
-                        cfg.stream);
-                }
+                forward_per_polynomial(
+                    device_in, device_out, root_of_unity_table,
+                    SingleModulus<TU>{modulus}, cfg.n_power, cfg.reduction_poly,
+                    batch_size, cfg.stream);
             }
             break;
             case PerCoefficient:
@@ -687,6 +742,8 @@ namespace gpuntt
              ntt_configuration<typename std::make_unsigned<T>::type> cfg,
              int batch_size)
     {
+        using TU = typename std::make_unsigned<T>::type;
+
         check_batch_size(cfg.n_power, batch_size);
 
         switch (cfg.ntt_layout)
@@ -698,20 +755,10 @@ namespace gpuntt
                     throw std::invalid_argument("Invalid n_power range!");
                 }
 
-                if (cfg.n_power < 11)
-                {
-                    inverse_low_ring(device_in, device_out, root_of_unity_table,
-                                     modulus, cfg.mod_inverse, cfg.n_power,
-                                     cfg.reduction_poly, batch_size,
-                                     cfg.stream);
-                }
-                else
-                {
-                    inverse_stages<MergeKernels>(
-                        device_in, device_out, root_of_unity_table, modulus,
-                        cfg.mod_inverse, cfg.n_power, cfg.reduction_poly,
-                        batch_size, cfg.stream);
-                }
+                inverse_per_polynomial(
+                    device_in, device_out, root_of_unity_table,
+                    SingleModulus<TU>{modulus, cfg.mod_inverse}, cfg.n_power,
+                    cfg.reduction_poly, batch_size, cfg.stream);
             }
             break;
             case PerCoefficient:
@@ -759,6 +806,8 @@ namespace gpuntt
             ntt_rns_configuration<typename std::make_unsigned<T>::type> cfg,
             int batch_size, int mod_count)
     {
+        using TU = typename std::make_unsigned<T>::type;
+
         check_batch_size(cfg.n_power, batch_size);
 
         switch (cfg.ntt_layout)
@@ -770,19 +819,10 @@ namespace gpuntt
                     throw std::invalid_argument("Invalid n_power range!");
                 }
 
-                if (cfg.n_power < 10)
-                {
-                    forward_low_ring(device_in, device_out, root_of_unity_table,
-                                     modulus, cfg.n_power, cfg.reduction_poly,
-                                     batch_size, cfg.stream, mod_count);
-                }
-                else
-                {
-                    forward_stages<MergeKernels>(
-                        device_in, device_out, root_of_unity_table, modulus,
-                        cfg.n_power, cfg.reduction_poly, batch_size, cfg.stream,
-                        mod_count);
-                }
+                forward_per_polynomial(
+                    device_in, device_out, root_of_unity_table,
+                    RnsModulus<TU>{modulus, mod_count}, cfg.n_power,
+                    cfg.reduction_poly, batch_size, cfg.stream);
             }
             break;
             case PerCoefficient:
@@ -831,6 +871,8 @@ namespace gpuntt
              ntt_rns_configuration<typename std::make_unsigned<T>::type> cfg,
              int batch_size, int mod_count)
     {
+        using TU = typename std::make_unsigned<T>::type;
+
         check_batch_size(cfg.n_power, batch_size);
 
         switch (cfg.ntt_layout)
@@ -842,20 +884,10 @@ namespace gpuntt
                     throw std::invalid_argument("Invalid n_power range!");
                 }
 
-                if (cfg.n_power < 11)
-                {
-                    inverse_low_ring(device_in, device_out, root_of_unity_table,
-                                     modulus, cfg.mod_inverse, cfg.n_power,
-                                     cfg.reduction_poly, batch_size, cfg.stream,
-                                     mod_count);
-                }
-                else
-                {
-                    inverse_stages<MergeKernels>(
-                        device_in, device_out, root_of_unity_table, modulus,
-                        cfg.mod_inverse, cfg.n_power, cfg.reduction_poly,
-                        batch_size, cfg.stream, mod_count);
-                }
+                inverse_per_polynomial(
+                    device_in, device_out, root_of_unity_table,
+                    RnsModulus<TU>{modulus, mod_count, cfg.mod_inverse},
+                    cfg.n_power, cfg.reduction_poly, batch_size, cfg.stream);
             }
             break;
             case PerCoefficient:
@@ -1011,24 +1043,15 @@ namespace gpuntt
             throw std::invalid_argument("Invalid n_power range!");
         }
 
-        switch (cfg.ntt_type)
+        if (cfg.ntt_type != FORWARD && cfg.ntt_type != INVERSE)
         {
-            case FORWARD:
-                forward_stages<ModulusOrderedKernels>(
-                    device_in, device_out, root_of_unity_table, modulus,
-                    cfg.n_power, cfg.reduction_poly, batch_size, cfg.stream,
-                    mod_count, order);
-                break;
-            case INVERSE:
-                inverse_stages<ModulusOrderedKernels>(
-                    device_in, device_out, root_of_unity_table, modulus,
-                    cfg.mod_inverse, cfg.n_power, cfg.reduction_poly,
-                    batch_size, cfg.stream, mod_count, order);
-                break;
-            default:
-                throw std::invalid_argument("Invalid ntt_type!");
-                break;
+            throw std::invalid_argument("Invalid ntt_type!");
         }
+
+        ordered_stages(
+            device_in, device_out, root_of_unity_table,
+            OrderedRnsModulus<T>{modulus, mod_count, order, cfg.mod_inverse},
+            SequentialPolys{}, cfg, batch_size);
     }
 
     template <typename T>
@@ -1117,24 +1140,14 @@ namespace gpuntt
             throw std::invalid_argument("Invalid n_power range!");
         }
 
-        switch (cfg.ntt_type)
+        if (cfg.ntt_type != FORWARD && cfg.ntt_type != INVERSE)
         {
-            case FORWARD:
-                forward_stages<PolyOrderedKernels>(
-                    device_in, device_out, root_of_unity_table, modulus,
-                    cfg.n_power, cfg.reduction_poly, batch_size, cfg.stream,
-                    mod_count, order);
-                break;
-            case INVERSE:
-                inverse_stages<PolyOrderedKernels>(
-                    device_in, device_out, root_of_unity_table, modulus,
-                    cfg.mod_inverse, cfg.n_power, cfg.reduction_poly,
-                    batch_size, cfg.stream, mod_count, order);
-                break;
-            default:
-                throw std::invalid_argument("Invalid ntt_type!");
-                break;
+            throw std::invalid_argument("Invalid ntt_type!");
         }
+
+        ordered_stages(device_in, device_out, root_of_unity_table,
+                       RnsModulus<T>{modulus, mod_count, cfg.mod_inverse},
+                       OrderedPolys{order}, cfg, batch_size);
     }
 
     template <typename T>

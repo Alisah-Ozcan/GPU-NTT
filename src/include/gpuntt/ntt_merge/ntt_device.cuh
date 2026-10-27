@@ -817,8 +817,8 @@ namespace gpuntt
         ForwardStageStore(thread, shared_memory, polynomial_out);
     }
 
-    template <bool SwapGridAxes, typename T, typename ModulusPolicy,
-              typename PolyPolicy>
+    template <bool SwapGridAxes, bool PrefetchRoots = false, typename T,
+              typename ModulusPolicy, typename PolyPolicy>
     __device__ __forceinline__ void InverseCoreBody(
         typename std::make_unsigned<T>::type* polynomial_in, T* polynomial_out,
         const Root<typename std::make_unsigned<T>::type>*
@@ -835,9 +835,9 @@ namespace gpuntt
         const StageThread<TU> thread = StageThreadState<SwapGridAxes, true, TU>(
             modulus_policy, poly_policy, k, outer_iteration_count, N_power);
         StageLoad(thread, shared_memory, polynomial_in);
-        InverseStageExecute(thread, shared_memory, inverse_root_of_unity_table,
-                            shared_index, logm, outer_iteration_count, N_power,
-                            reduction_poly_check);
+        InverseStageExecute<PrefetchRoots>(
+            thread, shared_memory, inverse_root_of_unity_table, shared_index,
+            logm, outer_iteration_count, N_power, reduction_poly_check);
         InverseStageStore(thread, shared_memory, polynomial_out, last_kernel);
     }
 
