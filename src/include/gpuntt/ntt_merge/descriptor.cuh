@@ -1042,6 +1042,47 @@ namespace gpuntt
         }
     };
 
+    // The kernels of NTT::launch: the whole transform in a single kernel
+    // (Kernel is an NTTSingleKernel) or one stage of it (Stage is an
+    // NTTStage).
+    template <typename Kernel, type D, typename T, typename TIn, typename TOut>
+    __global__ void ntt_launch_kernel(TIn* in, TOut* out, const T* roots,
+                                      Modulus<T> modulus, T n_inverse,
+                                      int batch)
+    {
+        T* shared_memory = Kernel::shared_memory();
+        const int num_polys = Kernel::num_polys(batch);
+        Kernel().load(shared_memory, Kernel::block_data(in), modulus,
+                      num_polys);
+        Kernel().execute(shared_memory, roots, modulus);
+        if constexpr (D == FORWARD)
+        {
+            Kernel().store(shared_memory, Kernel::block_data(out), num_polys);
+        }
+        else
+        {
+            Kernel().store(shared_memory, Kernel::block_data(out), modulus,
+                           n_inverse, num_polys);
+        }
+    }
+
+    template <typename Stage, type D, typename T, typename TIn, typename TOut>
+    __global__ void ntt_launch_stage_kernel(TIn* in, TOut* out, const T* roots,
+                                            Modulus<T> modulus, T n_inverse)
+    {
+        T* shared_memory = Stage::shared_memory();
+        Stage().load(shared_memory, in, modulus);
+        Stage().execute(shared_memory, roots, modulus);
+        if constexpr (D == INVERSE && Stage::last)
+        {
+            Stage().store(shared_memory, out, modulus, n_inverse);
+        }
+        else
+        {
+            Stage().store(shared_memory, out);
+        }
+    }
+
     // Values of a description that has Size, Direction and Precision.
     template <typename... Operators> struct NTTDescriptionValues
     {
@@ -1192,7 +1233,94 @@ namespace gpuntt
                                         !std::is_void<reduction_op>::value,
                                         reduction_value<reduction_op>()>;
 
+        // Transforms batch polynomials on stream with the description's
+        // kernels, the same result as GPU_NTT / GPU_INTT: in holds the
+        // polynomials one after another, out (which may be in) receives the
+        // result. The forward input and the inverse output may be the signed
+        // type of Precision. roots is the root table of the description (see
+        // make_twiddles); the inverse multiplies by n_inv(modulus).
+        template <typename TIn, typename TOut>
+        static void launch(TIn* in, TOut* out, const value_type* roots,
+                           Modulus<value_type> modulus, int batch,
+                           cudaStream_t stream = 0)
+        {
+            using In = std::remove_const_t<TIn>;
+            static_assert(!std::is_void<reduction_op>::value,
+                          "launch needs the ReductionPoly operator");
+            static_assert(
+                std::is_same<In, value_type>::value ||
+                    (direction == FORWARD &&
+                     std::is_same<std::make_unsigned_t<In>, value_type>::value),
+                "The input must be the description's Precision, or its signed "
+                "type for the forward NTT");
+            static_assert(
+                std::is_same<TOut, value_type>::value ||
+                    (direction == INVERSE &&
+                     std::is_same<std::make_unsigned_t<TOut>,
+                                  value_type>::value),
+                "The output must be the description's Precision, or its "
+                "signed type for the inverse NTT");
+
+            if (batch <= 0 ||
+                (static_cast<long long>(batch) << log_size) > (1LL << 31))
+            {
+                throw std::invalid_argument(
+                    "batch must be positive and batch * Size at most 2^31.");
+            }
+
+            const value_type n_inverse =
+                (direction == INVERSE) ? n_inv(modulus) : value_type(0);
+            if constexpr (num_stages == 1)
+            {
+                ntt_launch_kernel<single_kernel, direction>
+                    <<<single_kernel::grid(batch), single_kernel::block_dim,
+                       single_kernel::shared_memory_size, stream>>>(
+                        in, out, roots, modulus, n_inverse, batch);
+                GPUNTT_CUDA_CHECK(cudaGetLastError());
+            }
+            else
+            {
+                // Stage 0 reads in; every stage writes out, which the later
+                // stages read and write in place. Only the last inverse store
+                // writes the signed output type.
+                value_type* values = reinterpret_cast<value_type*>(out);
+                for_each_stage(
+                    [&](auto I)
+                    {
+                        if constexpr (I == 0)
+                        {
+                            launch_stage<I>(in, values, roots, modulus,
+                                            n_inverse, batch, stream);
+                        }
+                        else if constexpr (I + 1 == num_stages)
+                        {
+                            launch_stage<I>(values, out, roots, modulus,
+                                            n_inverse, batch, stream);
+                        }
+                        else
+                        {
+                            launch_stage<I>(values, values, roots, modulus,
+                                            n_inverse, batch, stream);
+                        }
+                    });
+            }
+        }
+
       private:
+        template <int I, typename TIn, typename TOut>
+        static void launch_stage(TIn* in, TOut* out, const value_type* roots,
+                                 Modulus<value_type> modulus,
+                                 value_type n_inverse, int batch,
+                                 cudaStream_t stream)
+        {
+            using Stage = stage<I>;
+            ntt_launch_stage_kernel<Stage, direction>
+                <<<Stage::grid(batch), Stage::block_dim,
+                   Stage::shared_memory_size, stream>>>(in, out, roots, modulus,
+                                                        n_inverse);
+            GPUNTT_CUDA_CHECK(cudaGetLastError());
+        }
+
         template <typename F, int... I>
         static void call_for_stages(F f, std::integer_sequence<int, I...>)
         {

@@ -3,10 +3,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Developer: Alişah Özcan
 
-// Tests the device API (NTT().load / execute / store and the per stage
-// NTT::stage<I>() functions) against the host API: kernels written with a
-// description must produce exactly the output of GPU_NTT / GPU_INTT on the
-// same data. The data and root tables
+// Tests the device API (NTT().load / execute / store, the per stage
+// NTT::stage<I>() functions and NTT::launch) against the host API: kernels
+// written with a description must produce exactly the output of GPU_NTT /
+// GPU_INTT on the same data. The data and root tables
 // are random, so the comparison covers every butterfly. A fused kernel
 // (NTT, pointwise product, INTT) is checked against the same steps run
 // through the host API.
@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <random>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
@@ -541,7 +542,8 @@ namespace
         const T top = T(1) << (max_bits - 1);
         const T p = top + (static_cast<T>(rng() % top) | 1);
         const Modulus<T> modulus(p);
-        const T n_inverse = static_cast<T>(rng() % p);
+        // NTT::launch multiplies by n_inv(modulus).
+        const T n_inverse = NTT::n_inv(modulus);
 
         DeviceBuffer<T> roots(random_below<T>(n, p));
         std::vector<T> input = random_below<T>(total, p);
@@ -553,7 +555,7 @@ namespace
                                     .mod_inverse = n_inverse,
                                     .stream = 0};
 
-        std::vector<TIO> expected, actual;
+        std::vector<TIO> expected, actual, launched, in_place;
         if constexpr (D == FORWARD)
         {
             std::vector<TIO> signed_input(total);
@@ -583,6 +585,17 @@ namespace
             const std::vector<T> e = reference.read(), a = out.read();
             expected.assign(e.begin(), e.end());
             actual.assign(a.begin(), a.end());
+
+            DeviceBuffer<T> out_launch(total);
+            NTT::launch(in.data, out_launch.data, roots.data, modulus, batch);
+            const std::vector<T> l = out_launch.read();
+            launched.assign(l.begin(), l.end());
+            if constexpr (std::is_same<TIO, T>::value)
+            {
+                DeviceBuffer<T> inout(input);
+                NTT::launch(inout.data, inout.data, roots.data, modulus, batch);
+                in_place = inout.read();
+            }
         }
         else
         {
@@ -604,18 +617,38 @@ namespace
             }
             expected = reference.read();
             actual = out.read();
+
+            DeviceBuffer<TIO> out_launch(total);
+            NTT::launch(in.data, out_launch.data, roots.data, modulus, batch);
+            launched = out_launch.read();
+            if constexpr (std::is_same<TIO, T>::value)
+            {
+                DeviceBuffer<T> inout(input);
+                NTT::launch(inout.data, inout.data, roots.data, modulus, batch);
+                in_place = inout.read();
+            }
         }
 
-        cases++;
-        if (expected != actual)
+        const char* const variants[] = {"", " launch", " launch in place"};
+        const std::vector<TIO>* results[] = {&actual, &launched, &in_place};
+        for (int v = 0; v < 3; v++)
         {
-            failures++;
-            std::printf("FAIL %s %s logn=%d %s %s%s batch=%d\n",
-                        Staged ? "stages" : "single kernel",
-                        sizeof(T) == 4 ? "u32" : "u64", LogN,
-                        D == FORWARD ? "forward" : "inverse",
-                        R == X_N_minus ? "X^N-1" : "X^N+1",
-                        std::is_signed<TIO>::value ? " signed" : "", batch);
+            // Signed data has no in place launch.
+            if (v == 2 && !std::is_same<TIO, T>::value)
+            {
+                continue;
+            }
+            cases++;
+            if (*results[v] != expected)
+            {
+                failures++;
+                std::printf("FAIL %s%s %s logn=%d %s %s%s batch=%d\n",
+                            Staged ? "stages" : "single kernel", variants[v],
+                            sizeof(T) == 4 ? "u32" : "u64", LogN,
+                            D == FORWARD ? "forward" : "inverse",
+                            R == X_N_minus ? "X^N-1" : "X^N+1",
+                            std::is_signed<TIO>::value ? " signed" : "", batch);
+            }
         }
     }
 
@@ -1014,6 +1047,28 @@ int main()
     run_fused_stages<Data64, 12, X_N_minus>(3);
     run_fused_stages<Data64, 17, X_N_plus>(2);
     run_fused_stages<Data64, 25, X_N_minus>(1);
+
+    // NTT::launch rejects the batch sizes the host API rejects.
+    {
+        using NTT = decltype(Size<(1 << 12)>() + Direction<FORWARD>() +
+                             Precision<Data32>() + ReductionPoly<X_N_minus>() +
+                             Block());
+        const int batches[] = {0, -1, (1 << 19) + 1};
+        for (int batch : batches)
+        {
+            cases++;
+            try
+            {
+                NTT::launch<Data32, Data32>(nullptr, nullptr, nullptr,
+                                            Modulus<Data32>(1073479681), batch);
+                failures++;
+                std::printf("FAIL launch accepts batch=%d\n", batch);
+            }
+            catch (const std::invalid_argument&)
+            {
+            }
+        }
+    }
 
     std::printf("ntt_device: %d of %d cases match the host API\n",
                 cases - failures, cases);

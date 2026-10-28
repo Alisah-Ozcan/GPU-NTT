@@ -200,6 +200,19 @@ Data64 n_inverse = InverseNTT::n_inv(modulus);  // N^-1 mod prime
 - [`gpuntt/common/fields.cuh`](src/include/gpuntt/common/fields.cuh) lists ready primes with their roots of unity: `ntt_primes32` (29 and 30 bits, ring sizes up to 2^22, the first one up to 2^25) and `ntt_primes64` (60 and 61 bits, every ring size up to 2^28). `NTT::make_twiddles_host(ntt_primes64[i])` and `NTT::make_twiddles(table, ntt_primes64[i])` pick the root themselves; `root_of_unity(prime, log_order)` gives a root of order 2^log_order.
 - `Modulus<T>` can also be built inside a kernel. There, a modulus larger than the supported size (30 bits for `Data32`, 61 bits for `Data64`) is not rejected.
 
+### Whole transform: `NTT::launch`
+
+When there is no own work to fuse, a description with `ReductionPoly` runs the whole transform from the host without a kernel of your own:
+
+```cpp
+NTT::launch(in, out, roots, modulus, batch, stream);   // stream defaults to 0
+```
+
+- `in` holds `batch` polynomials one after another; `out` (which may be `in`) receives the result, the same as `GPU_NTT` / `GPU_INTT` with the same root table.
+- The forward input and the inverse output may be signed (`Data32s`, `Data64s`).
+- The inverse multiplies by `n_inv(modulus)`, so `modulus` must be prime.
+- `batch` must be positive with `batch * N` at most 2^31; otherwise `launch` throws `std::invalid_argument`.
+
 ### Ring sizes up to 2^10: one kernel
 
 Block `b` transforms the `B = NTT::batches_per_block` polynomials that start at `data + b * B * N`:

@@ -9,7 +9,7 @@
 //    forward NTT of a, pointwise product with NTT(b), inverse NTT. Checked
 //    against schoolbook multiplication on the CPU.
 // 2. Forward NTT of N = 2^16 polynomials, one kernel per stage. Checked
-//    against the CPU NTT.
+//    against the CPU NTT, and NTT::launch against the stage kernels.
 // 3. Polynomial multiplication modulo X^N + 1 with stage kernels (N = 2^12,
 //    two stages per direction) in three kernels: the last forward stage,
 //    the pointwise product and the first inverse stage share one kernel.
@@ -313,6 +313,18 @@ int main(int argc, char* argv[])
         {
             cout << "All Correct for staged NTT, N = 2^" << kLargeLogN << " ("
                  << LargeForward::num_stages << " kernels)." << endl;
+        }
+
+        // Without own work in the kernels, NTT::launch runs the same stages.
+        LargeForward::launch(in_device, in_device, roots, parameters.modulus,
+                             batch);
+        vector<TestDataType> launched(input.size());
+        GPUNTT_CUDA_CHECK(cudaMemcpy(launched.data(), in_device,
+                                     launched.size() * sizeof(TestDataType),
+                                     cudaMemcpyDeviceToHost));
+        if (check_result(launched.data(), output.data(), int(output.size())))
+        {
+            cout << "All Correct for LargeForward::launch." << endl;
         }
 
         GPUNTT_CUDA_CHECK(cudaFree(in_device));
