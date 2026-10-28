@@ -58,9 +58,7 @@ cmake --build build --parallel
 
 #### Examples (CPU & GPU Merge)
 
-Choose one of the data types at the top of the example files:
-- typedef Data32 TestDataType;
-- typedef Data64 TestDataType;
+The examples take the ring size, the batch size and the coefficient type (`32` for `Data32`, `64` for `Data64`) from the command line; the defaults are `12 1 64`.
 
 Configure + build:
 
@@ -72,16 +70,16 @@ cmake --build build --parallel
 Run CPU examples:
 
 ```bash
-./build/bin/example/cpu_merge_ntt_examples <RING_SIZE_IN_LOG2> <BATCH_SIZE>
-# Example: ./build/bin/example/cpu_merge_ntt_examples 15 1
+./build/bin/example/cpu_merge_ntt_examples [RING_SIZE_IN_LOG2] [BATCH_SIZE] [32|64]
+# Example: ./build/bin/example/cpu_merge_ntt_examples 15 1 64
 ```
 
 Run GPU examples:
 
 ```bash
-./build/bin/example/gpu_merge_ntt_examples <RING_SIZE_IN_LOG2> <BATCH_SIZE>
-./build/bin/example/gpu_merge_intt_examples <RING_SIZE_IN_LOG2> <BATCH_SIZE>
-# Example: ./build/bin/example/gpu_merge_ntt_examples 12 1
+./build/bin/example/gpu_merge_ntt_examples [RING_SIZE_IN_LOG2] [BATCH_SIZE] [32|64]
+./build/bin/example/gpu_merge_intt_examples [RING_SIZE_IN_LOG2] [BATCH_SIZE] [32|64]
+# Example: ./build/bin/example/gpu_merge_ntt_examples 12 1 32
 ```
 
 Run the device API examples (see [Device API](#device-api)):

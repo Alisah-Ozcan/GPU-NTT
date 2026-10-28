@@ -3,48 +3,25 @@
 // SPDX-License-Identifier: Apache-2.0
 // Developer: Alişah Özcan
 
-#include <cstdlib> // For atoi or atof functions
+// Polynomial multiplication with the CPU NTT, checked against schoolbook
+// multiplication.
+//
+// Usage: cpu_merge_ntt_examples [RING_SIZE_IN_LOG2] [BATCH_SIZE] [32|64]
+
+#include <cstdlib>
 #include <random>
 
 #include "gpuntt/ntt_merge/ntt_cpu.cuh"
 #include "example_util.cuh"
 
-#define DEFAULT_MODULUS
-
 using namespace std;
 using namespace gpuntt;
 using namespace gpuntt_example;
 
-int LOGN;
-int BATCH;
-int N;
-
-// typedef Data32 TestDataType; // Use for 32-bit Test
-typedef Data64 TestDataType; // Use for 64-bit Test
-
-int main(int argc, char* argv[])
+template <typename TestDataType> bool run(int logn, int batch)
 {
-    CudaDevice();
-
-    if (argc < 3)
-    {
-        LOGN = 12;
-        BATCH = 1;
-    }
-    else
-    {
-        LOGN = atoi(argv[1]);
-        BATCH = atoi(argv[2]);
-    }
-
-#ifdef DEFAULT_MODULUS
-    NTTParameters<TestDataType> parameters(LOGN,
+    NTTParameters<TestDataType> parameters(logn,
                                            ReductionPolynomial::X_N_minus);
-#else
-    NTTFactors factor((Modulus) 576460752303415297, 288482366111684746,
-                      238394956950829);
-    NTTParameters parameters(LOGN, factor, ReductionPolynomial::X_N_minus);
-#endif
 
     // NTT generator with certain modulus and root of unity
     NTTCPU<TestDataType> generator(parameters);
@@ -56,9 +33,9 @@ int main(int argc, char* argv[])
     std::uniform_int_distribution<TestDataType> dis(minNumber, maxNumber);
 
     // Random data generation for polynomials
-    vector<vector<TestDataType>> input1(BATCH);
-    vector<vector<TestDataType>> input2(BATCH);
-    for (int j = 0; j < BATCH; j++)
+    vector<vector<TestDataType>> input1(batch);
+    vector<vector<TestDataType>> input2(batch);
+    for (int j = 0; j < batch; j++)
     {
         for (int i = 0; i < parameters.n; i++)
         {
@@ -68,8 +45,8 @@ int main(int argc, char* argv[])
     }
 
     // Performing CPU NTT
-    vector<vector<TestDataType>> ntt_mult_result(BATCH);
-    for (int i = 0; i < BATCH; i++)
+    vector<vector<TestDataType>> ntt_mult_result(batch);
+    for (int i = 0; i < batch; i++)
     {
         vector<TestDataType> ntt_input1 = generator.ntt(input1[i]);
         vector<TestDataType> ntt_input2 = generator.ntt(input2[i]);
@@ -80,7 +57,7 @@ int main(int argc, char* argv[])
     // Comparing CPU NTT multiplication results and schoolbook multiplication
     // results
     bool check = true;
-    for (int i = 0; i < BATCH; i++)
+    for (int i = 0; i < batch; i++)
     {
         std::vector<TestDataType> schoolbook_result =
             schoolbook_poly_multiplication<TestDataType>(
@@ -95,11 +72,22 @@ int main(int argc, char* argv[])
             break;
         }
 
-        if ((i == (BATCH - 1)) && check)
+        if ((i == (batch - 1)) && check)
         {
             cout << "All Correct." << endl;
         }
     }
 
-    return EXIT_SUCCESS;
+    return check;
+}
+
+int main(int argc, char* argv[])
+{
+    CudaDevice();
+
+    const ExampleArgs args = parse_example_args(argc, argv);
+    const bool correct = (args.bits == 32) ? run<Data32>(args.logn, args.batch)
+                                           : run<Data64>(args.logn, args.batch);
+
+    return correct ? EXIT_SUCCESS : EXIT_FAILURE;
 }
