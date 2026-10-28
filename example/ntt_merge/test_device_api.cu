@@ -14,6 +14,10 @@
 //    two stages per direction) in three kernels: the last forward stage,
 //    the pointwise product and the first inverse stage share one kernel.
 //    Checked against schoolbook multiplication on the CPU.
+// 4. Multiplication by a ternary polynomial stored as int8_t (N = 2^10): the
+//    kernel writes it to shared memory itself, into a second buffer after
+//    the description's shared memory, and transforms both buffers. Checked
+//    against schoolbook multiplication on the CPU.
 //
 // Usage: gpu_device_api_examples [BATCH_SIZE]
 
@@ -148,6 +152,45 @@ __global__ void staged_inverse_kernel(TestDataType* a,
     Stage().load(shared_memory, a, modulus);
     Stage().execute(shared_memory, inverse_roots, modulus);
     Stage().store(shared_memory, a, modulus, n_inverse);
+}
+
+// a <- a * s for every polynomial, with s ternary (-1, 0, 1) and stored as
+// int8_t. load reads only the Precision or its signed type, so the kernel
+// writes s to shared memory itself: a second buffer after the first one, so
+// the launch adds SmallForward::shared_memory_size bytes. In the single
+// kernel shared memory holds a polynomial in the order of data.
+__global__ void ternary_multiply_kernel(TestDataType* a, const int8_t* s,
+                                        const TestDataType* forward_roots,
+                                        const TestDataType* inverse_roots,
+                                        Modulus<TestDataType> modulus,
+                                        TestDataType n_inverse)
+{
+    static_assert(SmallForward::batches_per_block == 1);
+    TestDataType* a_shared = SmallForward::shared_memory();
+    TestDataType* s_shared =
+        a_shared + SmallForward::shared_memory_size / sizeof(TestDataType);
+    TestDataType* poly = SmallForward::block_data(a);
+    const int8_t* poly_s = SmallForward::block_data(s);
+
+    for (int i = threadIdx.x + threadIdx.y * blockDim.x; i < SmallForward::size;
+         i += blockDim.x * blockDim.y)
+    {
+        s_shared[i] =
+            (poly_s[i] < 0) ? modulus.value - 1 : TestDataType(poly_s[i]);
+    }
+    // The threads wrote each other's entries, so execute needs a barrier.
+    __syncthreads();
+
+    SmallForward().load(a_shared, poly, modulus);
+    SmallForward().execute(a_shared, forward_roots, modulus);
+    SmallForward().execute(s_shared, forward_roots, modulus);
+    SmallForward().for_each(a_shared,
+                            [&](TestDataType& value, size_t index) {
+                                value = OPERATOR_GPU<TestDataType>::mult(
+                                    value, s_shared[index], modulus);
+                            });
+    SmallInverse().execute(a_shared, inverse_roots, modulus);
+    SmallInverse().store(a_shared, poly, modulus, n_inverse);
 }
 
 template <typename T> T* device_root_table(const vector<T>& table)
@@ -424,6 +467,84 @@ int main(int argc, char* argv[])
 
         GPUNTT_CUDA_CHECK(cudaFree(a_device));
         GPUNTT_CUDA_CHECK(cudaFree(b_hat_device));
+        GPUNTT_CUDA_CHECK(cudaFree(forward_roots));
+        GPUNTT_CUDA_CHECK(cudaFree(inverse_roots));
+    }
+
+    // 4. Multiplication by a ternary polynomial stored as int8_t, N = 2^10.
+    {
+        const NTTPrime<TestDataType>& prime = ntt_primes64[1];
+        const Modulus<TestDataType> modulus(prime.value);
+        const TestDataType n_inverse = SmallInverse::n_inv(modulus);
+        const int n = SmallForward::size;
+        std::uniform_int_distribution<std::uint64_t> dis(0, modulus.value - 1);
+        std::uniform_int_distribution<int> ternary(-1, 1);
+
+        vector<TestDataType> a(size_t(batch) * n);
+        vector<int8_t> s(size_t(batch) * n);
+        for (auto& x : a)
+            x = dis(gen);
+        for (auto& x : s)
+            x = int8_t(ternary(gen));
+
+        TestDataType* forward_roots =
+            device_root_table(SmallForward::make_twiddles_host(prime));
+        TestDataType* inverse_roots =
+            device_root_table(SmallInverse::make_twiddles_host(prime));
+
+        TestDataType* a_device;
+        int8_t* s_device;
+        GPUNTT_CUDA_CHECK(
+            cudaMalloc(&a_device, a.size() * sizeof(TestDataType)));
+        GPUNTT_CUDA_CHECK(cudaMalloc(&s_device, s.size() * sizeof(int8_t)));
+        GPUNTT_CUDA_CHECK(cudaMemcpy(a_device, a.data(),
+                                     a.size() * sizeof(TestDataType),
+                                     cudaMemcpyHostToDevice));
+        GPUNTT_CUDA_CHECK(cudaMemcpy(s_device, s.data(),
+                                     s.size() * sizeof(int8_t),
+                                     cudaMemcpyHostToDevice));
+
+        ternary_multiply_kernel<<<SmallForward::grid(batch),
+                                  SmallForward::block_dim,
+                                  2 * SmallForward::shared_memory_size>>>(
+            a_device, s_device, forward_roots, inverse_roots, modulus,
+            n_inverse);
+        GPUNTT_CUDA_CHECK(cudaGetLastError());
+
+        vector<TestDataType> product(a.size());
+        GPUNTT_CUDA_CHECK(cudaMemcpy(product.data(), a_device,
+                                     product.size() * sizeof(TestDataType),
+                                     cudaMemcpyDeviceToHost));
+
+        bool correct = true;
+        for (int i = 0; i < batch && correct; i++)
+        {
+            vector<TestDataType> a_i(a.begin() + size_t(i) * n,
+                                     a.begin() + size_t(i + 1) * n);
+            vector<TestDataType> s_i(n);
+            for (int j = 0; j < n; j++)
+            {
+                const int8_t c = s[size_t(i) * n + j];
+                s_i[j] = (c < 0) ? modulus.value - 1 : TestDataType(c);
+            }
+            vector<TestDataType> expected = schoolbook_poly_multiplication(
+                a_i, s_i, modulus, ReductionPolynomial::X_N_plus);
+            correct = check_result(product.data() + size_t(i) * n,
+                                   expected.data(), n);
+            if (!correct)
+            {
+                cout << "(in " << i << ". Poly.)" << endl;
+            }
+        }
+        if (correct)
+        {
+            cout << "All Correct for multiplication by a ternary int8_t "
+                    "polynomial, N = 2^"
+                 << kSmallLogN << "." << endl;
+        }
+
+        GPUNTT_CUDA_CHECK(cudaFree(a_device));
+        GPUNTT_CUDA_CHECK(cudaFree(s_device));
         GPUNTT_CUDA_CHECK(cudaFree(forward_roots));
         GPUNTT_CUDA_CHECK(cudaFree(inverse_roots));
     }

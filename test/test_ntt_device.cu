@@ -248,6 +248,159 @@ namespace
         Fwd().store(shared_memory, Fwd::block_data(out), num_polys);
     }
 
+    // Own use of shared memory: the block's polynomials are written to
+    // shared memory one after another in the order of data instead of load,
+    // and read back the same way instead of store. The inverse execute
+    // leaves N * INTT(x), so reading it means multiplying by n_inverse.
+    template <typename NTT>
+    __global__ void own_io_kernel(const typename NTT::value_type* in,
+                                  typename NTT::value_type* out,
+                                  const typename NTT::value_type* roots,
+                                  Modulus<typename NTT::value_type> modulus,
+                                  typename NTT::value_type n_inverse, int batch)
+    {
+        using T = typename NTT::value_type;
+        T* shared_memory = NTT::shared_memory();
+        const T* block_in = NTT::block_data(in);
+        T* block_out = NTT::block_data(out);
+        const int count = NTT::num_polys(batch) * NTT::size;
+        const int threads = blockDim.x * blockDim.y;
+        const int thread = threadIdx.x + threadIdx.y * blockDim.x;
+
+        for (int i = thread; i < count; i += threads)
+        {
+            shared_memory[i] = block_in[i];
+        }
+        // Other threads' entries were written, so execute needs a barrier.
+        __syncthreads();
+        NTT().execute(shared_memory, roots, modulus);
+        for (int i = thread; i < count; i += threads)
+        {
+            block_out[i] = (NTT::direction == FORWARD)
+                               ? shared_memory[i]
+                               : OPERATOR_GPU<T>::mult(shared_memory[i],
+                                                       n_inverse, modulus);
+        }
+    }
+
+    // The same for stage I: shared memory is written and read through
+    // for_each, which gives each entry with its index in data.
+    template <typename NTT, int I>
+    __global__ void
+    own_io_stage_kernel(const typename NTT::value_type* in,
+                        typename NTT::value_type* out,
+                        const typename NTT::value_type* roots,
+                        Modulus<typename NTT::value_type> modulus,
+                        typename NTT::value_type n_inverse)
+    {
+        using T = typename NTT::value_type;
+        using Stage = typename NTT::template stage<I>;
+        T* shared_memory = Stage::shared_memory();
+
+        Stage().for_each(shared_memory,
+                         [&](T& value, size_t index) { value = in[index]; });
+        Stage().execute(shared_memory, roots, modulus);
+        Stage().for_each(shared_memory,
+                         [&](T& value, size_t index)
+                         {
+                             out[index] =
+                                 (NTT::direction == INVERSE && Stage::last)
+                                     ? OPERATOR_GPU<T>::mult(value, n_inverse,
+                                                             modulus)
+                                     : value;
+                         });
+    }
+
+    template <typename NTT>
+    void launch_own_io_stages(const typename NTT::value_type* in,
+                              typename NTT::value_type* out,
+                              const typename NTT::value_type* roots,
+                              Modulus<typename NTT::value_type> modulus,
+                              typename NTT::value_type n_inverse, int batch)
+    {
+        NTT::for_each_stage(
+            [&](auto I)
+            {
+                using Stage = typename NTT::template stage<I>;
+                own_io_stage_kernel<NTT, I>
+                    <<<Stage::grid(batch), Stage::block_dim,
+                       Stage::shared_memory_size>>>(I == 0 ? in : out, out,
+                                                    roots, modulus, n_inverse);
+            });
+        check_cuda(cudaGetLastError(), "launch");
+    }
+
+    // a * b in one kernel with b_hat copied to shared memory after the
+    // description's shared_memory_size bytes; launched with the extra bytes.
+    template <typename Fwd, typename Inv>
+    __global__ void fused_multiply_extra_shared_kernel(
+        typename Fwd::value_type* a, const typename Fwd::value_type* b_hat,
+        typename Fwd::value_type* out, const typename Fwd::value_type* roots,
+        const typename Fwd::value_type* inverse_roots,
+        Modulus<typename Fwd::value_type> modulus,
+        typename Fwd::value_type n_inverse, int batch)
+    {
+        using T = typename Fwd::value_type;
+        T* shared_memory = Fwd::shared_memory();
+        T* b_shared = shared_memory + Fwd::shared_memory_size / sizeof(T);
+        const T* block_b_hat = Fwd::block_data(b_hat);
+        const int num_polys = Fwd::num_polys(batch);
+        const int count = num_polys * Fwd::size;
+
+        for (int i = threadIdx.x + threadIdx.y * blockDim.x; i < count;
+             i += blockDim.x * blockDim.y)
+        {
+            b_shared[i] = block_b_hat[i];
+        }
+        Fwd().load(shared_memory, Fwd::block_data(a), modulus, num_polys);
+        // execute ends with a block barrier, so b_shared is complete after it.
+        Fwd().execute(shared_memory, roots, modulus);
+        Fwd().for_each(
+            shared_memory,
+            [&](T& value, size_t index)
+            { value = OPERATOR_GPU<T>::mult(value, b_shared[index], modulus); },
+            num_polys);
+        Inv().execute(shared_memory, inverse_roots, modulus);
+        Inv().store(shared_memory, Fwd::block_data(out), modulus, n_inverse,
+                    num_polys);
+    }
+
+    // a * b in one kernel with both NTTs in shared memory: b is loaded into a
+    // second buffer after the first (launched with 2 * shared_memory_size).
+    // Both buffers keep an entry at the same position.
+    template <typename Fwd, typename Inv>
+    __global__ void fused_multiply_two_buffers_kernel(
+        typename Fwd::value_type* a, const typename Fwd::value_type* b,
+        typename Fwd::value_type* out, const typename Fwd::value_type* roots,
+        const typename Fwd::value_type* inverse_roots,
+        Modulus<typename Fwd::value_type> modulus,
+        typename Fwd::value_type n_inverse, int batch)
+    {
+        using T = typename Fwd::value_type;
+        T* a_shared = Fwd::shared_memory();
+        T* b_shared = a_shared + Fwd::shared_memory_size / sizeof(T);
+        const int num_polys = Fwd::num_polys(batch);
+        const ThreadEntries entries = Fwd().entries(num_polys);
+
+        Fwd().load(a_shared, Fwd::block_data(a), modulus, num_polys);
+        Fwd().load(b_shared, Fwd::block_data(b), modulus, num_polys);
+        Fwd().execute(a_shared, roots, modulus);
+        Fwd().execute(b_shared, roots, modulus);
+        if (entries.valid)
+        {
+            for (int k = 0; k < ThreadEntries::count; k++)
+            {
+                T& value = a_shared[entries.position[k]];
+                value = OPERATOR_GPU<T>::mult(
+                    value, b_shared[entries.position[k]], modulus);
+            }
+        }
+        __syncthreads();
+        Inv().execute(a_shared, inverse_roots, modulus);
+        Inv().store(a_shared, Fwd::block_data(out), modulus, n_inverse,
+                    num_polys);
+    }
+
     template <typename T>
     __global__ void multiply_kernel(T* a, const T* b, Modulus<T> modulus,
                                     size_t total)
@@ -368,6 +521,45 @@ namespace
         else
         {
             First().store(shared_memory, data);
+        }
+    }
+
+    // The same with two shared memory buffers: the last forward stage of a
+    // and of b, their product and the first inverse stage of the product.
+    template <typename Fwd, typename Inv>
+    __global__ void fused_stage_two_buffers_kernel(
+        typename Fwd::value_type* a, const typename Fwd::value_type* b,
+        const typename Fwd::value_type* roots,
+        const typename Fwd::value_type* inverse_roots,
+        Modulus<typename Fwd::value_type> modulus,
+        typename Fwd::value_type n_inverse)
+    {
+        using T = typename Fwd::value_type;
+        using Last = typename Fwd::template stage<Fwd::num_stages - 1>;
+        using First = typename Inv::template stage<0>;
+        T* a_shared = Last::shared_memory();
+        T* b_shared = a_shared + Last::shared_memory_size / sizeof(T);
+        const ThreadEntries entries = Last().entries();
+
+        Last().load(a_shared, a, modulus);
+        Last().load(b_shared, b, modulus);
+        Last().execute(a_shared, roots, modulus);
+        Last().execute(b_shared, roots, modulus);
+        for (int k = 0; k < ThreadEntries::count; k++)
+        {
+            T& value = a_shared[entries.position[k]];
+            value = OPERATOR_GPU<T>::mult(value, b_shared[entries.position[k]],
+                                          modulus);
+        }
+        __syncthreads();
+        First().execute(a_shared, inverse_roots, modulus);
+        if constexpr (First::last)
+        {
+            First().store(a_shared, a, modulus, n_inverse);
+        }
+        else
+        {
+            First().store(a_shared, a);
         }
     }
 
@@ -555,7 +747,7 @@ namespace
                                     .mod_inverse = n_inverse,
                                     .stream = 0};
 
-        std::vector<TIO> expected, actual, launched, in_place;
+        std::vector<TIO> expected, actual, launched, in_place, own_io;
         if constexpr (D == FORWARD)
         {
             std::vector<TIO> signed_input(total);
@@ -629,12 +821,35 @@ namespace
             }
         }
 
-        const char* const variants[] = {"", " launch", " launch in place"};
-        const std::vector<TIO>* results[] = {&actual, &launched, &in_place};
-        for (int v = 0; v < 3; v++)
+        // The kernel writes and reads shared memory itself instead of load
+        // and store.
+        if constexpr (std::is_same<TIO, T>::value)
         {
-            // Signed data has no in place launch.
-            if (v == 2 && !std::is_same<TIO, T>::value)
+            DeviceBuffer<T> in(input), out(total);
+            if constexpr (Staged)
+            {
+                launch_own_io_stages<NTT>(in.data, out.data, roots.data,
+                                          modulus, n_inverse, batch);
+            }
+            else
+            {
+                own_io_kernel<NTT><<<NTT::grid(batch), NTT::block_dim,
+                                     NTT::shared_memory_size>>>(
+                    in.data, out.data, roots.data, modulus, n_inverse, batch);
+                check_cuda(cudaGetLastError(), "launch");
+            }
+            own_io = out.read();
+        }
+
+        const char* const variants[] = {"", " launch", " launch in place",
+                                        " own shared memory"};
+        const std::vector<TIO>* results[] = {&actual, &launched, &in_place,
+                                             &own_io};
+        for (int v = 0; v < 4; v++)
+        {
+            // Signed data has no in place launch and no own shared memory
+            // variant.
+            if (v >= 2 && !std::is_same<TIO, T>::value)
             {
                 continue;
             }
@@ -716,11 +931,30 @@ namespace
                 inverse_roots.data, modulus, n_inverse, batch);
         check_cuda(cudaGetLastError(), "launch");
 
+        DeviceBuffer<T> with_extra_shared(total);
+        fused_multiply_extra_shared_kernel<Fwd, Inv>
+            <<<Fwd::grid(batch), Fwd::block_dim,
+               Fwd::shared_memory_size +
+                   Fwd::batches_per_block * Fwd::size * sizeof(T)>>>(
+                a.data, b_hat.data, with_extra_shared.data, roots.data,
+                inverse_roots.data, modulus, n_inverse, batch);
+        check_cuda(cudaGetLastError(), "launch");
+
+        DeviceBuffer<T> with_two_buffers(total);
+        fused_multiply_two_buffers_kernel<Fwd, Inv>
+            <<<Fwd::grid(batch), Fwd::block_dim, 2 * Fwd::shared_memory_size>>>(
+                a.data, b.data, with_two_buffers.data, roots.data,
+                inverse_roots.data, modulus, n_inverse, batch);
+        check_cuda(cudaGetLastError(), "launch");
+
         const std::vector<T> expected_values = expected.read();
-        const char* const variants[] = {"", " with helpers", " with entries"};
-        const std::vector<T> results[] = {actual.read(), with_helpers.read(),
-                                          with_entries.read()};
-        for (int v = 0; v < 3; v++)
+        const char* const variants[] = {"", " with helpers", " with entries",
+                                        " with extra shared memory",
+                                        " with two buffers"};
+        const std::vector<T> results[] = {
+            actual.read(), with_helpers.read(), with_entries.read(),
+            with_extra_shared.read(), with_two_buffers.read()};
+        for (int v = 0; v < 5; v++)
         {
             cases++;
             if (results[v] != expected_values)
@@ -990,6 +1224,78 @@ namespace
         }
     }
 
+    // a * b with stage kernels and two shared memory buffers in the middle
+    // kernel (fused_stage_two_buffers_kernel), against GPU_NTT of a and b,
+    // a pointwise product and GPU_INTT.
+    template <typename T, int LogN, ReductionPolynomial R>
+    void run_two_buffers_stages(int batch)
+    {
+        using Fwd = decltype(Size<(1 << LogN)>() + Direction<FORWARD>() +
+                             Precision<T>() + ReductionPoly<R>() + Block());
+        using Inv = decltype(Size<(1 << LogN)>() + Direction<INVERSE>() +
+                             Precision<T>() + ReductionPoly<R>() + Block());
+        using Last = typename Fwd::template stage<Fwd::num_stages - 1>;
+        static_assert(Fwd::num_stages >= 2);
+
+        constexpr int n = 1 << LogN;
+        const size_t total = size_t(batch) * n;
+
+        const int max_bits = std::is_same<T, Data32>::value ? 30 : 61;
+        const T top = T(1) << (max_bits - 1);
+        const T p = top + (static_cast<T>(rng() % top) | 1);
+        const Modulus<T> modulus(p);
+        const T n_inverse = static_cast<T>(rng() % p);
+
+        DeviceBuffer<T> roots(random_below<T>(n, p));
+        DeviceBuffer<T> inverse_roots(random_below<T>(n, p));
+        DeviceBuffer<T> a(random_below<T>(total, p));
+        DeviceBuffer<T> b(random_below<T>(total, p));
+
+        ntt_configuration<T> fwd_cfg = {.n_power = LogN,
+                                        .ntt_type = FORWARD,
+                                        .ntt_layout = PerPolynomial,
+                                        .reduction_poly = R,
+                                        .mod_inverse = n_inverse,
+                                        .stream = 0};
+        ntt_configuration<T> inv_cfg = fwd_cfg;
+        inv_cfg.ntt_type = INVERSE;
+
+        DeviceBuffer<T> expected(total), b_hat(total);
+        GPU_NTT(a.data, expected.data, roots.data, modulus, fwd_cfg, batch);
+        GPU_NTT(b.data, b_hat.data, roots.data, modulus, fwd_cfg, batch);
+        multiply_kernel<<<(total + 255) / 256, 256>>>(expected.data, b_hat.data,
+                                                      modulus, total);
+        GPU_INTT_Inplace(expected.data, inverse_roots.data, modulus, inv_cfg,
+                         batch);
+
+        DeviceBuffer<T> actual(total), b_partial(total);
+        launch_stages_from<Fwd, 0>(
+            a.data, actual.data, roots.data, modulus, n_inverse, batch,
+            std::make_integer_sequence<int, Fwd::num_stages - 1>());
+        launch_stages_from<Fwd, 0>(
+            b.data, b_partial.data, roots.data, modulus, n_inverse, batch,
+            std::make_integer_sequence<int, Fwd::num_stages - 1>());
+        fused_stage_two_buffers_kernel<Fwd, Inv>
+            <<<Last::grid(batch), Last::block_dim,
+               2 * Last::shared_memory_size>>>(actual.data, b_partial.data,
+                                               roots.data, inverse_roots.data,
+                                               modulus, n_inverse);
+        check_cuda(cudaGetLastError(), "launch");
+        launch_stages_from<Inv, 1>(
+            actual.data, actual.data, inverse_roots.data, modulus, n_inverse,
+            batch, std::make_integer_sequence<int, Inv::num_stages - 1>());
+
+        cases++;
+        if (expected.read() != actual.read())
+        {
+            failures++;
+            std::printf("FAIL fused stages with two buffers %s logn=%d %s "
+                        "batch=%d\n",
+                        sizeof(T) == 4 ? "u32" : "u64", LogN,
+                        R == X_N_minus ? "X^N-1" : "X^N+1", batch);
+        }
+    }
+
 } // namespace
 
 int main()
@@ -1047,6 +1353,12 @@ int main()
     run_fused_stages<Data64, 12, X_N_minus>(3);
     run_fused_stages<Data64, 17, X_N_plus>(2);
     run_fused_stages<Data64, 25, X_N_minus>(1);
+
+    // The same with a and b in two shared memory buffers.
+    run_two_buffers_stages<Data32, 11, X_N_minus>(3);
+    run_two_buffers_stages<Data32, 17, X_N_plus>(2);
+    run_two_buffers_stages<Data64, 12, X_N_plus>(3);
+    run_two_buffers_stages<Data64, 25, X_N_minus>(1);
 
     // NTT::launch rejects the batch sizes the host API rejects.
     {

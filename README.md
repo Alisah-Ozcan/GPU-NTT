@@ -325,6 +325,38 @@ NTT().store(shared_memory, polys, num_polys);
 - `position` also addresses the same entry in a second shared memory buffer of the same layout, e.g. one filled by a second `load`.
 - A thread can keep its two entries of one transform in registers while the same shared memory transforms another polynomial, e.g. NTT(a) + NTT(b) in one kernel without extra shared memory ([`test/test_ntt_device.cu`](test/test_ntt_device.cu), `two_ntt_sum_kernel`).
 
+### Own use of shared memory
+
+`execute` works on any buffer of `shared_memory_size` bytes with the layout of `load`, so a kernel can fill and read shared memory itself and keep more data in it:
+
+- **Without `load`.** Write the entries yourself, e.g. from an array of another type. In a single kernel polynomial `j` of the block is at `shared_memory + j * N` in the order of `data`; in a stage kernel write through `for_each` or `entries`. `load` has no barrier because every thread starts `execute` on its own two entries; if threads write other threads' entries (e.g. a plain loop over the polynomial), call `__syncthreads()` before `execute`. `for_each` already ends with one.
+- **Without `store`.** `execute` ends with a block barrier, so after it any thread can read any entry. The inverse `execute` leaves N · INTT(x): multiply by `n_inverse` = N^-1 yourself. With stage kernels this concerns only the last inverse stage; the earlier ones store without scaling.
+- **More shared memory.** The NTT uses only the first `shared_memory_size` bytes. Launch with `shared_memory_size + extra` bytes and use the rest from `shared_memory() + shared_memory_size / sizeof(T)`. Above 48 KB per block, CUDA needs `cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, bytes)` first.
+- **A second buffer.** A second `shared_memory_size` area can hold another polynomial with its own `load` and `execute`; an entry has the same `position` in both buffers, also in stage kernels.
+
+For example a product with a ternary polynomial stored as `int8_t`, which `load` cannot read:
+
+```cpp
+Data64* a_shared = NTT::shared_memory();
+Data64* s_shared = a_shared + NTT::shared_memory_size / sizeof(Data64);
+// a, s: the block's polynomial (NTT::block_data); N = 2^10 has one per block
+for (int i = threadIdx.x; i < NTT::size; i += blockDim.x)
+    s_shared[i] = (s[i] < 0) ? modulus.value - 1 : Data64(s[i]);
+__syncthreads();
+
+NTT().load(a_shared, a, modulus);
+NTT().execute(a_shared, roots, modulus);
+NTT().execute(s_shared, roots, modulus);
+NTT().for_each(a_shared, [&](Data64& value, size_t index) {
+    value = OPERATOR_GPU<Data64>::mult(value, s_shared[index], modulus);
+});
+InverseNTT().execute(a_shared, inverse_roots, modulus);
+InverseNTT().store(a_shared, a, modulus, n_inverse);
+// launched with NTT::grid(batch), NTT::block_dim, 2 * NTT::shared_memory_size
+```
+
+[`example/ntt_merge/test_device_api.cu`](example/ntt_merge/test_device_api.cu) runs this for N = 2^10; [`test/test_ntt_device.cu`](test/test_ntt_device.cu) checks all four uses against the host API.
+
 ### RNS
 
 There is no separate RNS interface: pick the modulus of each polynomial yourself and pass the matching part of the root table, which holds the roots of prime `i` at offset `i << log2(N)`. For example, in a stage kernel `modulus = moduli[blockIdx.z % mod_count]` and `roots + (size_t(blockIdx.z % mod_count) << log2(N))`. In the single kernel API this needs `BatchesPerBlock<1>` (the default for N = 2^10), since all polynomials of a block share one modulus.
