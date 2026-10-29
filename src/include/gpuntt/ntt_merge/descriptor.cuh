@@ -12,8 +12,11 @@
 #include "gpuntt/common/nttparameters.cuh"
 #include "gpuntt/ntt_merge/ntt_device.cuh"
 #include <cstddef>
+#include <stdexcept>
+#include <string>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 namespace gpuntt
 {
