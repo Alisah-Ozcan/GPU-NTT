@@ -143,6 +143,18 @@ static_assert(decltype(Size<2048>() + Direction<INVERSE>() +
 static_assert(decltype(Mid() + BlockDim<128>())::num_stages == 2);
 static_assert(decltype(Mid() + BlockDim<512>())::num_stages == 1);
 
+// Stages per ring size and T (the table in the README).
+template <int LogN, int Threads>
+constexpr int stages_with =
+    decltype(Size<(1 << LogN)>() + Direction<FORWARD>() + Precision<Data64>() +
+             Block() + BlockDim<Threads>())::num_stages;
+static_assert(stages_with<16, 128> == 3 && stages_with<16, 256> == 2 &&
+              stages_with<16, 512> == 2 && stages_with<16, 1024> == 2);
+static_assert(stages_with<20, 128> == 3 && stages_with<20, 256> == 3 &&
+              stages_with<20, 512> == 3 && stages_with<20, 1024> == 2);
+static_assert(stages_with<27, 128> == 5 && stages_with<27, 256> == 4 &&
+              stages_with<27, 512> == 4 && stages_with<27, 1024> == 3);
+
 constexpr bool same_config(const KernelConfig& a, const KernelConfig& b)
 {
     return a.griddim_x == b.griddim_x && a.griddim_y == b.griddim_y &&

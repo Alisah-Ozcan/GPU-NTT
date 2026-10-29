@@ -1381,6 +1381,9 @@ int main()
     // with 128) and a single kernel (2^11 with 1024).
     run_size<Data32, Data32, 10, true, 128>();
     run_size<Data64, Data64, 16, true, 128>();
+    run_size<Data64, Data64, 16, true, 256>();
+    run_size<Data64, Data64, 16, true, 512>();
+    run_size<Data64, Data64, 16, true, 1024>();
     run_size<Data32, Data32, 25, true, 128>();
     run_case<true, Data32, Data32, 27, FORWARD, X_N_plus, 128>();
     run_case<true, Data32, Data32, 27, INVERSE, X_N_minus, 128>();

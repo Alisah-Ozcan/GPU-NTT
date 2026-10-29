@@ -19,9 +19,13 @@
 //    kernel writes it to shared memory itself, into a second buffer after
 //    the description's shared memory, and transforms both buffers. Checked
 //    against schoolbook multiplication on the CPU.
+// 5. The forward NTT of 2 with T = 128, 256, 512 and 1024 threads in every
+//    kernel (BlockDim<T>), all with the same stage kernel. Checked against
+//    the CPU NTT.
 //
 // Usage: gpu_device_api_examples [BATCH_SIZE]
 
+#include <algorithm>
 #include <cstdlib>
 #include <random>
 
@@ -85,14 +89,15 @@ __global__ void multiply_kernel(TestDataType* a, const TestDataType* b_hat,
     SmallInverse().store(shared_memory, polys, modulus, n_inverse, num_polys);
 }
 
-// Stage I of the large forward NTT. Stage 0 reads in; every stage writes out,
-// which the later stages read and write in place.
-template <int I>
+// Stage I of a forward NTT with stage kernels (LargeForward, or it with
+// BlockDim<T>). Stage 0 reads in; every stage writes out, which the later
+// stages read and write in place.
+template <typename NTT, int I>
 __global__ void large_stage_kernel(TestDataType* in, TestDataType* out,
                                    const TestDataType* roots,
                                    Modulus<TestDataType> modulus)
 {
-    using Stage = LargeForward::stage<I>;
+    using Stage = typename NTT::template stage<I>;
     TestDataType* shared_memory = Stage::shared_memory();
     Stage().load(shared_memory, in, modulus);
     Stage().execute(shared_memory, roots, modulus);
@@ -196,6 +201,24 @@ __global__ void ternary_multiply_kernel(TestDataType* a, const int8_t* s,
                             });
     SmallInverse().execute(a_shared, inverse_roots, modulus);
     SmallInverse().store(a_shared, poly, modulus, n_inverse);
+}
+
+// Launches the stages of NTT in order with large_stage_kernel. Stage 0 reads
+// in; every stage writes out, which the later stages read and write in place.
+template <typename NTT>
+void run_large_stages(TestDataType* in, TestDataType* out,
+                      const TestDataType* roots,
+                      Modulus<TestDataType> modulus, int batch)
+{
+    NTT::for_each_stage(
+        [&](auto I)
+        {
+            using Stage = typename NTT::template stage<I>;
+            large_stage_kernel<NTT, I><<<Stage::grid(batch), Stage::block_dim,
+                                         Stage::shared_memory_size>>>(
+                I == 0 ? in : out, out, roots, modulus);
+            GPUNTT_CUDA_CHECK(cudaGetLastError());
+        });
 }
 
 template <typename T> T* device_root_table(const vector<T>& table)
@@ -326,18 +349,8 @@ int main(int argc, char* argv[])
                                      input.size() * sizeof(TestDataType),
                                      cudaMemcpyHostToDevice));
 
-        // Stage 0 reads in_device; every stage writes out_device, which the
-        // later stages read and write in place.
-        LargeForward::for_each_stage(
-            [&](auto I)
-            {
-                using Stage = LargeForward::stage<I>;
-                large_stage_kernel<I><<<Stage::grid(batch), Stage::block_dim,
-                                        Stage::shared_memory_size>>>(
-                    I == 0 ? in_device : out_device, out_device, roots,
-                    parameters.modulus);
-                GPUNTT_CUDA_CHECK(cudaGetLastError());
-            });
+        run_large_stages<LargeForward>(in_device, out_device, roots,
+                                       parameters.modulus, batch);
 
         vector<TestDataType> output(input.size());
         GPUNTT_CUDA_CHECK(cudaMemcpy(output.data(), out_device,
@@ -567,6 +580,84 @@ int main(int argc, char* argv[])
         GPUNTT_CUDA_CHECK(cudaFree(s_device));
         GPUNTT_CUDA_CHECK(cudaFree(forward_roots));
         GPUNTT_CUDA_CHECK(cudaFree(inverse_roots));
+    }
+
+    // 5. The forward NTT of 2 with T threads in every kernel. Only the
+    //    description changes; a smaller T takes more stages.
+    {
+        NTTParameters<TestDataType> parameters(kLargeLogN,
+                                               ReductionPolynomial::X_N_plus);
+        NTTCPU<TestDataType> cpu(parameters);
+        const int n = parameters.n;
+        std::uniform_int_distribution<std::uint64_t> dis(
+            0, parameters.modulus.value - 1);
+
+        vector<TestDataType> input(size_t(batch) * n);
+        for (auto& x : input)
+            x = dis(gen);
+        vector<TestDataType> expected(input.size());
+        for (int i = 0; i < batch; i++)
+        {
+            vector<TestDataType> poly(input.begin() + size_t(i) * n,
+                                      input.begin() + size_t(i + 1) * n);
+            vector<TestDataType> poly_ntt = cpu.ntt(poly);
+            std::copy(poly_ntt.begin(), poly_ntt.end(),
+                      expected.begin() + size_t(i) * n);
+        }
+
+        // The root table does not depend on BlockDim.
+        TestDataType* roots;
+        GPUNTT_CUDA_CHECK(cudaMalloc(&roots, LargeForward::twiddle_table_size *
+                                                 sizeof(TestDataType)));
+        LargeForward::make_twiddles(roots, parameters.modulus,
+                                    parameters.root_of_unity);
+
+        TestDataType *in_device, *out_device;
+        GPUNTT_CUDA_CHECK(
+            cudaMalloc(&in_device, input.size() * sizeof(TestDataType)));
+        GPUNTT_CUDA_CHECK(
+            cudaMalloc(&out_device, input.size() * sizeof(TestDataType)));
+        GPUNTT_CUDA_CHECK(cudaMemcpy(in_device, input.data(),
+                                     input.size() * sizeof(TestDataType),
+                                     cudaMemcpyHostToDevice));
+
+        auto run_with_threads = [&](auto threads)
+        {
+            constexpr int T = decltype(threads)::value;
+            using NTT = decltype(LargeForward() + BlockDim<T>());
+
+            GPUNTT_CUDA_CHECK(cudaMemset(out_device, 0,
+                                         input.size() * sizeof(TestDataType)));
+            run_large_stages<NTT>(in_device, out_device, roots,
+                                  parameters.modulus, batch);
+            vector<TestDataType> output(input.size());
+            GPUNTT_CUDA_CHECK(cudaMemcpy(output.data(), out_device,
+                                         output.size() * sizeof(TestDataType),
+                                         cudaMemcpyDeviceToHost));
+
+            if (check_result(output.data(), expected.data(),
+                             int(output.size())))
+            {
+                cout << "All Correct for staged NTT, N = 2^" << kLargeLogN
+                     << ", BlockDim<" << T << ">: "
+                     << NTT::num_stages << " kernels, blocks";
+                NTT::for_each_stage(
+                    [&](auto I)
+                    {
+                        const dim3 block = NTT::template stage<I>::block_dim;
+                        cout << " (" << block.x << ", " << block.y << ")";
+                    });
+                cout << "." << endl;
+            }
+        };
+        run_with_threads(std::integral_constant<int, 128>());
+        run_with_threads(std::integral_constant<int, 256>());
+        run_with_threads(std::integral_constant<int, 512>());
+        run_with_threads(std::integral_constant<int, 1024>());
+
+        GPUNTT_CUDA_CHECK(cudaFree(in_device));
+        GPUNTT_CUDA_CHECK(cudaFree(out_device));
+        GPUNTT_CUDA_CHECK(cudaFree(roots));
     }
 
     return EXIT_SUCCESS;

@@ -315,6 +315,43 @@ static_assert(NTT128::num_stages == 3 && NTT128::block_threads == 128);
 - `num_stages`, `stage<I>`, `for_each_stage`, `launch` and the single kernel API (when `num_stages` is 1, e.g. N = 2^11 with T = 1024) work as without `BlockDim`. The last forward stage and the first inverse stage again share their layout, so they can be fused as above when both descriptions have the same `BlockDim`.
 - With T equal to the threads of the kernel table, the stages are the ones of the table for N up to 2^24.
 
+Stages per N and T:
+
+| N | T = 128 | T = 256 | T = 512 | T = 1024 |
+|---|---|---|---|---|
+| 2^16 | 3 | 2 | 2 | 2 |
+| 2^20 | 3 | 3 | 3 | 2 |
+| 2^27 | 5 | 4 | 4 | 3 |
+
+A stage kernel is written once and works for every T; only the description changes:
+
+```cpp
+template <typename NTT, int I>
+__global__ void my_stage(Data64* in, Data64* out, const Data64* roots, Modulus<Data64> modulus)
+{
+    using Stage = typename NTT::template stage<I>;
+    Data64* shared_memory = Stage::shared_memory();
+    Stage().load(shared_memory, in, modulus);
+    Stage().execute(shared_memory, roots, modulus);
+    Stage().store(shared_memory, out);
+}
+
+template <typename NTT>
+void run(Data64* in, Data64* out, const Data64* roots, Modulus<Data64> modulus, int batch)
+{
+    NTT::for_each_stage([&](auto I) {
+        using Stage = typename NTT::template stage<I>;
+        my_stage<NTT, I><<<Stage::grid(batch), Stage::block_dim, Stage::shared_memory_size>>>(
+            I == 0 ? in : out, out, roots, modulus);
+    });
+}
+
+run<decltype(BigNTT() + BlockDim<128>())>(in, out, roots, modulus, batch);   // 3 kernels
+run<decltype(BigNTT() + BlockDim<1024>())>(in, out, roots, modulus, batch);  // 2 kernels
+```
+
+[`example/ntt_merge/test_device_api.cu`](example/ntt_merge/test_device_api.cu) (section 5) runs N = 2^16 this way with T = 128, 256, 512 and 1024 and prints the block of every stage.
+
 ### Entries of a thread
 
 Every thread of a single kernel or a stage kernel owns two entries of shared memory: `load` fills them, `store` writes them back, and they keep their positions in between. `NTT().entries(num_polys)` (single kernel) and `Stage().entries()` return them as a `ThreadEntries`: entry `k` (`k < ThreadEntries::count`, which is 2) is `shared_memory[position[k]]` and belongs at `data[index[k]]`, the index that `for_each` passes. In a last single kernel block that is not full, the threads of the missing polynomials have `valid == false`. `for_each` is built on `entries`.
