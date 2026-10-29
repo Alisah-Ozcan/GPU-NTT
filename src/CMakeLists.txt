@@ -65,8 +65,8 @@ target_link_libraries(ntt PUBLIC CUDA::cudart)
 
 set_target_properties(ntt PROPERTIES
   VERSION ${PROJECT_VERSION}
-  SOVERSION 1
-  OUTPUT_NAME "ntt-${PROJECT_VERSION}"
+  SOVERSION ${PROJECT_VERSION_MAJOR}
+  OUTPUT_NAME "ntt-${GPUNTT_VERSION_DIR}"
 )
 
 target_include_directories(
@@ -74,7 +74,7 @@ target_include_directories(
     PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<BUILD_INTERFACE:${GPUNTT_CONFIG_INCLUDE_DIR}>
-    $<INSTALL_INTERFACE:include/GPUNTT-${PROJECT_VERSION}>
+    $<INSTALL_INTERFACE:include/GPUNTT-${GPUNTT_VERSION_DIR}>
 )
 
 set_target_properties(ntt PROPERTIES

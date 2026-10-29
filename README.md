@@ -146,13 +146,15 @@ Make sure GPU-NTT is installed before integrating it into your project. The inst
 project(<your-project> LANGUAGES CXX CUDA)
 find_package(CUDAToolkit REQUIRED)
 # ...
-find_package(GPUNTT CONFIG REQUIRED)
+find_package(GPUNTT 1.0 CONFIG REQUIRED)   # any installed 1.x, at least 1.0
 # ...
 target_link_libraries(<your-target> (PRIVATE|PUBLIC|INTERFACE) GPUNTT::ntt CUDA::cudart)
 # ...
 ```
 
 - Neither relocatable device code (`CUDA_SEPARABLE_COMPILATION`, `-rdc`) nor device link-time optimization is needed, also for the device API.
+- The version follows the release tags (`v1.0.0`). `find_package(GPUNTT 1.0 ...)` accepts an installed 1.x of at least 1.0 and rejects other major versions; `GPUNTT_VERSION` holds the version found. In code, `gpuntt/config.cuh` defines `GPUNTT_VERSION_MAJOR`, `GPUNTT_VERSION_MINOR`, `GPUNTT_VERSION_PATCH` and `GPUNTT_VERSION` (`"1.0.0"`). [CHANGELOG.md](CHANGELOG.md) lists the changes of each version and how to migrate from v0.0.0.
+- Installed paths and the library name carry `<major>.<minor>` (`include/GPUNTT-1.0`, `lib/cmake/GPUNTT-1.0`, `libntt-1.0.a`), so a patch release replaces the previous one and different minor versions can be installed side by side.
 - `GPUNTT_CUDA_ARCHITECTURES` holds the GPU architectures the installed library was compiled for.
 - The installed `gpuntt/config.cuh` records the build settings (`GPUNTT_CC_89_KERNEL_CONFIG`, version, architectures), so code compiled without CMake, e.g. `nvcc -I<prefix>/include/GPUNTT-1.0 ... -L<prefix>/lib -lntt-1.0`, uses the same kernel tables as the library.
 
