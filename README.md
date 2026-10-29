@@ -178,7 +178,8 @@ using NTT = decltype(Size<1024>() + Direction<FORWARD>() + Precision<Data64>() +
 | `ReductionPoly<X_N_minus>`, `ReductionPoly<X_N_plus>` | for `execute` | X^N - 1 or X^N + 1. |
 | `Block` | no | The NTT is computed by a thread block. |
 | `BatchesPerBlock<B>` | no | Polynomials per block, only for N up to 2^9. The default comes from the tuned kernel table. |
-| `BlockDim<N / 2, B>` | no | Same as `BatchesPerBlock<B>`. |
+| `BlockDim<N / 2, B>` | no | For N up to 2^9: same as `BatchesPerBlock<B>`. |
+| `BlockDim<T>` | no | For N from 2^10: T threads in every kernel, T = 128, 256, 512 or 1024 and at most N / 2. The default comes from the tuned kernel table. See [Threads per kernel](#threads-per-kernel-blockdimt). |
 | `Layout<PerPolynomial>` | no | Only `PerPolynomial` is supported. |
 | `SM<890>` | no | Accepted; all architectures currently use the same tuned kernel tables. |
 
@@ -298,6 +299,21 @@ First().store(shared_memory, a);  // with (modulus, n_inverse) if First::last
 ```
 
   The other stages run in their own kernels as above. [`example/ntt_merge/test_device_api.cu`](example/ntt_merge/test_device_api.cu) multiplies polynomials with N = 2^12 this way.
+
+### Threads per kernel: `BlockDim<T>`
+
+Without `BlockDim` the kernels of N ≥ 2^10 come from the tuned kernel table, the same kernels `GPU_NTT` / `GPU_INTT` run. `BlockDim<T>` gives every kernel T threads instead, e.g. to match the block size of your own work in the same kernel:
+
+```cpp
+using NTT128 = decltype(Size<(1 << 16)>() + Direction<FORWARD>() + Precision<Data64>() +
+                        ReductionPoly<X_N_plus>() + Block() + BlockDim<128>());
+static_assert(NTT128::num_stages == 3 && NTT128::block_threads == 128);
+```
+
+- T is 128, 256, 512 or 1024 and at most N / 2; other values fail to compile.
+- Every thread still owns two entries, so a kernel holds 2T coefficients in shared memory and runs at most log2(T) + 1 levels. The stages are planned at compile time: the last forward stage runs log2(T) + 1 levels, the levels before it are spread evenly over as few stages as possible with at most log2(T) − 1 levels each. A smaller T gives more stages, e.g. 5 for N = 2^27 with T = 128.
+- `num_stages`, `stage<I>`, `for_each_stage`, `launch` and the single kernel API (when `num_stages` is 1, e.g. N = 2^11 with T = 1024) work as without `BlockDim`. The last forward stage and the first inverse stage again share their layout, so they can be fused as above when both descriptions have the same `BlockDim`.
+- With T equal to the threads of the kernel table, the stages are the ones of the table for N up to 2^24.
 
 ### Entries of a thread
 

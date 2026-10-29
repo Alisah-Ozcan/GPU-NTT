@@ -442,6 +442,114 @@ namespace gpuntt
 
     constexpr int kLowRingMaxLogN = 9;
 
+    constexpr int kMaxStages = 5;
+
+    // The kernels of one transform, in launch order, with the grid axes
+    // flag of each kernel.
+    struct StagePlan
+    {
+        int count;
+        KernelConfig stage[kMaxStages];
+        bool swap_grid_axes[kMaxStages];
+    };
+
+    // The kernels of an NTT of ring size 2^log_n. With threads == 0 they come
+    // from the kernel table; for log2(ring size) >= 25 the last forward and
+    // the first inverse kernel swap the roles of blockIdx.x and blockIdx.y.
+    //
+    // Otherwise every kernel has threads = 2^s threads (2^s <= 2^log_n / 2)
+    // and each thread keeps two entries in shared memory. The last forward
+    // kernel runs s + 1 levels with block (2^s, 1). The levels before it are
+    // split as evenly as possible, smaller ones first, over as few kernels
+    // as possible with at most s - 1 levels each; a kernel with L levels has
+    // block (2^(s - L + 1), 2^(L - 1)), so its rows read at least four
+    // adjacent coefficients. A kernel swaps the grid axes when its 2^logm
+    // groups do not fit grid y. The inverse kernels mirror the forward ones.
+    // For the threads of the kernel table this gives the table up to
+    // log2(ring size) 24.
+    template <typename T>
+    constexpr StagePlan stage_plan(type direction, int log_n, int threads)
+    {
+        StagePlan plan = {};
+        if (threads == 0)
+        {
+            const KernelStages& stages =
+                (direction == FORWARD ? forward_kernel_table<T>
+                                      : inverse_kernel_table<T>) [log_n];
+            plan.count = stages.size();
+            for (int i = 0; i < plan.count; i++)
+            {
+                plan.stage[i] = stages[i];
+                plan.swap_grid_axes[i] =
+                    log_n >= 25 &&
+                    (direction == FORWARD ? i + 1 == plan.count : i == 0);
+            }
+            return plan;
+        }
+
+        const int s = log2_of_power_of_two(threads);
+        const int early_levels = log_n - (s + 1);
+        const int early_count = (early_levels + s - 2) / (s - 1);
+        plan.count = early_count + 1;
+
+        KernelConfig forward[kMaxStages] = {};
+        bool swap[kMaxStages] = {};
+        int logm = 0;
+        for (int i = 0; i < plan.count; i++)
+        {
+            const bool last = (i == early_count);
+            const int levels =
+                last ? s + 1
+                     : early_levels / early_count +
+                           (i >= early_count - early_levels % early_count);
+            const int block_y = last ? 1 : 1 << (levels - 1);
+            const int block_x = threads / block_y;
+            const long long columns =
+                last ? 1 : (1LL << (log_n - logm - levels)) / block_x;
+            const long long groups = 1LL << logm;
+            swap[i] = groups > 65535;
+            forward[i] = KernelConfig{int(swap[i] ? groups : columns),
+                                      int(swap[i] ? columns : groups),
+                                      block_x,
+                                      block_y,
+                                      size_t(2 * threads) * sizeof(T),
+                                      s,
+                                      logm,
+                                      0,
+                                      levels,
+                                      !last};
+            logm += levels;
+        }
+
+        for (int i = 0; i < plan.count; i++)
+        {
+            const int f = (direction == FORWARD) ? i : plan.count - 1 - i;
+            plan.swap_grid_axes[i] = swap[f];
+            if (direction == FORWARD)
+            {
+                plan.stage[i] = forward[f];
+            }
+            else
+            {
+                // The inverse table stores the last_kernel flag in
+                // not_last_kernel.
+                const KernelConfig& c = forward[f];
+                plan.stage[i] =
+                    KernelConfig{c.griddim_x,
+                                 c.griddim_y,
+                                 c.blockdim_x,
+                                 c.blockdim_y,
+                                 c.shared_memory,
+                                 c.shared_index,
+                                 c.logm + c.outer_iteration_count - 1,
+                                 c.logm,
+                                 c.outer_iteration_count,
+                                 i + 1 == plan.count};
+            }
+        }
+        return plan;
+    }
+
     // The kernel's dynamic shared memory as an array of T. Kernels that use
     // the device API launch with the description's shared_memory_size.
     template <typename T> __device__ __forceinline__ T* dynamic_shared_memory()
@@ -488,17 +596,18 @@ namespace gpuntt
     // the same entries in shared memory, so one kernel can run the last
     // forward execute, element-wise work and the first inverse execute
     // without storing and loading in between.
+    //
+    // Threads is the thread count of BlockDim<Threads>, or 0 for the kernel
+    // table (see stage_plan).
     template <typename T, type D, int LogN, int I, int B, bool HasReductionPoly,
-              ReductionPolynomial R>
+              ReductionPolynomial R, int Threads = 0>
     struct NTTStage
     {
-        static constexpr KernelStages stages =
-            (D == FORWARD ? forward_kernel_table<T>
-                          : inverse_kernel_table<T>) [LogN];
+        static constexpr StagePlan plan = stage_plan<T>(D, LogN, Threads);
 
-        static_assert(I >= 0 && I < stages.size(), "Stage index out of range");
+        static_assert(I >= 0 && I < plan.count, "Stage index out of range");
 
-        static constexpr KernelConfig config = stages[I];
+        static constexpr KernelConfig config = plan.stage[I];
 
         static constexpr bool low_ring = (LogN <= kLowRingMaxLogN);
 
@@ -515,13 +624,11 @@ namespace gpuntt
                             : dim3(config.griddim_x, config.griddim_y, batch);
         }
 
-        static constexpr bool last = (I + 1 == stages.size());
+        static constexpr bool last = (I + 1 == plan.count);
 
-        // For log2(ring size) >= 25 the last forward and the first inverse
-        // kernel swap the roles of blockIdx.x and blockIdx.y; grid() already
-        // accounts for it.
-        static constexpr bool swap_grid_axes =
-            LogN >= 25 && (D == FORWARD ? last : I == 0);
+        // The kernel swaps the roles of blockIdx.x and blockIdx.y; grid()
+        // already accounts for it.
+        static constexpr bool swap_grid_axes = plan.swap_grid_axes[I];
 
         // The kernel's dynamic shared memory (shared_memory_size bytes).
         __device__ __forceinline__ static T* shared_memory()
@@ -647,9 +754,9 @@ namespace gpuntt
     };
 
     // Launch parameters and device functions of an NTT that runs in a single
-    // kernel (ring sizes up to 2^10). Block b transforms the B polynomials
-    // that start at data + b * B * N; launch it with grid(batch), block_dim
-    // and shared_memory_size. Inside the kernel:
+    // kernel (ring sizes up to 2^10, and 2^11 with BlockDim<1024>). Block b
+    // transforms the B polynomials that start at data + b * B * N; launch it
+    // with grid(batch), block_dim and shared_memory_size. Inside the kernel:
     //
     //   NTT().load(shared_memory, data, modulus);
     //   NTT().execute(shared_memory, roots, modulus);
@@ -663,12 +770,11 @@ namespace gpuntt
     // __syncthreads(). The inverse execute leaves N * INTT(x) in shared
     // memory; store multiplies by n_inverse = N^-1.
     template <typename T, type D, int LogN, int B, bool HasReductionPoly,
-              ReductionPolynomial R>
+              ReductionPolynomial R, int Threads = 0>
     struct NTTSingleKernel
     {
         static constexpr KernelConfig config =
-            (D == FORWARD ? forward_kernel_table<T>
-                          : inverse_kernel_table<T>) [LogN][0];
+            stage_plan<T>(D, LogN, Threads).stage[0];
 
         static constexpr bool low_ring = (LogN <= kLowRingMaxLogN);
 
@@ -1125,6 +1231,20 @@ namespace gpuntt
             }
         }
 
+        // The thread count of BlockDim<T>, or 0 if Op is absent or has more
+        // than one dimension.
+        template <typename Op> static constexpr int block_dim_threads()
+        {
+            if constexpr (std::is_void<Op>::value)
+            {
+                return 0;
+            }
+            else
+            {
+                return (Op::y == 1 && Op::z == 1) ? Op::x : 0;
+            }
+        }
+
         template <typename Op> static constexpr int batches_value()
         {
             if constexpr (std::is_void<Op>::value)
@@ -1177,13 +1297,33 @@ namespace gpuntt
         }
 
       private:
-        static constexpr KernelStages stages =
-            (direction == FORWARD
-                 ? forward_kernel_table<value_type>
-                 : inverse_kernel_table<value_type>) [log_size];
+        static constexpr int threads_op =
+            log_size > kLowRingMaxLogN ? block_dim_threads<block_dim_op>() : 0;
+
+        static_assert(log_size <= kLowRingMaxLogN || !has_batches,
+                      "BatchesPerBlock can only be set for Size up to 2^9");
+        static_assert(log_size <= kLowRingMaxLogN || !has_block_dim ||
+                          (threads_op >= 128 && is_power_of_two(threads_op)),
+                      "For Size above 2^9, BlockDim must be BlockDim<T> with "
+                      "T = 128, 256, 512 or 1024 threads");
+        static_assert(threads_op <= size / 2,
+                      "BlockDim<T> needs T at most Size / 2");
 
       public:
-        static constexpr int num_stages = stages.size();
+        // Threads per kernel set with BlockDim<T> for Size above 2^9, or 0
+        // for the kernel table.
+        static constexpr int block_threads =
+            (threads_op >= 128 && is_power_of_two(threads_op) &&
+             threads_op <= size / 2)
+                ? threads_op
+                : 0;
+
+      private:
+        static constexpr StagePlan plan =
+            stage_plan<value_type>(direction, log_size, block_threads);
+
+      public:
+        static constexpr int num_stages = plan.count;
 
         // Calls f(std::integral_constant<int, I>()) for I = 0, 1, ...,
         // num_stages - 1 in order, e.g. to launch the stage kernels:
@@ -1198,18 +1338,16 @@ namespace gpuntt
         static constexpr int batches_per_block =
             has_batches                   ? batches_value<batches_op>()
             : has_block_dim               ? block_dim_y<block_dim_op>()
-            : log_size <= kLowRingMaxLogN ? stages[0].blockdim_y
+            : log_size <= kLowRingMaxLogN ? plan.stage[0].blockdim_y
                                           : 1;
 
         static_assert(is_per_polynomial<layout_op>(),
                       "Only Layout<PerPolynomial> is supported");
-        static_assert(log_size <= kLowRingMaxLogN ||
-                          (!has_batches && !has_block_dim),
-                      "BlockDim and BatchesPerBlock can only be set for Size "
-                      "up to 2^9");
-        static_assert(block_dim_is_rows<block_dim_op>(size / 2),
+        static_assert(log_size > kLowRingMaxLogN ||
+                          block_dim_is_rows<block_dim_op>(size / 2),
                       "BlockDim must be (Size / 2, BatchesPerBlock)");
-        static_assert(!has_block_dim || !has_batches ||
+        static_assert(log_size > kLowRingMaxLogN || !has_block_dim ||
+                          !has_batches ||
                           block_dim_y<block_dim_op>() ==
                               batches_value<batches_op>(),
                       "BlockDim must be (Size / 2, BatchesPerBlock)");
@@ -1222,12 +1360,12 @@ namespace gpuntt
         using stage =
             NTTStage<value_type, direction, log_size, I, batches_per_block,
                      !std::is_void<reduction_op>::value,
-                     reduction_value<reduction_op>()>;
+                     reduction_value<reduction_op>(), block_threads>;
 
         using single_kernel =
             NTTSingleKernel<value_type, direction, log_size, batches_per_block,
                             !std::is_void<reduction_op>::value,
-                            reduction_value<reduction_op>()>;
+                            reduction_value<reduction_op>(), block_threads>;
 
         using root_table = NTTRootTable<value_type, size, direction,
                                         !std::is_void<reduction_op>::value,

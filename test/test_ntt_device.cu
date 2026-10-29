@@ -717,15 +717,29 @@ namespace
         return values;
     }
 
+    // Block(), with BlockDim<Threads>() if Threads is not 0.
+    template <int Threads> constexpr auto block_operators()
+    {
+        if constexpr (Threads == 0)
+        {
+            return Block();
+        }
+        else
+        {
+            return Block() + BlockDim<Threads>();
+        }
+    }
+
     // Runs one description on random data and compares it with the host
     // API. TIO is the signed or unsigned type of the input (forward) or the
-    // output (inverse).
+    // output (inverse). Threads selects BlockDim<Threads> (0: none).
     template <bool Staged, typename T, typename TIO, int LogN, type D,
-              ReductionPolynomial R>
+              ReductionPolynomial R, int Threads = 0>
     void run_case()
     {
         using NTT = decltype(Size<(1 << LogN)>() + Direction<D>() +
-                             Precision<T>() + ReductionPoly<R>() + Block());
+                             Precision<T>() + ReductionPoly<R>() +
+                             block_operators<Threads>());
         constexpr int n = 1 << LogN;
         const int batch = 2 * NTT::batches_per_block + 1;
         const size_t total = size_t(batch) * n;
@@ -857,12 +871,13 @@ namespace
             if (*results[v] != expected)
             {
                 failures++;
-                std::printf("FAIL %s%s %s logn=%d %s %s%s batch=%d\n",
-                            Staged ? "stages" : "single kernel", variants[v],
-                            sizeof(T) == 4 ? "u32" : "u64", LogN,
-                            D == FORWARD ? "forward" : "inverse",
-                            R == X_N_minus ? "X^N-1" : "X^N+1",
-                            std::is_signed<TIO>::value ? " signed" : "", batch);
+                std::printf(
+                    "FAIL %s%s %s logn=%d threads=%d %s %s%s batch=%d\n",
+                    Staged ? "stages" : "single kernel", variants[v],
+                    sizeof(T) == 4 ? "u32" : "u64", LogN, Threads,
+                    D == FORWARD ? "forward" : "inverse",
+                    R == X_N_minus ? "X^N-1" : "X^N+1",
+                    std::is_signed<TIO>::value ? " signed" : "", batch);
             }
         }
     }
@@ -1055,13 +1070,14 @@ namespace
         }
     }
 
-    template <typename T, typename TIO, int LogN, bool Staged = false>
+    template <typename T, typename TIO, int LogN, bool Staged = false,
+              int Threads = 0>
     void run_size()
     {
-        run_case<Staged, T, TIO, LogN, FORWARD, X_N_minus>();
-        run_case<Staged, T, TIO, LogN, FORWARD, X_N_plus>();
-        run_case<Staged, T, TIO, LogN, INVERSE, X_N_minus>();
-        run_case<Staged, T, TIO, LogN, INVERSE, X_N_plus>();
+        run_case<Staged, T, TIO, LogN, FORWARD, X_N_minus, Threads>();
+        run_case<Staged, T, TIO, LogN, FORWARD, X_N_plus, Threads>();
+        run_case<Staged, T, TIO, LogN, INVERSE, X_N_minus, Threads>();
+        run_case<Staged, T, TIO, LogN, INVERSE, X_N_plus, Threads>();
     }
 
     template <typename T, int First, bool Staged, int... LogN>
@@ -1072,13 +1088,15 @@ namespace
 
     // The same product for ring sizes with stage kernels: forward stages
     // 0 ... S - 2, fused_stage_kernel, inverse stages 1 ... S - 1.
-    template <typename T, int LogN, ReductionPolynomial R>
+    template <typename T, int LogN, ReductionPolynomial R, int Threads = 0>
     void run_fused_stages(int batch)
     {
         using Fwd = decltype(Size<(1 << LogN)>() + Direction<FORWARD>() +
-                             Precision<T>() + ReductionPoly<R>() + Block());
+                             Precision<T>() + ReductionPoly<R>() +
+                             block_operators<Threads>());
         using Inv = decltype(Size<(1 << LogN)>() + Direction<INVERSE>() +
-                             Precision<T>() + ReductionPoly<R>() + Block());
+                             Precision<T>() + ReductionPoly<R>() +
+                             block_operators<Threads>());
         using Last = typename Fwd::template stage<Fwd::num_stages - 1>;
         static_assert(Fwd::num_stages >= 2);
 
@@ -1123,8 +1141,9 @@ namespace
         if (expected.read() != staged.read())
         {
             failures++;
-            std::printf("FAIL for_each_stage %s logn=%d %s batch=%d\n",
-                        sizeof(T) == 4 ? "u32" : "u64", LogN,
+            std::printf("FAIL for_each_stage %s logn=%d threads=%d %s "
+                        "batch=%d\n",
+                        sizeof(T) == 4 ? "u32" : "u64", LogN, Threads,
                         R == X_N_minus ? "X^N-1" : "X^N+1", batch);
         }
         multiply_kernel<<<(total + 255) / 256, 256>>>(expected.data, b_hat.data,
@@ -1167,9 +1186,11 @@ namespace
             if (results[v] != expected_values)
             {
                 failures++;
-                std::printf("FAIL fused stages%s %s logn=%d %s batch=%d\n",
+                std::printf("FAIL fused stages%s %s logn=%d threads=%d %s "
+                            "batch=%d\n",
                             variants[v], sizeof(T) == 4 ? "u32" : "u64", LogN,
-                            R == X_N_minus ? "X^N-1" : "X^N+1", batch);
+                            Threads, R == X_N_minus ? "X^N-1" : "X^N+1",
+                            batch);
             }
         }
     }
@@ -1353,6 +1374,28 @@ int main()
     run_fused_stages<Data64, 12, X_N_minus>(3);
     run_fused_stages<Data64, 17, X_N_plus>(2);
     run_fused_stages<Data64, 25, X_N_minus>(1);
+
+    // BlockDim<T> sets the threads of every kernel for Size above 2^9: for
+    // each T the smallest ring size, a 1-level stage (2^10 with 256), last
+    // kernels that swap the grid axes (2^25 with 128), five kernels (2^27
+    // with 128) and a single kernel (2^11 with 1024).
+    run_size<Data32, Data32, 10, true, 128>();
+    run_size<Data64, Data64, 16, true, 128>();
+    run_size<Data32, Data32, 25, true, 128>();
+    run_case<true, Data32, Data32, 27, FORWARD, X_N_plus, 128>();
+    run_case<true, Data32, Data32, 27, INVERSE, X_N_minus, 128>();
+    run_size<Data64, Data64, 22, true, 128>();
+    run_size<Data32, Data32, 10, true, 256>();
+    run_size<Data64, Data64, 20, true, 256>();
+    run_size<Data64, Data64, 10, true, 512>();
+    run_size<Data32, Data32, 13, true, 512>();
+    run_size<Data32, Data32, 11, true, 1024>();
+    run_size<Data64, Data64, 11, false, 1024>();
+    run_size<Data64, Data64, 18, true, 1024>();
+    run_size<Data64, Data64s, 14, true, 256>();
+    run_fused_stages<Data32, 12, X_N_minus, 128>(3);
+    run_fused_stages<Data64, 16, X_N_plus, 1024>(2);
+    run_fused_stages<Data64, 25, X_N_minus, 128>(1);
 
     // The same with a and b in two shared memory buffers.
     run_two_buffers_stages<Data32, 11, X_N_minus>(3);

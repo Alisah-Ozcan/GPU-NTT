@@ -9,7 +9,8 @@
 //    forward NTT of a, pointwise product with NTT(b), inverse NTT. Checked
 //    against schoolbook multiplication on the CPU.
 // 2. Forward NTT of N = 2^16 polynomials, one kernel per stage. Checked
-//    against the CPU NTT, and NTT::launch against the stage kernels.
+//    against the CPU NTT, and NTT::launch, also with 128 threads per kernel
+//    (BlockDim<128>), against the stage kernels.
 // 3. Polynomial multiplication modulo X^N + 1 with stage kernels (N = 2^12,
 //    two stages per direction) in three kernels: the last forward stage,
 //    the pointwise product and the first inverse stage share one kernel.
@@ -49,6 +50,10 @@ constexpr int kLargeLogN = 16;
 using LargeForward =
     decltype(Size<(1 << kLargeLogN)>() + Direction<FORWARD>() +
              Precision<TestDataType>() + ReductionPoly<X_N_plus>() + Block());
+
+// The same transform with 128 threads in every kernel, which takes more
+// stages.
+using LargeForward128 = decltype(LargeForward() + BlockDim<128>());
 
 // a <- INTT(NTT(a) * b_hat) for every polynomial; b_hat is already in the NTT
 // domain. Block x handles polynomials x * B, ..., x * B + B - 1.
@@ -368,6 +373,21 @@ int main(int argc, char* argv[])
         if (check_result(launched.data(), output.data(), int(output.size())))
         {
             cout << "All Correct for LargeForward::launch." << endl;
+        }
+
+        GPUNTT_CUDA_CHECK(cudaMemcpy(in_device, input.data(),
+                                     input.size() * sizeof(TestDataType),
+                                     cudaMemcpyHostToDevice));
+        LargeForward128::launch(in_device, in_device, roots,
+                                parameters.modulus, batch);
+        GPUNTT_CUDA_CHECK(cudaMemcpy(launched.data(), in_device,
+                                     launched.size() * sizeof(TestDataType),
+                                     cudaMemcpyDeviceToHost));
+        if (check_result(launched.data(), output.data(), int(output.size())))
+        {
+            cout << "All Correct for LargeForward128::launch ("
+                 << LargeForward128::num_stages << " kernels of 128 threads)."
+                 << endl;
         }
 
         GPUNTT_CUDA_CHECK(cudaFree(in_device));
