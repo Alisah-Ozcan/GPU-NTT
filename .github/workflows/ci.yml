@@ -1,0 +1,84 @@
+name: CI
+
+# Builds GPU-NTT, installs it and builds a project that uses the installed
+# package. The runners have no GPU, so the tests, examples and benchmarks are
+# built but not run; run them on a machine with a GPU.
+
+# Only changes that can affect the build run it; for example, a change to the
+# documentation alone does not.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "CMakeLists.txt"
+      - "cmake/**"
+      - "src/**"
+      - "test/**"
+      - "example/**"
+      - "benchmark/**"
+      - ".github/workflows/ci.yml"
+  pull_request:
+    paths:
+      - "CMakeLists.txt"
+      - "cmake/**"
+      - "src/**"
+      - "test/**"
+      - "example/**"
+      - "benchmark/**"
+      - ".github/workflows/ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: CUDA ${{ matrix.cuda }}
+    runs-on: ubuntu-24.04
+    container: nvidia/cuda:${{ matrix.cuda }}-devel-ubuntu22.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        cuda:
+          - 13.4.3
+          # The oldest CUDA version that HEonGPU supports.
+          - 12.8.2
+    steps:
+      # git is also needed to fetch nvbench for the benchmarks, and nvbench
+      # needs CMake 3.30.4 or newer.
+      - name: Install system packages
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            git python3-pip
+          python3 -m pip install --no-cache-dir "cmake==4.0.3"
+
+      - uses: actions/checkout@v4
+
+      # One architecture is enough to check that the code builds.
+      - name: Configure
+        run: |
+          cmake -S . -B build \
+            -D CMAKE_BUILD_TYPE=Release \
+            -D CMAKE_CUDA_ARCHITECTURES=89 \
+            -D CMAKE_INSTALL_PREFIX="$PWD/install" \
+            -D GPUNTT_BUILD_TESTS=ON \
+            -D GPUNTT_BUILD_EXAMPLES=ON \
+            -D GPUNTT_BUILD_BENCHMARKS=ON
+
+      - name: Build
+        run: cmake --build build -j "$(nproc)"
+
+      - name: Install
+        run: cmake --install build
+
+      - name: Build a project that uses the installed GPU-NTT
+        run: |
+          cmake -S test/package -B package-build \
+            -D CMAKE_PREFIX_PATH="$PWD/install"
+          cmake --build package-build
