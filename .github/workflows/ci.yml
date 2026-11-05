@@ -82,3 +82,8 @@ jobs:
           cmake -S test/package -B package-build \
             -D CMAKE_PREFIX_PATH="$PWD/install"
           cmake --build package-build
+
+      - name: Uninstall
+        run: |
+          echo yes | cmake --build build --target uninstall
+          test -z "$(find install -type f)"

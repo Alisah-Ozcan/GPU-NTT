@@ -91,3 +91,22 @@ message(STATUS "GPUNTT_BUILD_BENCHMARKS: ${GPUNTT_BUILD_BENCHMARKS}")
 if(GPUNTT_BUILD_BENCHMARKS)
     add_subdirectory(benchmark)
 endif()
+
+#############
+# UNINSTALL #
+#############
+
+# Only for a build of GPU-NTT itself: a project that adds GPU-NTT with
+# add_subdirectory (as HEonGPU does) defines its own uninstall target.
+if(PROJECT_IS_TOP_LEVEL AND NOT TARGET uninstall)
+    configure_file(
+        "${CMAKE_CURRENT_SOURCE_DIR}/cmake/cmake_uninstall.cmake.in"
+        "${CMAKE_CURRENT_BINARY_DIR}/cmake_uninstall.cmake"
+        @ONLY
+    )
+    add_custom_target(uninstall
+        COMMAND ${CMAKE_COMMAND} -P "${CMAKE_CURRENT_BINARY_DIR}/cmake_uninstall.cmake"
+        COMMENT "Uninstalling GPU-NTT..."
+        USES_TERMINAL
+    )
+endif()

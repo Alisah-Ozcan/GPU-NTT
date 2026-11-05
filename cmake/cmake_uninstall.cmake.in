@@ -1,0 +1,80 @@
+# Copyright 2023-2026 Alişah Özcan
+# Licensed under the Apache License, Version 2.0, see LICENSE for details.
+# SPDX-License-Identifier: Apache-2.0
+# Developer: Alişah Özcan
+
+# Removes the files that the last "cmake --install" of this build directory
+# installed, as listed in install_manifest.txt, and the directories that are
+# left empty. Asks for confirmation first.
+
+set(manifest "@CMAKE_BINARY_DIR@/install_manifest.txt")
+if(NOT EXISTS "${manifest}")
+    message(FATAL_ERROR
+        "Cannot find ${manifest}; install GPU-NTT with 'cmake --install' first.")
+endif()
+
+file(STRINGS "${manifest}" files)
+list(REMOVE_DUPLICATES files)
+list(REMOVE_ITEM files "")
+
+message(STATUS "GPU-NTT uninstall: the following files will be removed:")
+foreach(file IN LISTS files)
+    message(STATUS "  $ENV{DESTDIR}${file}")
+endforeach()
+message(STATUS "Do you want to proceed? [yes/no]")
+
+execute_process(
+    COMMAND bash -c "read -r choice && echo \"\$choice\""
+    OUTPUT_VARIABLE choice
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+)
+string(TOLOWER "${choice}" choice)
+if(NOT choice STREQUAL "yes" AND NOT choice STREQUAL "y")
+    message(STATUS "Uninstall cancelled.")
+    return()
+endif()
+
+set(removed 0)
+set(failed 0)
+set(directories "")
+foreach(file IN LISTS files)
+    set(path "$ENV{DESTDIR}${file}")
+    if(IS_SYMLINK "${path}" OR EXISTS "${path}")
+        file(REMOVE "${path}")
+        if(IS_SYMLINK "${path}" OR EXISTS "${path}")
+            message(STATUS "Failed to remove: ${path}")
+            math(EXPR failed "${failed} + 1")
+        else()
+            math(EXPR removed "${removed} + 1")
+        endif()
+    endif()
+
+    # The parent directories up to the standard install directories (include,
+    # lib, ...), which are kept.
+    get_filename_component(dir "${path}" DIRECTORY)
+    while(dir AND NOT dir STREQUAL "/")
+        get_filename_component(name "${dir}" NAME)
+        if(name MATCHES "^(include|lib|lib64|bin|share|cmake)$")
+            break()
+        endif()
+        list(APPEND directories "${dir}")
+        get_filename_component(dir "${dir}" DIRECTORY)
+    endwhile()
+endforeach()
+
+# Remove the directories that are left empty, the deepest first.
+list(REMOVE_DUPLICATES directories)
+list(SORT directories ORDER DESCENDING)
+foreach(dir IN LISTS directories)
+    if(IS_DIRECTORY "${dir}")
+        file(GLOB children "${dir}/*" "${dir}/.*")
+        if(NOT children)
+            file(REMOVE_RECURSE "${dir}")
+        endif()
+    endif()
+endforeach()
+
+message(STATUS "Removed ${removed} files.")
+if(failed GREATER 0)
+    message(FATAL_ERROR "Failed to remove ${failed} files.")
+endif()

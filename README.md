@@ -36,6 +36,16 @@ Notes:
 - If CMake cannot find `nvcc`, set `CUDACXX=/path/to/nvcc` or pass `-DCMAKE_CUDA_COMPILER=/path/to/nvcc`.
 - If you change compilers/toolchains, prefer a clean configure: `cmake --fresh -S . -B build`.
 
+### Uninstall
+
+To remove the files that `cmake --install build` installed (listed in `build/install_manifest.txt`):
+
+```bash
+cmake --build build --target uninstall
+```
+
+It lists the files and asks for confirmation (`yes`); add `sudo` if you installed to a system location. The `uninstall` target exists only when GPU-NTT is built on its own; a project that adds GPU-NTT with `add_subdirectory` (such as HEonGPU) uses its own uninstall.
+
 ### Compile Options
 
 GPU-NTT uses C++17/CUDA17 and applies per-configuration compile flags.
