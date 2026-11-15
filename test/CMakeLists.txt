@@ -33,6 +33,13 @@ set_target_properties(ntt_helpers_tests PROPERTIES
 )
 add_test(NAME ntt_helpers COMMAND ntt_helpers_tests)
 
+add_executable(modular_arith_tests test_modular_arith.cu)
+target_link_libraries(modular_arith_tests PRIVATE ntt CUDA::cudart)
+set_target_properties(modular_arith_tests PROPERTIES
+    CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES}
+)
+add_test(NAME modular_arith COMMAND modular_arith_tests)
+
 foreach(bits 32 64)
     foreach(suite single pool_parameters modulus validation rns signed
                   per_coefficient per_coefficient_rns modulus_ordered

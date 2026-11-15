@@ -238,14 +238,39 @@ namespace gpuntt
                     value.y = 0;
                 }
 
+                // PTX shl.b64 and shr.b64 give 0 for shifts of 64 or more,
+                // while a 64-bit word shifted by 64 is undefined in C++. The
+                // Barrett reduction of a 61-bit modulus shifts by 64.
+                static __device__ __forceinline__ Data64
+                shift_left(const Data64& input, const std::uint32_t& shift)
+                {
+                    Data64 result;
+                    asm("shl.b64 %0, %1, %2;"
+                        : "=l"(result)
+                        : "l"(input), "r"(shift));
+                    return result;
+                }
+
+                static __device__ __forceinline__ Data64
+                shift_right(const Data64& input, const std::uint32_t& shift)
+                {
+                    Data64 result;
+                    asm("shr.b64 %0, %1, %2;"
+                        : "=l"(result)
+                        : "l"(input), "r"(shift));
+                    return result;
+                }
+
+                // For shifts from 0 to 64, the shifts of the Barrett
+                // reduction: shift 0 gives 64 - shift = 64, which gives 0.
                 __device__ __forceinline__ uint128_t
                 operator<<(const std::uint32_t& shift)
                 {
                     uint128_t result;
 
-                    result.value.y = value.y << shift;
-                    result.value.y = (value.x >> (64 - shift)) | result.value.y;
-                    result.value.x = value.x << shift;
+                    result.value.y = shift_left(value.y, shift) |
+                                     shift_right(value.x, 64 - shift);
+                    result.value.x = shift_left(value.x, shift);
 
                     return result;
                 }
@@ -255,9 +280,9 @@ namespace gpuntt
                 {
                     uint128_t result;
 
-                    result.value.x = value.x >> shift;
-                    result.value.x = (value.y << (64 - shift)) | result.value.x;
-                    result.value.y = value.y >> shift;
+                    result.value.x = shift_right(value.x, shift) |
+                                     shift_left(value.y, 64 - shift);
+                    result.value.y = shift_right(value.y, shift);
 
                     return result;
                 }
